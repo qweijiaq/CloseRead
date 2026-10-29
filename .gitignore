@@ -1,0 +1,12 @@
+node_modules/
+dist/
+data/
+packs/
+references/*
+!references/README.md
+.env
+.DS_Store
+.claude/
+docs/
+styles/
+*.log
