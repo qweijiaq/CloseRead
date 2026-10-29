@@ -134,7 +134,7 @@ The pack's **导出** menu offers:
 
 - **网页 HTML**: a dedicated static reading document, not a screenshot of the interactive page. All notes, word cards (including their AI derivation trees and relation/formation details), sentence cards, vocabulary and exercise answers are expanded; scripts, buttons, collapsed `<details>` and editing controls are absent.
 - **EPUB**: a valid EPUB 3 archive containing the title/lead translations, paragraph translations and notes, sentence cards, vocabulary and exercises, including available exercise translations.
-- **PDF**: generated with local headless Chrome in two densities. **舒适** keeps the screen layout; **紧凑** uses 8mm margins, 9.2pt body text, tighter spacing and auto-fit word-card columns (a single card spans the row) for printing. On the sample article this reduced the PDF from 30 to 18 pages. If Chrome is missing, the UI falls back to the browser's print dialog so the page can still be saved as PDF
+- **PDF**: generated with local headless Chrome in two densities. Both move word cards into a dedicated vocabulary catalog and keep paragraph heads, notes, cards and exercise items intact across page breaks; **紧凑** uses 8mm margins, 9.2pt body text and tighter spacing. On the sample article this reduced the PDF from 30 to 18 pages. If Chrome is missing, the UI falls back to the browser's print dialog so the page can still be saved as PDF
 - **PNG 长图**: one long PNG of the entire static document, with 900px (phone), 1200px (standard) and 1800px (2× high-resolution) options, useful for notes or sharing
 - **PNG 分图**: AI groups the export into several page images at logical block boundaries (cover, guide, paragraphs, sentence cards, word cards, exercises), then downloads them as a ZIP with a `pages.txt` manifest. Blocks are never cut in the middle; pages taller than the target are split only between modules, and a deterministic height-based plan is used when the AI plan is unavailable or invalid.
 - **MOBI**: generated through Calibre's `ebook-convert` when Calibre is installed; otherwise the UI explains that EPUB can be downloaded and converted locally
@@ -190,18 +190,35 @@ This mode is free and works offline after the dictionary and translation caches 
 
 ### LLM mode
 
-Set an OpenAI-compatible endpoint in `.env`:
+Open **导入 → 模型设置** in the web UI, choose a provider, paste your own API key and save. The key is written to `data/llm.json` with mode `0600` and is never returned by the API. The repository ships without any provider key.
+
+Supported presets:
+
+| Provider | API | Default model | Env key |
+| --- | --- | --- | --- |
+| Anthropic Claude | native Messages API | `claude-sonnet-5-5` | `ANTHROPIC_API_KEY` |
+| OpenAI | OpenAI-compatible | `gpt-5.6-sol` | `OPENAI_API_KEY` |
+| DeepSeek | OpenAI-compatible | `deepseek-chat` | `DEEPSEEK_API_KEY` |
+| Google Gemini | OpenAI-compatible | `gemini-3.8-flash` | `GEMINI_API_KEY` / `GOOGLE_API_KEY` |
+| 通义千问 Qwen | OpenAI-compatible | `qwen3.8-flash` | `DASHSCOPE_API_KEY` |
+| xAI Grok | OpenAI-compatible | `grok-4.6` | `XAI_API_KEY` |
+| 智谱 GLM | OpenAI-compatible | `glm-5.3-flash` | `GLM_API_KEY` / `ZHIPUAI_API_KEY` |
+| Moonshot Kimi | OpenAI-compatible | `kimi-k2.6` | `MOONSHOT_API_KEY` |
+| Custom | any OpenAI-compatible base URL | your model | `LEARN_API_KEY` |
+
+The model field also shows a row of curated model buttons for the selected provider; you can still type an exact model id.
+
+You can also configure it through `.env`:
 
 ```bash
-LEARN_API_KEY=sk-...
-LEARN_BASE_URL=https://api.openai.com/v1
-LEARN_MODEL=gpt-4o-mini
+LEARN_PROVIDER=deepseek
+DEEPSEEK_API_KEY=sk-...
 LEARN_LEVEL=B2
 ```
 
-The LLM gets the source in chunks and returns structured JSON: sense, CEFR, definitions, Chinese translations, collocations, examples, confusables, notes and exercises. Every item is validated with zod; a failed chunk falls back per chunk, and a total failure falls back to heuristic mode.
+Environment keys are used when no `data/llm.json` exists. `LEARN_ENV_FILE` can point at another local `.env` file. OpenAI, DeepSeek, Gemini, Qwen, xAI, GLM, Kimi and custom endpoints use chat completions (with a retry that drops `response_format` when a provider rejects JSON mode); Anthropic uses its native Messages API.
 
-Any OpenAI-compatible provider works (DeepSeek, Moonshot, Qwen, a local gateway). If only `DEEPSEEK_API_KEY` is present, the compiler uses `https://api.deepseek.com/v1` and `deepseek-chat` automatically. `LEARN_ENV_FILE` can point at another local `.env` file so keys do not need to be copied into this repo. Use `--no-llm` to compare output.
+The LLM gets the source in chunks and returns structured JSON: sense, CEFR, definitions, Chinese translations, collocations, examples, confusables, notes and exercises. Every item is validated with zod; a failed chunk falls back per chunk. If the reading pass falls back to raw segments, missing paragraph translations are repaired by the configured model; if they still cannot be produced, the build fails instead of writing a pack with empty translations.
 
 ## Style references and a unified house style
 

@@ -5,6 +5,7 @@ import type { AnalysisResult, Resource, SelectionMetadata } from '../types.js'
 import { estimateDifficulty } from './tokenize.js'
 import { analyzeHeuristic } from './heuristic.js'
 import { analyzeWithLlm } from './llm.js'
+import { ensureReadingTranslations } from './reading-translation.js'
 import { lookupChineseWords, translateMany } from './translate.js'
 
 export interface AnalyzeOptions {
@@ -218,6 +219,19 @@ export async function analyzeResource(resource: Resource, options: AnalyzeOption
   )
   if (options.translate !== false) progress('Filling Chinese definitions (dictionary and free translation)…')
   await enrichChinese(outcome.analysis, options)
+
+  if ((outcome.analysis.reading ?? []).some((paragraph) => !paragraph.translation?.trim())) {
+    progress('Repairing missing paragraph translations…')
+    const repaired = await ensureReadingTranslations(outcome.analysis.reading ?? [], { signal: options.signal })
+    if (repaired.filled > 0) {
+      outcome.notes.push(`补充了 ${repaired.filled} 段缺失译文。`)
+    }
+    if (repaired.remaining.length > 0) {
+      const message = `有 ${repaired.remaining.length} 段译文未能生成，已停止生成不完整的学习包。请重试或更换模型。`
+      if (outcome.mode === 'llm') throw new Error(message)
+      outcome.notes.push(`警告：${message}`)
+    }
+  }
 
   if (options.style && !outcome.analysis.editorial) {
     progress('Building the styled editorial from the style reference…')

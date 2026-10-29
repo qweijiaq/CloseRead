@@ -204,9 +204,9 @@ function renderDerivationTree(graph: DerivationGraph): string {
 }
 
 const MINIMAL_EXPORT_CSS = `
-  :root { --ink: #1b1a17; --muted: #4d4a44; --line: rgba(27,26,23,.15); --paper: #faf9f6; --card: #fdfcf9; --rust: #1b1a17; --ochre: #6b5f51; --indigo: #3c4a55; }
-  body { background: var(--paper); font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif; line-height: 1.7; }
-  .sheet { max-width: 960px; padding: 44px 48px 64px; background: transparent; }
+  :root { --ink: #1b1a17; --muted: #4d4a44; --line: rgba(27,26,23,.15); --paper: #ffffff; --card: #ffffff; --rust: #1b1a17; --ochre: #6b5f51; --indigo: #3c4a55; }
+  body { background: #fff; font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif; line-height: 1.7; }
+  .sheet { max-width: 960px; padding: 44px 48px 64px; background: #fff; }
   .cover { text-align: left; padding: 0 0 18px; border-bottom: 1px solid var(--ink); }
   .kicker { color: var(--muted); font-family: "SF Mono", monospace; font-size: 10px; letter-spacing: .08em; }
   .cover h1 { font-size: 32px; line-height: 1.25; margin: 10px 0 6px; }
@@ -230,6 +230,8 @@ const MINIMAL_EXPORT_CSS = `
   .para-words > .word-card:only-child { display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); column-gap: 24px; align-items: start; }
   .para-words > .word-card:only-child > *:not(.word-head) { grid-column: 2; }
   .para-words > .word-card:only-child > .word-head { grid-column: 1; grid-row: 1 / span 3; align-self: start; }
+  .vocab-grid { display: block; columns: 2; column-gap: 24px; }
+  .vocab-grid .word-card { break-inside: avoid; }
   .word-lemma { font-size: 17px; }
   .word-tag { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 1px; color: var(--muted); }
   .chips span { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 1px; background: none; color: var(--muted); }
@@ -240,6 +242,7 @@ const MINIMAL_EXPORT_CSS = `
   .quote { border-left: 1px solid var(--line); }
   .exercise { margin-top: 18px; }
   .footer { border-top: 1px solid var(--line); }
+  @media print { body, .sheet { background: #fff !important; } }
 `
 
 const COMPACT_PRINT_CSS = `
@@ -267,6 +270,8 @@ const COMPACT_PRINT_CSS = `
   .para-words > .word-card:only-child { display: grid; grid-template-columns: 38mm minmax(0, 1fr); column-gap: 4mm; align-items: start; }
   .para-words > .word-card:only-child > *:not(.word-head) { grid-column: 2; }
   .para-words > .word-card:only-child > .word-head { grid-column: 1; grid-row: 1 / span 3; align-self: start; }
+  .vocab-grid { display: block; columns: 2; column-gap: 6mm; }
+  .vocab-grid .word-card { break-inside: avoid; }
   .word-lemma { font-size: 12pt; }
   .word-zh { font-size: 9pt; }
   .word-def, .rel, .formation, .memory, .examples { font-size: 7.4pt; line-height: 1.45; }
@@ -282,11 +287,13 @@ const COMPACT_PRINT_CSS = `
 
 export interface ExportHtmlOptions {
   density?: 'comfortable' | 'compact'
+  wordLayout?: 'inline' | 'catalog'
 }
 
 /** A static, print-ready page: no scripts, no collapsed details, every card expanded. */
 export function renderPackExportHtml(pack: LearningPack, options: ExportHtmlOptions = {}): string {
   const density = options.density === 'compact' ? 'compact' : 'comfortable'
+  const wordLayout = options.wordLayout === 'catalog' ? 'catalog' : 'inline'
   const itemById = new Map(pack.items.map((item) => [item.id, item]))
   const wordItems = pack.items.filter((item) => item.type !== 'sentence')
   const sentenceItems = pack.items.filter((item) => item.type === 'sentence' && item.sentence)
@@ -432,23 +439,32 @@ export function renderPackExportHtml(pack: LearningPack, options: ExportHtmlOpti
       const items = paragraph.itemIds.flatMap((id) => {
         const item = itemById.get(id)
         if (!item || shown.has(item.id)) return []
-        shown.add(item.id)
+        if (wordLayout === 'inline') shown.add(item.id)
         return [item]
       })
       const label = String(paragraph.index + 1).padStart(2, '0')
       return `<section class="para export-block" id="p-${label}" ${blockAttrs(`para-${label}`, `第 ${label} 段`, 'paragraph')}>
         <div class="para-no">${label}</div>
         <div class="para-body">
-          <p class="original">${escapeXml(paragraph.original)}</p>
-          ${paragraph.translation ? `<p class="translation">${escapeXml(paragraph.translation)}</p>` : ''}
-          ${renderNote(paragraph.note)}
-          ${items.length ? `<div class="para-words">${items.map((item) => renderWordCard(item)).join('')}</div>` : ''}
+          <div class="para-head">
+            <p class="original">${escapeXml(paragraph.original)}</p>
+            ${paragraph.translation ? `<p class="translation">${escapeXml(paragraph.translation)}</p>` : ''}
+            ${renderNote(paragraph.note)}
+          </div>
+          ${wordLayout === 'inline' && items.length ? `<div class="para-words">${items.map((item) => renderWordCard(item)).join('')}</div>` : ''}
         </div>
       </section>`
     })
     .join('')
 
-  const supplemental = wordItems.filter((item) => !shown.has(item.id))
+  const catalogItems =
+    wordLayout === 'catalog' ? wordItems.filter((item) => !shown.has(item.id)) : []
+  const supplemental =
+    wordLayout === 'catalog' ? [] : wordItems.filter((item) => !shown.has(item.id))
+  const catalog =
+    catalogItems.length > 0
+      ? `<section class="vocab-section export-block" ${blockAttrs('vocab', '词汇卡', 'section')}><h2>词汇卡</h2><div class="para-words vocab-grid">${catalogItems.map((item) => renderWordCard(item)).join('')}</div></section>`
+      : ''
   const readingGuide = readingGuideMarkdown(pack)
   const editorial = readingGuide
     ? `<section class="preface export-block" ${blockAttrs('guide', '精读导读', 'section')}><h2>精读导读</h2>${marked.parse(readingGuide, { async: false }) as string}</section>`
@@ -491,6 +507,7 @@ export function renderPackExportHtml(pack: LearningPack, options: ExportHtmlOpti
   .note-summary { font-weight: 700; }
   blockquote { margin: 8px 0; padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted); font-family: "Songti SC", serif; }
   .para-words { margin-top: 12px; display: grid; gap: 10px; }
+  .vocab-grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 24px; align-items: start; }
   .word-card { padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; break-inside: avoid; }
   .word-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
   .word-lemma { font-family: "Songti SC", serif; font-size: 18px; font-weight: 700; }
@@ -539,13 +556,17 @@ export function renderPackExportHtml(pack: LearningPack, options: ExportHtmlOpti
     .original { font-size: 15.5px; line-height: 1.7; }
     .translation { font-size: 12.5px; line-height: 1.7; }
     .para { padding: 9px 0; break-inside: auto; }
+    .para-head { break-inside: avoid; page-break-inside: avoid; }
     .para-words { break-inside: auto; }
     .word-card { padding: 8px 10px; margin-bottom: 2px; }
     .word-lemma { font-size: 16px; }
     .note { margin-top: 8px; padding: 8px 10px; }
-    .sentence-card, .exercise li { break-inside: auto; }
     h2 { margin-top: 20px; break-after: avoid; }
-    .word-card, .sentence-card, .note, .exercise li, .derivation-tree { break-inside: auto; }
+    .word-card, .sentence-card, .note, .exercise li, .derivation-tree {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .original, .translation, .note p, .preface p { orphans: 3; widows: 3; }
   }
   ${MINIMAL_EXPORT_CSS}
   ${density === 'compact' ? COMPACT_PRINT_CSS : ''}
@@ -570,6 +591,7 @@ export function renderPackExportHtml(pack: LearningPack, options: ExportHtmlOpti
   ${editorial}
   ${headingBlock('reading-heading', '逐段精读')}
   ${paragraphs}
+  ${catalog}
   ${
     sentenceItems.length
       ? `${headingBlock('sentence-heading', '句子卡')}${sentenceItems.map((item, index) => renderSentenceCard(item, index)).join('')}`

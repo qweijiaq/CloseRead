@@ -1,3 +1,5 @@
+import { LLM_PROVIDERS } from '../llm/providers.js'
+
 function escapeText(value: string): string {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -277,6 +279,20 @@ export function renderReviewApp(): string {
   .cselect-size .cselect-menu { min-width: 220px; }
   .cselect-compact .cselect-trigger { padding: 6px 9px; font-size: 12px; }
   .selection-size small { color: var(--muted); font-size: 11.5px; }
+  .llm-settings { margin: 8px 0 14px; padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .llm-settings summary { cursor: pointer; color: var(--ink); font-size: 12.5px; font-weight: 600; }
+  .llm-settings summary span { margin-left: 8px; color: var(--muted); font-weight: 400; font-size: 11.5px; }
+  .llm-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin-top: 12px; }
+  .llm-field { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11.5px; }
+  .llm-field input { border: 1px solid var(--line); background: #fffdf8; color: var(--ink); border-radius: 2px; padding: 7px 9px; font: inherit; font-size: 12.5px; outline: none; }
+  .llm-field input:focus { border-color: var(--accent); }
+  .llm-field .cselect, .llm-field .cselect-trigger { width: 100%; }
+  .llm-model-options { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+  .llm-model-option { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 2px; padding: 2px 6px; font: inherit; font-size: 10.5px; cursor: pointer; }
+  .llm-model-option:hover, .llm-model-option.is-active { border-color: var(--accent); color: var(--accent); }
+  .llm-settings-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .llm-settings-actions .muted { color: var(--muted); font-size: 11.5px; }
+  @media (max-width: 680px) { .llm-settings-grid { grid-template-columns: 1fr; } }
   .audio-toggle { margin-bottom: 14px; }
   .queue-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--accent-soft); color: var(--accent); font-size: 12.5px; }
   .review-sentence-only { margin-left: auto; font-size: 12px; }
@@ -511,6 +527,33 @@ export function renderReviewApp(): string {
 
   <section class="view" id="view-import">
     <div class="import-mode" id="import-mode">检查分析模式…</div>
+    <details class="llm-settings" id="llm-settings" open>
+      <summary>模型设置 <span id="llm-settings-state">检测中…</span></summary>
+      <div class="llm-settings-grid">
+        <label class="llm-field">服务商
+          ${customSelectMarkup(
+            'llm-provider',
+            'openai',
+            LLM_PROVIDERS.map((provider) => ({ value: provider.id, label: provider.label })),
+            'cselect-llm',
+          )}
+        </label>
+        <label class="llm-field">模型
+          <input id="llm-model" type="text" autocomplete="off" spellcheck="false" placeholder="gpt-4o-mini">
+          <div class="llm-model-options" id="llm-model-options"></div>
+        </label>
+        <label class="llm-field">API Key
+          <input id="llm-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="sk-...">
+        </label>
+        <label class="llm-field">Base URL
+          <input id="llm-base-url" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.openai.com/v1">
+        </label>
+      </div>
+      <div class="llm-settings-actions">
+        <button class="btn btn-primary" id="llm-save" type="button">保存模型设置</button>
+        <span class="muted" id="llm-settings-message">Key 只保存在本机 data/llm.json，不会上传。</span>
+      </div>
+    </details>
     <label class="selection-size">
       选词量
       ${customSelectMarkup(
@@ -589,6 +632,7 @@ export function renderReviewApp(): string {
     libraryFilter: 'all',
     importResource: null, importArticle: null, importArticlesView: false
   };
+  var LLM_PRESETS = ${JSON.stringify(LLM_PROVIDERS.map((provider) => ({ id: provider.id, label: provider.label, baseUrl: provider.baseUrl, model: provider.model, models: provider.models, api: provider.api })))};
   var els = {
     stats: document.getElementById('stats'),
     progress: document.getElementById('progress-label'),
@@ -607,6 +651,15 @@ export function renderReviewApp(): string {
     packFilterLabel: document.getElementById('pack-filter-label'),
     clearPack: document.getElementById('clear-pack'),
     importMode: document.getElementById('import-mode'),
+    llmSettings: document.getElementById('llm-settings'),
+    llmProvider: document.getElementById('llm-provider'),
+    llmModel: document.getElementById('llm-model'),
+    llmModelOptions: document.getElementById('llm-model-options'),
+    llmApiKey: document.getElementById('llm-api-key'),
+    llmBaseUrl: document.getElementById('llm-base-url'),
+    llmSave: document.getElementById('llm-save'),
+    llmState: document.getElementById('llm-settings-state'),
+    llmMessage: document.getElementById('llm-settings-message'),
     selectionSize: document.getElementById('selection-size'),
     buildAudio: document.getElementById('build-audio'),
     onlyNew: document.getElementById('only-new'),
@@ -1913,16 +1966,99 @@ export function renderReviewApp(): string {
     });
   }
 
-  function renderImportMode(llm, model) {
+  function renderImportMode(llm, model, provider) {
     els.importMode.innerHTML = llm
-      ? '当前使用 <strong>LLM</strong>（' + escapeHtml(model) + '）分析，生成通常需要 1–3 分钟。'
-      : '未配置 LLM，将使用<strong>启发式模式</strong>：速度快，但义项判断和中文释义会弱一些。';
+      ? '当前使用 <strong>' + escapeHtml(provider || 'LLM') + '</strong> · ' + escapeHtml(model) +
+        ' 分析，生成通常需要 1–3 分钟。'
+      : '未配置 LLM，将使用<strong>启发式模式</strong>：速度快，但义项判断和中文释义会弱一些。展开下方「模型设置」可填写自己的 API Key。';
+  }
+
+  function llmPreset(id) {
+    return LLM_PRESETS.find(function (provider) { return provider.id === id; }) ||
+      LLM_PRESETS[0];
+  }
+
+  function renderModelOptions(providerId, selectedModel) {
+    if (!els.llmModelOptions) return;
+    var preset = llmPreset(providerId);
+    els.llmModelOptions.innerHTML = '';
+    (preset.models || []).forEach(function (model) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'llm-model-option' + (model.id === selectedModel ? ' is-active' : '');
+      button.textContent = model.label;
+      button.title = model.description || model.id;
+      button.addEventListener('click', function () {
+        if (els.llmModel) els.llmModel.value = model.id;
+        renderModelOptions(providerId, model.id);
+      });
+      els.llmModelOptions.appendChild(button);
+    });
+  }
+
+  function setLlmStatus(status) {
+    if (!status) return;
+    if (els.llmProvider) {
+      els.llmProvider.value = status.provider || 'openai';
+      syncCustomSelect(els.llmProvider);
+    }
+    if (els.llmModel) els.llmModel.value = status.model || '';
+    renderModelOptions(status.provider || 'openai', status.model || '');
+    if (els.llmBaseUrl) els.llmBaseUrl.value = status.baseUrl || '';
+    if (els.llmApiKey) {
+      els.llmApiKey.value = '';
+      els.llmApiKey.placeholder = status.configured ? '已配置，留空保持不变' : 'sk-...';
+    }
+    if (els.llmState) {
+      els.llmState.textContent = status.configured
+        ? status.label + ' · ' + status.model
+        : '未配置';
+    }
+    if (!status.configured && els.llmSettings) els.llmSettings.open = true;
+  }
+
+  function loadLlmSettings() {
+    return api('/api/llm').then(function (result) {
+      setLlmStatus(result.status);
+      renderImportMode(result.status.configured, result.status.model, result.status.label);
+    }).catch(function (error) {
+      if (els.llmState) els.llmState.textContent = error.message;
+    });
+  }
+
+  function saveLlmSettings() {
+    if (!els.llmSave) return;
+    els.llmSave.disabled = true;
+    els.llmSave.textContent = '保存中…';
+    if (els.llmMessage) els.llmMessage.textContent = '正在保存…';
+    api('/api/llm', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: els.llmProvider ? els.llmProvider.value : 'openai',
+        apiKey: els.llmApiKey ? els.llmApiKey.value : '',
+        model: els.llmModel ? els.llmModel.value : '',
+        baseUrl: els.llmBaseUrl ? els.llmBaseUrl.value : ''
+      })
+    }).then(function (result) {
+      setLlmStatus(result.status);
+      renderImportMode(result.status.configured, result.status.model, result.status.label);
+      if (els.llmMessage) els.llmMessage.textContent = '已保存，接下来会使用 ' + result.status.label + ' · ' + result.status.model;
+      toast('模型设置已保存');
+      loadRecentImports();
+    }).catch(function (error) {
+      if (els.llmMessage) els.llmMessage.textContent = error.message;
+      toast('保存失败：' + error.message);
+    }).finally(function () {
+      els.llmSave.disabled = false;
+      els.llmSave.textContent = '保存模型设置';
+    });
   }
 
   function loadRecentImports() {
     api('/api/resources?limit=8').then(function (result) {
       state.resources = result.resources || [];
-      renderImportMode(result.llm, result.model);
+      renderImportMode(result.llm, result.model, result.provider);
       if (!state.resources.length) {
         els.recentImports.innerHTML = '<div class="empty" style="padding:26px"><strong>还没有导入材料</strong>从上面的文本、链接或 PDF 开始。</div>';
         return;
@@ -3183,6 +3319,24 @@ export function renderReviewApp(): string {
     }
   }
   initCustomSelects();
+  if (els.llmProvider) {
+    els.llmProvider.addEventListener('change', function () {
+      var preset = llmPreset(els.llmProvider.value);
+      if (preset) {
+        if (els.llmModel) els.llmModel.value = preset.model;
+        if (els.llmBaseUrl) els.llmBaseUrl.value = preset.baseUrl;
+        if (els.llmApiKey) els.llmApiKey.placeholder = '填写 ' + preset.label + ' 的 API Key';
+        renderModelOptions(preset.id, preset.model);
+      }
+    });
+  }
+  if (els.llmModel) {
+    els.llmModel.addEventListener('input', function () {
+      renderModelOptions(els.llmProvider ? els.llmProvider.value : 'openai', els.llmModel.value.trim());
+    });
+  }
+  if (els.llmSave) els.llmSave.addEventListener('click', saveLlmSettings);
+  loadLlmSettings();
   if (els.selectionSize) {
     try {
       var savedSize = localStorage.getItem('learn-selection-size');

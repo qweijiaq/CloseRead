@@ -318,6 +318,13 @@ describe('review html', () => {
     assert.ok(html.includes('id="selection-size"'))
     assert.ok(html.includes('data-value="5"'))
     assert.ok(html.includes('data-value="100"'))
+    assert.ok(html.includes('id="llm-settings"'))
+    assert.ok(html.includes('id="llm-provider"'))
+    assert.ok(html.includes('data-value="deepseek"'))
+    assert.ok(html.includes('data-value="glm"'))
+    assert.ok(html.includes('data-value="anthropic"'))
+    assert.ok(html.includes('data-value="google"'))
+    assert.ok(html.includes('id="llm-model-options"'))
     assert.ok(!html.includes('<select'))
   })
 

@@ -19,7 +19,7 @@ import { generateSentenceCard, sentenceIdentity } from '../analyze/sentence-card
 import { sentences } from '../analyze/tokenize.js'
 import { translateSentence } from '../analyze/sentence-translation.js'
 import { generateWordCard, enrichWordRelations } from '../analyze/word-card.js'
-import { config, ensureDirs, hasLlm, storePath } from '../config.js'
+import { config, ensureDirs, hasLlm, llmProviderOptions, llmStatus, saveLlmSettings, storePath } from '../config.js'
 import { buildWordGraph } from '../graph/build.js'
 import {
   articleSections,
@@ -677,6 +677,37 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     return
   }
 
+  if (method === 'GET' && url.pathname === '/api/llm') {
+    sendJson(response, 200, {
+      status: llmStatus(),
+      providers: llmProviderOptions.map((provider) => ({
+        id: provider.id,
+        label: provider.label,
+        api: provider.api,
+        baseUrl: provider.baseUrl,
+        model: provider.model,
+        models: provider.models,
+      })),
+    })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/llm') {
+    try {
+      const body = await readJson(request)
+      const status = saveLlmSettings({
+        provider: String(body.provider ?? ''),
+        ...(typeof body.apiKey === 'string' ? { apiKey: body.apiKey } : {}),
+        ...(typeof body.baseUrl === 'string' ? { baseUrl: body.baseUrl } : {}),
+        ...(typeof body.model === 'string' ? { model: body.model } : {}),
+      })
+      sendJson(response, 200, { ok: true, status })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   if (method === 'GET' && url.pathname === '/api/graph') {
     const threshold = Math.max(0, Math.min(10, Number(url.searchParams.get('threshold') ?? 1.5) || 1.5))
     const includeNegative = url.searchParams.get('negative') !== '0'
@@ -1099,6 +1130,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       resources: store.listResources().slice(0, limit).map((resource) => resourceView(resource, store)),
       llm: hasLlm(),
       model: config.llm.model,
+      provider: llmStatus().label,
     })
     return
   }
@@ -1618,7 +1650,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         body = renderPackEpub(exportPack)
         contentType = 'application/epub+zip'
       } else if (format === 'pdf') {
-        body = await renderPackPdf(exportPack, { density })
+        body = await renderPackPdf(exportPack, { density, wordLayout: 'catalog' })
         contentType = 'application/pdf'
       } else if (format === 'png') {
         const width = Math.max(640, Math.min(2400, Number(url.searchParams.get('width')) || 1200))

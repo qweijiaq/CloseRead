@@ -136,6 +136,13 @@ describe('pack export', () => {
     assert.ok(html.includes('grid-template-columns: repeat(auto-fit, minmax(68mm, 1fr))'))
   })
 
+  it('can move word cards into a dedicated print catalog', () => {
+    const html = renderPackExportHtml(makePack(), { density: 'compact', wordLayout: 'catalog' })
+    assert.ok(html.includes('class="vocab-section'))
+    assert.ok(html.includes('class="para-words vocab-grid"'))
+    assert.ok(html.includes('class="word-card'))
+  })
+
   it('builds a valid EPUB archive with mimetype first, OPF, nav and content', () => {
     const pack = makePack()
     packWordDerivation(pack)

@@ -30,6 +30,30 @@ async function request(body: Record<string, unknown>, signal?: AbortSignal): Pro
   })
 }
 
+async function requestAnthropic(
+  system: string,
+  user: string,
+  options: ChatOptions,
+): Promise<Response> {
+  const timeout = AbortSignal.timeout(180_000)
+  return fetch(`${config.llm.baseUrl}/messages`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': config.llm.apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: config.llm.model,
+      max_tokens: options.maxTokens ?? 4096,
+      temperature: options.temperature ?? 0.2,
+      system,
+      messages: [{ role: 'user', content: user }],
+    }),
+    signal: options.signal ? AbortSignal.any([timeout, options.signal]) : timeout,
+  })
+}
+
 function contentText(content: unknown): string {
   if (typeof content === 'string') return content
   if (Array.isArray(content)) {
@@ -58,6 +82,23 @@ export async function chatJson<T>(
   options: ChatOptions = {},
 ): Promise<T> {
   if (!config.llm.apiKey.trim()) throw new Error('No LLM API key configured.')
+
+  if (config.llm.provider === 'anthropic') {
+    const response = await requestAnthropic(system, user, options)
+    if (!response.ok) {
+      const detail = await response.text()
+      throw new Error(`Anthropic request failed (${response.status}): ${detail.slice(0, 500)}`)
+    }
+    const data = (await response.json()) as { content?: unknown }
+    const content = contentText(data.content)
+    if (!content.trim()) throw new Error('Anthropic returned an empty response.')
+    const parsed = schema.safeParse(parseJson(content))
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')
+      throw new Error(`Anthropic returned an invalid shape: ${issues}`)
+    }
+    return parsed.data
+  }
 
   const body: Record<string, unknown> = {
     model: config.llm.model,
