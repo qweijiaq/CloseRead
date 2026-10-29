@@ -203,8 +203,90 @@ function renderDerivationTree(graph: DerivationGraph): string {
   return `<div class="derivation-tree"><div class="derivation-caption">派生图 · 思维导图</div><ul>${root}</ul></div>`
 }
 
+const MINIMAL_EXPORT_CSS = `
+  :root { --ink: #1b1a17; --muted: #4d4a44; --line: rgba(27,26,23,.15); --paper: #faf9f6; --card: #fdfcf9; --rust: #1b1a17; --ochre: #6b5f51; --indigo: #3c4a55; }
+  body { background: var(--paper); font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif; line-height: 1.7; }
+  .sheet { max-width: 960px; padding: 44px 48px 64px; background: transparent; }
+  .cover { text-align: left; padding: 0 0 18px; border-bottom: 1px solid var(--ink); }
+  .kicker { color: var(--muted); font-family: "SF Mono", monospace; font-size: 10px; letter-spacing: .08em; }
+  .cover h1 { font-size: 32px; line-height: 1.25; margin: 10px 0 6px; }
+  .title-zh { color: var(--muted); font-size: 15px; }
+  .title-note { color: var(--muted); font-size: 12px; margin-top: 7px; }
+  .lead { max-width: none; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 15px; }
+  h2 { font-size: 20px; margin: 30px 0 10px; padding: 10px 0 0; border-top: 1px solid var(--line); border-bottom: 0; }
+  .preface { margin-top: 14px; }
+  .preface h3 { color: var(--muted); }
+  .preface p { font-size: 13px; }
+  .para { grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 18px 0; }
+  .para-no { font-size: 10px; }
+  .original { font-size: 16.5px; line-height: 1.8; }
+  .translation { color: var(--muted); font-size: 13px; line-height: 1.75; border-left: 1px solid var(--line); padding-left: 14px; }
+  .note { margin-top: 12px; padding: 2px 0 2px 14px; border-left: 1px solid var(--line); background: none; }
+  .note p { font-size: 12px; line-height: 1.65; }
+  .note-role { color: var(--muted); }
+  blockquote { border-left: 1px solid var(--line); }
+  .para-words { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 24px; align-items: start; }
+  .word-card { padding: 10px 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+  .para-words > .word-card:only-child { display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); column-gap: 24px; align-items: start; }
+  .para-words > .word-card:only-child > *:not(.word-head) { grid-column: 2; }
+  .para-words > .word-card:only-child > .word-head { grid-column: 1; grid-row: 1 / span 3; align-self: start; }
+  .word-lemma { font-size: 17px; }
+  .word-tag { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 1px; color: var(--muted); }
+  .chips span { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 1px; background: none; color: var(--muted); }
+  .derivation-tree { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+  .tree-node { border-radius: 2px; background: none; }
+  .tree-node.tree-center { background: none; border-color: var(--ink); }
+  .sentence-card { padding: 12px 0; margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+  .quote { border-left: 1px solid var(--line); }
+  .exercise { margin-top: 18px; }
+  .footer { border-top: 1px solid var(--line); }
+`
+
+const COMPACT_PRINT_CSS = `
+  @page { margin: 8mm; }
+  body { font-size: 9.2pt; line-height: 1.45; --rust: #1b1a16; --ochre: #6b5f51; --indigo: #3c4a55; }
+  .sheet { max-width: none; padding: 0; }
+  .cover { padding: 2mm 0 3mm; border-bottom-width: 1px; }
+  .cover h1 { font-size: 19pt; margin: 2mm 0 1mm; }
+  .title-zh { font-size: 10pt; }
+  .title-note, .kicker { font-size: 7.5pt; }
+  .lead { margin-top: 2mm; padding-top: 2mm; font-size: 9pt; }
+  h2 { font-size: 12pt; margin: 4mm 0 1.5mm; padding-bottom: 1mm; }
+  .preface { margin-top: 2mm; }
+  .preface p { font-size: 8pt; line-height: 1.5; margin-bottom: 1.2mm; }
+  .preface ul { font-size: 7.5pt; line-height: 1.45; }
+  .para { grid-template-columns: 6mm minmax(0, 1fr); gap: 2.5mm; padding: 2mm 0; }
+  .para-no { font-size: 7pt; padding-top: 1mm; }
+  .original { font-size: 9.2pt; line-height: 1.5; }
+  .translation { font-size: 8pt; line-height: 1.5; margin-top: 1mm; }
+  .note { margin-top: 1.2mm; padding: 1.5mm 2.5mm; }
+  .note p { font-size: 7.6pt; line-height: 1.45; margin: 0.8mm 0; }
+  blockquote { margin: 1mm 0; padding-left: 2mm; }
+  .para-words { margin-top: 1.5mm; display: grid; grid-template-columns: repeat(auto-fit, minmax(68mm, 1fr)); gap: 0 6mm; align-items: start; }
+  .word-card { padding: 2mm 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
+  .para-words > .word-card:only-child { display: grid; grid-template-columns: 38mm minmax(0, 1fr); column-gap: 4mm; align-items: start; }
+  .para-words > .word-card:only-child > *:not(.word-head) { grid-column: 2; }
+  .para-words > .word-card:only-child > .word-head { grid-column: 1; grid-row: 1 / span 3; align-self: start; }
+  .word-lemma { font-size: 12pt; }
+  .word-zh { font-size: 9pt; }
+  .word-def, .rel, .formation, .memory, .examples { font-size: 7.4pt; line-height: 1.45; }
+  .chips span { font-size: 7pt; padding: 0 1.5mm; }
+  .derivation-tree { padding: 1.2mm 1.8mm; margin-top: 1mm; }
+  .sentence-card { padding: 2mm; margin: 1.5mm 0; }
+  .sentence-card h3 { font-size: 11pt; }
+  .quote { font-size: 9pt; }
+  .chunks, .sentence-card p { font-size: 7.8pt; }
+  .exercise li { margin: 1.2mm 0; }
+  .footer { margin-top: 3mm; font-size: 7pt; }
+`
+
+export interface ExportHtmlOptions {
+  density?: 'comfortable' | 'compact'
+}
+
 /** A static, print-ready page: no scripts, no collapsed details, every card expanded. */
-export function renderPackExportHtml(pack: LearningPack): string {
+export function renderPackExportHtml(pack: LearningPack, options: ExportHtmlOptions = {}): string {
+  const density = options.density === 'compact' ? 'compact' : 'comfortable'
   const itemById = new Map(pack.items.map((item) => [item.id, item]))
   const wordItems = pack.items.filter((item) => item.type !== 'sentence')
   const sentenceItems = pack.items.filter((item) => item.type === 'sentence' && item.sentence)
@@ -446,7 +528,7 @@ export function renderPackExportHtml(pack: LearningPack): string {
   th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
   .footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
-  @page { margin: 12mm 12mm; }
+  @page { margin: ${density === 'compact' ? '8mm' : '12mm'}; }
   @media print {
     body { background: #fff; font-size: 13px; }
     .sheet { max-width: none; padding: 0; background: #fff; }
@@ -465,9 +547,11 @@ export function renderPackExportHtml(pack: LearningPack): string {
     h2 { margin-top: 20px; break-after: avoid; }
     .word-card, .sentence-card, .note, .exercise li, .derivation-tree { break-inside: auto; }
   }
+  ${MINIMAL_EXPORT_CSS}
+  ${density === 'compact' ? COMPACT_PRINT_CSS : ''}
 </style>
 </head>
-<body>
+<body class="${density === 'compact' ? 'density-compact' : ''}">
 <main class="sheet">
   <header class="cover export-block" ${blockAttrs('cover', '封面与导语', 'cover')}>
     <div class="kicker">${escapeXml(front?.section ?? 'INTENSIVE READING')} · ${pack.stats.wordCount} 词 · 精读约 ${packReadingMinutes(pack)} 分钟</div>
@@ -544,7 +628,7 @@ async function findEbookConvert(): Promise<string | undefined> {
 }
 
 /** Render the pack to PDF with local headless Chrome. */
-export async function renderPackPdf(pack: LearningPack): Promise<Uint8Array> {
+export async function renderPackPdf(pack: LearningPack, options: ExportHtmlOptions = {}): Promise<Uint8Array> {
   const chrome = findChrome()
   if (!chrome) {
     throw new Error('本机没有找到 Chrome/Chromium，暂时无法生成 PDF。可以先用浏览器打印页面保存为 PDF。')
@@ -553,7 +637,7 @@ export async function renderPackPdf(pack: LearningPack): Promise<Uint8Array> {
   const htmlPath = path.join(dir, 'pack.html')
   const pdfPath = path.join(dir, 'pack.pdf')
   try {
-    await fs.writeFile(htmlPath, renderPackExportHtml(pack), 'utf8')
+    await fs.writeFile(htmlPath, renderPackExportHtml(pack, options), 'utf8')
     await execFileAsync(
       chrome,
       [
@@ -751,29 +835,30 @@ function epubContent(pack: LearningPack): string {
 }
 
 function epubCss(): string {
-  return `body { font-family: "Songti SC", "Noto Serif SC", serif; line-height: 1.8; margin: 5%; color: #1c1a16; }
-h1 { font-size: 2em; line-height: 1.35; }
-h2 { margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: .3em; }
-h3 { font-size: 1.15em; }
-.title-page { text-align: center; margin: 2em 0 3em; }
-.kicker, .role { color: #b03a2e; font-size: .8em; letter-spacing: .08em; text-transform: uppercase; }
+  return `body { font-family: "Songti SC", "Noto Serif SC", serif; line-height: 1.75; margin: 5%; color: #1b1a17; }
+h1 { font-size: 2em; line-height: 1.3; margin: 0 0 .3em; }
+h2 { margin-top: 2em; border-top: 1px solid #d8d4ca; padding-top: .7em; }
+h3 { font-size: 1.1em; }
+.title-page { text-align: left; margin: 1em 0 2em; padding-bottom: 1em; border-bottom: 1px solid #1b1a17; }
+.kicker, .role { color: #6b5f51; font-size: .78em; letter-spacing: .06em; text-transform: uppercase; }
 .title-zh { color: #666; font-size: 1.05em; }
-.lead { font-style: italic; color: #444; }
-.translation { color: #555; border-left: 2px solid #ddd; padding-left: 1em; }
-.note { background: #f4efe3; border-left: 3px solid #a8732f; padding: .7em 1em; margin: 1em 0; color: #444; font-size: .92em; }
+.lead { color: #4d4a44; border-top: 1px solid #d8d4ca; padding-top: .8em; }
+.translation { color: #555; border-left: 1px solid #d8d4ca; padding-left: 1em; }
+.note { background: none; border-left: 1px solid #999; padding: .2em 0 .2em 1em; margin: 1em 0; color: #4d4a44; font-size: .92em; }
 .note blockquote { margin: .6em 0; font-style: italic; }
-.para { margin: 2em 0; }
-.para-no { color: #999; font-size: .75em; font-family: monospace; }
-.original { font-size: 1.05em; }
-.sentence { margin: 1.5em 0; }
-.quote { font-style: italic; border-left: 2px solid #b03a2e; padding-left: 1em; }
-.word { margin: 1.2em 0; }
+.para { margin: 1.8em 0; }
+.para-no { color: #888; font-size: .72em; font-family: monospace; }
+.original { font-size: 1.04em; line-height: 1.8; }
+.sentence { margin: 1.2em 0; border-top: 1px solid #e3dfd6; padding-top: .8em; }
+.quote { font-style: italic; border-left: 1px solid #999; padding-left: 1em; }
+.word { margin: 1em 0; border-top: 1px solid #e3dfd6; padding-top: .8em; }
 .word h3 { margin-bottom: .2em; }
 .zh { font-weight: bold; }
-.answer { color: #666; font-size: .9em; }
-.summary { color: #555; }
+.answer { color: #4d4a44; font-size: .92em; }
+.summary { color: #4d4a44; }
 `
 }
+
 
 /** Build a valid EPUB 3 archive from the pack. */
 export function renderPackEpub(pack: LearningPack): Uint8Array {

@@ -197,6 +197,7 @@ describe('pack html', () => {
     assert.ok(html.includes('data-export="html"'))
     assert.ok(html.includes('data-export="epub"'))
     assert.ok(html.includes('data-export="pdf"'))
+    assert.ok(html.includes('data-pdf-density="compact"'))
     assert.ok(html.includes('data-export="png"'))
     assert.ok(html.includes('data-export="mobi"'))
     assert.ok(html.includes('data-export="png-pages"'))
@@ -315,8 +316,9 @@ describe('review html', () => {
     assert.ok(html.includes('speechSynthesis'))
     assert.ok(html.includes('id="only-new"'))
     assert.ok(html.includes('id="selection-size"'))
-    assert.ok(html.includes('value="6"'))
-    assert.ok(html.includes('value="22"'))
+    assert.ok(html.includes('data-value="5"'))
+    assert.ok(html.includes('data-value="100"'))
+    assert.ok(!html.includes('<select'))
   })
 
   it('opens on a reading-first home and keeps review as a separate tab', () => {

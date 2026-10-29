@@ -1,3 +1,44 @@
+function escapeText(value: string): string {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function escapeAttr(value: string): string {
+  return escapeText(value).replace(/\n+/g, ' ')
+}
+
+interface CustomSelectOption {
+  value: string
+  label: string
+}
+
+function customSelectMarkup(
+  id: string,
+  value: string,
+  options: CustomSelectOption[],
+  className = '',
+): string {
+  const selected = options.find((option) => option.value === value) ?? options[0]
+  return `<div class="cselect ${className}" data-cselect>
+    <input type="hidden" id="${escapeAttr(id)}" value="${escapeAttr(selected?.value ?? '')}">
+    <button class="cselect-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+      <span class="cselect-label">${escapeText(selected?.label ?? '')}</span><span class="cselect-arrow">⌄</span>
+    </button>
+    <div class="cselect-menu" role="listbox" hidden>
+      ${options
+        .map(
+          (option) =>
+            `<button type="button" role="option" class="cselect-option${option.value === selected?.value ? ' is-selected' : ''}" data-value="${escapeAttr(option.value)}">${escapeText(option.label)}</button>`,
+        )
+        .join('')}
+    </div>
+  </div>`
+}
+
 export function renderReviewApp(): string {
   return `<!doctype html>
 <html lang="zh-CN">
@@ -225,7 +266,16 @@ export function renderReviewApp(): string {
   .import-mode { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
   .import-mode strong { color: var(--ink); }
   .selection-size { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; color: var(--muted); font-size: 12.5px; }
-  .selection-size select { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 9px; padding: 7px 10px; font: inherit; font-size: 12.5px; }
+  .cselect { position: relative; display: inline-flex; min-width: 0; }
+  .cselect-trigger { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 9px; padding: 7px 10px; font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+  .cselect-trigger:hover { border-color: var(--accent); }
+  .cselect-trigger[aria-expanded="true"] { border-color: var(--accent); }
+  .cselect-arrow { color: var(--muted); font-size: 10px; }
+  .cselect-menu { position: absolute; left: 0; top: calc(100% + 4px); z-index: 80; min-width: 100%; max-height: 240px; overflow: auto; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: 0 10px 30px rgba(28,26,22,.16); }
+  .cselect-option { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); text-align: left; padding: 7px 9px; border-radius: 6px; font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
+  .cselect-option:hover, .cselect-option.is-selected { background: var(--paper-2); color: var(--accent); }
+  .cselect-size .cselect-menu { min-width: 220px; }
+  .cselect-compact .cselect-trigger { padding: 6px 9px; font-size: 12px; }
   .selection-size small { color: var(--muted); font-size: 11.5px; }
   .audio-toggle { margin-bottom: 14px; }
   .queue-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--accent-soft); color: var(--accent); font-size: 12.5px; }
@@ -261,7 +311,8 @@ export function renderReviewApp(): string {
   .article-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(63,95,127,.12); }
   .article-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
   .article-tools .article-search { flex: 1 1 220px; width: auto; }
-  .article-tools select { border: 1px solid var(--line); background: #fffdf8; border-radius: 9px; padding: 8px 10px; font: inherit; font-size: 12.5px; color: var(--ink); }
+  .article-tools .cselect-trigger { padding: 8px 10px; font-size: 12.5px; }
+  .article-tools .cselect-menu { min-width: 150px; }
   .article-toggle { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
   .article-section { margin-left: 7px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 7px; }
   .article-row.hidden-article { opacity: .62; border-style: dashed; }
@@ -417,16 +468,16 @@ export function renderReviewApp(): string {
   <section class="view" id="view-graph">
     <div class="graph-controls">
       <input id="graph-search" type="search" placeholder="搜索词…">
-      <select id="graph-view-mode" autocomplete="off">
-        <option value="network">网络</option>
-        <option value="tree">词族树</option>
-        <option value="clusters">聚类</option>
-      </select>
-      <select id="graph-labels" autocomplete="off">
-        <option value="auto">标签：自动</option>
-        <option value="all">全部标签</option>
-        <option value="off">隐藏标签</option>
-      </select>
+      ${customSelectMarkup('graph-view-mode', 'network', [
+        { value: 'network', label: '网络' },
+        { value: 'tree', label: '词族树' },
+        { value: 'clusters', label: '聚类' },
+      ], 'cselect-compact')}
+      ${customSelectMarkup('graph-labels', 'auto', [
+        { value: 'auto', label: '标签：自动' },
+        { value: 'all', label: '全部标签' },
+        { value: 'off', label: '隐藏标签' },
+      ], 'cselect-compact')}
       <label class="graph-slider">阈值 <input id="graph-threshold" autocomplete="off" type="range" min="0.5" max="5" step="0.5" value="1.5"><span id="graph-threshold-value">1.5</span></label>
       <label class="article-toggle"><input type="checkbox" id="graph-negative" autocomplete="off" checked> 负关联</label>
       <label class="article-toggle"><input type="checkbox" id="graph-roots" autocomplete="off" checked> 词根边</label>
@@ -462,14 +513,19 @@ export function renderReviewApp(): string {
     <div class="import-mode" id="import-mode">检查分析模式…</div>
     <label class="selection-size">
       选词量
-      <select id="selection-size">
-        <option value="auto">自动（按文章推荐）</option>
-        <option value="6">少一点（约 6 个，适合水平较高）</option>
-        <option value="10">标准（约 10 个）</option>
-        <option value="16">多一点（约 16 个，适合水平较低）</option>
-        <option value="22">大量（约 22 个）</option>
-      </select>
-      <small>水平高可以选少一点，水平低可以选多一点；之后仍可在学习包反馈。</small>
+      ${customSelectMarkup(
+        'selection-size',
+        'auto',
+        [
+          { value: 'auto', label: '自动（原文词数 / 20）' },
+          ...Array.from({ length: 20 }, (_, index) => {
+            const count = (index + 1) * 5
+            return { value: String(count), label: `${count} 个` }
+          }),
+        ],
+        'cselect-size',
+      )}
+      <small>默认每 20 个原文词选 1 个，也可以按 5 个一档手动指定。</small>
     </label>
     <label class="article-toggle audio-toggle"><input type="checkbox" id="build-audio"> 生成音频（macOS）</label>
     <label class="article-toggle audio-toggle"><input type="checkbox" id="only-new"> 只选生词（已在词库的词不进入本包）</label>
@@ -599,6 +655,99 @@ export function renderReviewApp(): string {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function customSelectHtml(id, value, options, className) {
+    var selected = options.find(function (option) { return option.value === value; }) || options[0];
+    return '<div class="cselect ' + (className || '') + '" data-cselect>' +
+      '<input type="hidden" id="' + escapeHtml(id) + '" value="' + escapeHtml(selected ? selected.value : '') + '">' +
+      '<button class="cselect-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">' +
+        '<span class="cselect-label">' + escapeHtml(selected ? selected.label : '') + '</span><span class="cselect-arrow">⌄</span>' +
+      '</button>' +
+      '<div class="cselect-menu" role="listbox" hidden>' +
+        options.map(function (option) {
+          return '<button type="button" role="option" class="cselect-option' +
+            (selected && option.value === selected.value ? ' is-selected' : '') +
+            '" data-value="' + escapeHtml(option.value) + '">' + escapeHtml(option.label) + '</button>';
+        }).join('') +
+      '</div>' +
+    '</div>';
+  }
+
+  function syncCustomSelect(input) {
+    if (!input || !input.closest) return;
+    var wrap = input.closest('.cselect');
+    if (wrap && wrap._sync) wrap._sync();
+  }
+
+  function customSelectHasValue(input, value) {
+    if (!input || !input.closest) return false;
+    var wrap = input.closest('.cselect');
+    return Boolean(wrap && wrap.querySelector('.cselect-option[data-value="' + String(value).replace(/"/g, '\\"') + '"]'));
+  }
+
+  function initCustomSelects(root) {
+    (root || document).querySelectorAll('.cselect[data-cselect]').forEach(function (wrap) {
+      if (wrap.dataset.ready === '1') return;
+      wrap.dataset.ready = '1';
+      var input = wrap.querySelector('input[type="hidden"]');
+      var trigger = wrap.querySelector('.cselect-trigger');
+      var label = wrap.querySelector('.cselect-label');
+      var menu = wrap.querySelector('.cselect-menu');
+      if (!input || !trigger || !label || !menu) return;
+      function sync() {
+        var selected = menu.querySelector('.cselect-option[data-value="' + String(input.value).replace(/"/g, '\\"') + '"]');
+        label.textContent = selected ? selected.textContent : '';
+        menu.querySelectorAll('.cselect-option').forEach(function (option) {
+          option.classList.toggle('is-selected', option === selected);
+        });
+      }
+      function close() {
+        menu.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+      function open() {
+        document.querySelectorAll('.cselect-menu').forEach(function (other) {
+          if (other !== menu) {
+            other.hidden = true;
+            var otherTrigger = other.parentElement && other.parentElement.querySelector('.cselect-trigger');
+            if (otherTrigger) otherTrigger.setAttribute('aria-expanded', 'false');
+          }
+        });
+        menu.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+        var selected = menu.querySelector('.cselect-option.is-selected');
+        if (selected && selected.focus) selected.focus();
+      }
+      trigger.addEventListener('click', function (event) {
+        event.stopPropagation();
+        if (menu.hidden) open(); else close();
+      });
+      menu.addEventListener('click', function (event) {
+        event.stopPropagation();
+        var option = event.target.closest ? event.target.closest('.cselect-option') : null;
+        if (!option) return;
+        input.value = option.getAttribute('data-value') || '';
+        sync();
+        close();
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+      trigger.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') close();
+        if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          open();
+        }
+      });
+      menu.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { close(); trigger.focus(); }
+      });
+      document.addEventListener('click', function (event) {
+        if (!wrap.contains(event.target)) close();
+      });
+      wrap._sync = sync;
+      sync();
+    });
   }
 
   function toast(message) {
@@ -1706,24 +1855,22 @@ export function renderReviewApp(): string {
       if (article.section && sections.indexOf(article.section) === -1) sections.push(article.section);
     });
 
+    var sectionOptions = [{ value: '', label: '全部栏目' }].concat(sections.map(function (section) {
+      return { value: section, label: section };
+    }));
     var toolbar = '<div class="article-tools">' +
       '<input class="article-search" id="article-search" type="search" placeholder="筛选文章标题…">' +
-      (sections.length
-        ? '<select id="article-section"><option value="">全部栏目</option>' +
-          sections.map(function (section) {
-            return '<option value="' + escapeHtml(section) + '">' + escapeHtml(section) + '</option>';
-          }).join('') + '</select>'
-        : '') +
-      '<select id="article-sort">' +
-        '<option value="default">默认顺序</option>' +
-        '<option value="short">短到长</option>' +
-        '<option value="long">长到短</option>' +
-      '</select>' +
-      '<select id="article-status">' +
-        '<option value="">全部状态</option>' +
-        '<option value="new">未生成</option>' +
-        '<option value="done">已生成</option>' +
-      '</select>' +
+      (sections.length ? customSelectHtml('article-section', '', sectionOptions, 'cselect-article') : '') +
+      customSelectHtml('article-sort', 'default', [
+        { value: 'default', label: '默认顺序' },
+        { value: 'short', label: '短到长' },
+        { value: 'long', label: '长到短' }
+      ], 'cselect-article') +
+      customSelectHtml('article-status', '', [
+        { value: '', label: '全部状态' },
+        { value: 'new', label: '未生成' },
+        { value: 'done', label: '已生成' }
+      ], 'cselect-article') +
       (hiddenArticles.length
         ? '<label class="article-toggle"><input type="checkbox" id="show-hidden"> 显示被过滤的 ' +
           hiddenArticles.length + ' 项</label>'
@@ -1742,6 +1889,7 @@ export function renderReviewApp(): string {
         '<div class="article-list" id="article-list"></div>' +
       '</div>';
 
+    initCustomSelects(els.importResult);
     ['article-search', 'article-section', 'article-sort', 'article-status', 'show-hidden'].forEach(function (id) {
       var element = document.getElementById(id);
       if (element) element.addEventListener('input', renderArticleRows);
@@ -2334,6 +2482,8 @@ export function renderReviewApp(): string {
     els.graphLabels.value = saved.labels && ['auto', 'all', 'off'].indexOf(saved.labels) !== -1
       ? saved.labels
       : defaults.labels;
+    syncCustomSelect(els.graphViewMode);
+    syncCustomSelect(els.graphLabels);
     els.graphThreshold.value = saved.threshold || defaults.threshold;
     els.graphNegative.checked = typeof saved.negative === 'boolean' ? saved.negative : defaults.negative;
     els.graphRoots.checked = typeof saved.roots === 'boolean' ? saved.roots : defaults.roots;
@@ -2649,6 +2799,7 @@ export function renderReviewApp(): string {
 
   function showNodeInNetwork(id) {
     els.graphViewMode.value = 'network';
+    syncCustomSelect(els.graphViewMode);
     saveGraphSettings();
     renderGraph();
     selectGraphNode(id);
@@ -3031,11 +3182,13 @@ export function renderReviewApp(): string {
       openArticleList(state.importResource, state.importArticle);
     }
   }
+  initCustomSelects();
   if (els.selectionSize) {
     try {
       var savedSize = localStorage.getItem('learn-selection-size');
-      if (savedSize && [...els.selectionSize.options].some(function (option) { return option.value === savedSize; })) {
+      if (savedSize && customSelectHasValue(els.selectionSize, savedSize)) {
         els.selectionSize.value = savedSize;
+        syncCustomSelect(els.selectionSize);
       }
     } catch (error) {}
     els.selectionSize.addEventListener('change', function () {

@@ -72,7 +72,7 @@ Build options:
 
 | Option | Meaning |
 | --- | --- |
-| `--limit <n\|auto>` | Item count. `auto` (default) uses article length, CEFR, your known-word ratio and pack feedback to suggest 4–20 items; an explicit number forces that count |
+| `--limit <n\|auto>` | Item count. `auto` (default) selects roughly one item per 20 source words, then applies pack feedback; an explicit number from 5 to 100 forces that count |
 | `--no-llm` | Force heuristic mode even when an API key exists |
 | `--no-zh` | Skip the free Chinese definitions |
 | `--zh-context` | Also translate context sentences (uses more translation quota) |
@@ -95,7 +95,7 @@ packs/<resource-id>/
   notes.md        extraction notes and fallbacks
 ```
 
-The reader puts each source paragraph next to its Chinese translation. Vocabulary cards for a paragraph are collapsed under **本段重点词 N 个**, so the first pass stays focused on the text; the vocabulary table links back to the paragraph, and discussion questions include reference answers. Each paragraph has a numbered marker for **已读**, and the hero has a reading progress bar and **精读完成** button. Progress is stored in `reading.json` next to the pack and is rendered by the server with the current template, so older packs pick up new reading controls without a rebuild. The layout is responsive: two columns on desktop, stacked on mobile. The home dashboard shows cumulative reading stats (articles finished, paragraphs read, sentence cards, due count) and recommends an in-progress article first, then a built-but-unread pack, before suggesting an unbuilt article from the current resource.
+The reader puts each source paragraph next to its Chinese translation. Before the first paragraph, a **本篇学习要点** block previews up to five cards and grammar points drawn from the pack, so the first pass has a purpose. Vocabulary cards for a paragraph are collapsed under **本段重点词 N 个**, so the first pass stays focused on the text; the vocabulary table links back to the paragraph, and discussion questions include reference answers. Each paragraph has a numbered marker for **已读**, and the hero has a reading progress bar and **精读完成** button. Progress is stored in `reading.json` next to the pack and is rendered by the server with the current template, so older packs pick up new reading controls without a rebuild. The layout is responsive: two columns on desktop, stacked on mobile. The home dashboard shows cumulative reading stats (articles finished, paragraphs read, sentence cards, due count) and recommends an in-progress article first, then a built-but-unread pack, before suggesting an unbuilt article from the current resource.
 
 **逐段精读笔记** add a paragraph-level annotation card: the paragraph's role (背景 / 论点 / 例证 / 转折 / 结论), a Chinese summary, one key sentence with a structural note, a grammar point, discourse connectors, optional background, and a reflection question. New packs generate these notes during the reading pass; existing packs get a **补齐导读与笔记** button that fills missing notes, title/summary translations and the compressed reading guide. The reading section also has an **INTENSIVE READING** overview (paragraphs, sentences, long sentences, key words), a clickable **文章结构地图**, and a **隐藏笔记 / 显示笔记** toggle that persists locally. If a styled editorial exists, **精读导读** is a compact LLM-compressed version: it keeps the hook, groups key expressions by their job in the argument, and ends with a reading strategy, without repeating full word-card definitions or paragraph notes. Until that guide is generated, a deterministic fallback keeps the hook and builds a compact expression thread from the cards. The complete editorial remains in the Markdown export.
 
@@ -111,7 +111,7 @@ Each word card has a **发散** action. It opens an AI expansion dialog with wor
 
 ### Adaptive selection
 
-By default a pack suggests its own size. A 1,000-word article gets roughly 10–12 items; a short piece gets fewer; a C1/C2 text or a library with many known words nudges the count up. The split is about 70% **core** and 30% **bonus**:
+By default a pack suggests its own size: roughly one item per 20 source words. A 1,000-word article therefore suggests about 50 items; the count is capped at 100 and the **词太多 / 词太少** feedback can nudge it. The split is about 70% **core** and 30% **bonus**:
 
 - core items enter the spaced-repetition queue
 - bonus items are shown in the pack with a **Bonus** badge but are not queued
@@ -120,7 +120,7 @@ By default a pack suggests its own size. A 1,000-word article gets roughly 10–
 
 The LLM extraction asks for a `valueScore` on each candidate and keeps the highest-scoring ones; heuristic mode uses its frequency/part-of-speech ranking instead. Words marked **known** in the library are passed to the selector as an exclusion list, filtered again after extraction, and shown in the pack as “已掌握” rather than being queued again. Words already in the library but still being learned are passed as a “prefer new items” hint; if one is selected it is shown with **已在词库** and kept as Bonus, so it never re-enters review as a fresh card. The automatic count uses the article's own known-word ratio, not just the global library ratio.
 
-A pack's **词太多 / 词太少** buttons adjust a persisted selection bias (-5 to +5), which changes the automatic count for later builds; the 选词说明 line reports the adjustment. The import/build panel also has an explicit **选词量** selector: automatic, about 6 items for stronger readers, about 10 as standard, about 16, or about 22 for readers who want more. Removing a word twice from a pack marks it known and records negative word feedback; a word removed repeatedly is added to the selector's exclusion list. The build UI also has a **只选生词** checkbox that excludes every word already in the library for that pack.
+A pack's **词太多 / 词太少** buttons adjust a persisted selection bias (-5 to +5), which changes the automatic count for later builds; the 选词说明 line reports the adjustment. The import/build panel also has an explicit **选词量** selector with a custom dropdown: automatic (one item per 20 source words) or a manual count in steps of 5 from 5 to 100. Removing a word twice from a pack marks it known and records negative word feedback; a word removed repeatedly is added to the selector's exclusion list. The build UI also has a **只选生词** checkbox that excludes every word already in the library for that pack.
 
 ### Sentence cards
 
@@ -134,12 +134,14 @@ The pack's **导出** menu offers:
 
 - **网页 HTML**: a dedicated static reading document, not a screenshot of the interactive page. All notes, word cards (including their AI derivation trees and relation/formation details), sentence cards, vocabulary and exercise answers are expanded; scripts, buttons, collapsed `<details>` and editing controls are absent.
 - **EPUB**: a valid EPUB 3 archive containing the title/lead translations, paragraph translations and notes, sentence cards, vocabulary and exercises, including available exercise translations.
-- **PDF**: generated with local headless Chrome; if Chrome is missing, the UI falls back to the browser's print dialog so the page can still be saved as PDF
+- **PDF**: generated with local headless Chrome in two densities. **舒适** keeps the screen layout; **紧凑** uses 8mm margins, 9.2pt body text, tighter spacing and auto-fit word-card columns (a single card spans the row) for printing. On the sample article this reduced the PDF from 30 to 18 pages. If Chrome is missing, the UI falls back to the browser's print dialog so the page can still be saved as PDF
 - **PNG 长图**: one long PNG of the entire static document, with 900px (phone), 1200px (standard) and 1800px (2× high-resolution) options, useful for notes or sharing
 - **PNG 分图**: AI groups the export into several page images at logical block boundaries (cover, guide, paragraphs, sentence cards, word cards, exercises), then downloads them as a ZIP with a `pages.txt` manifest. Blocks are never cut in the middle; pages taller than the target are split only between modules, and a deterministic height-based plan is used when the AI plan is unavailable or invalid.
 - **MOBI**: generated through Calibre's `ebook-convert` when Calibre is installed; otherwise the UI explains that EPUB can be downloaded and converted locally
 
 Before any export, the backend fills missing word derivations, reflection-question answers and exercise translations so the exported document is complete. Cached results make later exports fast. During a long export an inline progress panel shows the chosen format and elapsed seconds until the download starts.
+
+All export formats share an **导出词数** selector. It offers 5, 10, 15 and so on up to the pack's word count; choosing a limit asks the LLM to rank the pack's word cards and keep the most useful phrases, senses and contextual words. Sentence cards and the reading text are unaffected, so a 5-word export is a smaller vocabulary section rather than a shorter article. When the LLM is unavailable, a core-first ranking is used.
 
 Exercises cache their Chinese prompt and answer translations when opened: cloze prompts show the translated blank sentence, comprehension/discussion questions show the translated question, and sentence answers show their translation.
 

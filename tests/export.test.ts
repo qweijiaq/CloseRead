@@ -129,6 +129,13 @@ describe('pack export', () => {
     assert.ok(!html.includes('<button'))
   })
 
+  it('renders a compact print variant with tighter page rules', () => {
+    const html = renderPackExportHtml(makePack(), { density: 'compact' })
+    assert.ok(html.includes('density-compact'))
+    assert.ok(html.includes('@page { margin: 8mm; }'))
+    assert.ok(html.includes('grid-template-columns: repeat(auto-fit, minmax(68mm, 1fr))'))
+  })
+
   it('builds a valid EPUB archive with mimetype first, OPF, nav and content', () => {
     const pack = makePack()
     packWordDerivation(pack)

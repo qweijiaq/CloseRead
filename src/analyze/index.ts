@@ -47,10 +47,8 @@ export function suggestSelection(
 ): SelectionMetadata {
   const wordCount = resource.wordCount || resource.text.split(/\s+/).filter(Boolean).length
   const difficulty = estimateDifficulty(resource.text)
-  const base = Math.min(14, Math.max(7, Math.round(wordCount / 90)))
-  const cefrAdjust = difficulty.cefr === 'C2' ? 2 : difficulty.cefr === 'C1' ? 1 : difficulty.cefr === 'B1' ? -1 : 0
+  const base = Math.max(5, Math.min(100, Math.round(wordCount / 20)))
   const known = options.knownRatio ?? 0
-  const knownAdjust = known > 0.65 ? 1 : known > 0 && known < 0.25 ? -1 : 0
   const bias = Math.max(-5, Math.min(5, Math.round(options.selectionBias ?? 0)))
   const biasAdjust = bias === 0 ? 0 : Math.max(-4, Math.min(5, bias))
 
@@ -67,7 +65,7 @@ export function suggestSelection(
     }
   }
 
-  const recommended = Math.max(4, Math.min(20, base + cefrAdjust + knownAdjust + biasAdjust))
+  const recommended = Math.max(5, Math.min(100, base + biasAdjust))
   const knownNote = known > 0 ? `，已知词约占 ${Math.round(known * 100)}%` : ''
   const biasNote =
     bias === 0 ? '' : `，按你的反馈${bias > 0 ? '增加' : '减少'} ${Math.abs(biasAdjust)} 项`
@@ -78,7 +76,7 @@ export function suggestSelection(
     bonus: 0,
     wordCount,
     cefr: difficulty.cefr,
-    reason: `原文 ${wordCount} 词，难度 ${difficulty.cefr}${knownNote}${biasNote}；按每天 20–25 分钟建议 ${recommended} 项。`,
+    reason: `原文 ${wordCount} 词，按每 20 词选 1 个建议 ${recommended} 项${knownNote}${biasNote}。`,
   }
 }
 

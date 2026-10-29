@@ -30,16 +30,17 @@ describe('adaptive selection', () => {
     const short = suggestSelection(makeResource(300), { limit: 'auto' })
     const long = suggestSelection(makeResource(2500), { limit: 'auto' })
     assert.equal(short.mode, 'auto')
-    assert.ok(short.recommended >= 6 && short.recommended <= 15)
-    assert.ok(long.recommended >= short.recommended)
-    assert.ok(long.recommended <= 15)
+    assert.equal(short.recommended, 15)
+    assert.equal(long.recommended, 100)
+    assert.equal(suggestSelection(makeResource(1037), { limit: 'auto' }).recommended, 52)
     assert.match(long.reason, /2500 词/)
+    assert.match(long.reason, /每 20 词选 1 个/)
   })
 
-  it('tunes the count with the library known ratio', () => {
+  it('keeps the default count independent of the known-word ratio', () => {
     const low = suggestSelection(makeResource(900), { limit: 'auto', knownRatio: 0.05 })
     const high = suggestSelection(makeResource(900), { limit: 'auto', knownRatio: 0.9 })
-    assert.ok(high.recommended >= low.recommended)
+    assert.equal(high.recommended, low.recommended)
   })
 
   it('applies pack feedback to the automatic count', () => {
@@ -52,6 +53,7 @@ describe('adaptive selection', () => {
     assert.match(less.reason, /减少 3 项/)
 
     const extreme = suggestSelection(makeResource(900), { limit: 'auto', selectionBias: 99 })
-    assert.ok(extreme.recommended <= 20)
+    assert.equal(base.recommended, 45)
+    assert.ok(extreme.recommended <= 100)
   })
 })

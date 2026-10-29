@@ -12,6 +12,7 @@ import { detectBodyLead, generateFrontMatter } from '../analyze/reading-frontmat
 import { generateReadingGuide } from '../analyze/reading-guide.js'
 import { editFrontMatterText, editParagraphText } from '../analyze/reading-edit.js'
 import { answerReadingQuestion } from '../analyze/note-answer.js'
+import { filterPackForExport, selectExportWords } from '../analyze/export-words.js'
 import { translateExercise } from '../analyze/exercise-translation.js'
 import type { ExerciseKind } from '../analyze/exercise-translation.js'
 import { generateSentenceCard, sentenceIdentity } from '../analyze/sentence-card.js'
@@ -1593,37 +1594,48 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       return
     }
     const format = exportMatch[2] as 'html' | 'epub' | 'pdf' | 'mobi' | 'png' | 'png-pages'
+    const density = url.searchParams.get('density') === 'compact' ? 'compact' : 'comfortable'
+    const rawWords = Number(url.searchParams.get('words'))
+    const requestedWords =
+      Number.isInteger(rawWords) && rawWords >= 5 ? Math.min(100, Math.round(rawWords / 5) * 5) : undefined
     try {
       const contents = await loadPack(pack.dir)
       const prepared = await preparePackForExport(contents)
       if (prepared.changed > 0) await savePackFiles(contents, pack.dir)
+      let exportPack = contents
+      let selectedCount: number | undefined
+      if (requestedWords) {
+        const selected = await selectExportWords(contents, requestedWords)
+        exportPack = filterPackForExport(contents, selected)
+        selectedCount = selected.filter((item) => item.type !== 'sentence').length
+      }
       let body: Uint8Array
       let contentType: string
       if (format === 'html') {
-        body = Buffer.from(renderPackExportHtml(contents), 'utf8')
+        body = Buffer.from(renderPackExportHtml(exportPack), 'utf8')
         contentType = 'text/html; charset=utf-8'
       } else if (format === 'epub') {
-        body = renderPackEpub(contents)
+        body = renderPackEpub(exportPack)
         contentType = 'application/epub+zip'
       } else if (format === 'pdf') {
-        body = await renderPackPdf(contents)
+        body = await renderPackPdf(exportPack, { density })
         contentType = 'application/pdf'
       } else if (format === 'png') {
         const width = Math.max(640, Math.min(2400, Number(url.searchParams.get('width')) || 1200))
         const scale = Math.max(1, Math.min(3, Number(url.searchParams.get('scale')) || 1))
-        body = await renderPackPng(contents, { width, scale })
+        body = await renderPackPng(exportPack, { width, scale })
         contentType = 'image/png'
       } else if (format === 'png-pages') {
         const width = Math.max(640, Math.min(1600, Number(url.searchParams.get('width')) || 900))
         const maxHeight = Math.max(2400, Math.min(12000, Number(url.searchParams.get('maxHeight')) || 5000))
-        body = await renderPackPngPages(contents, { width, maxHeight })
+        body = await renderPackPngPages(exportPack, { width, maxHeight })
         contentType = 'application/zip'
       } else {
-        body = await renderPackMobi(contents)
+        body = await renderPackMobi(exportPack)
         contentType = 'application/octet-stream'
       }
       const extension = format === 'png-pages' ? 'zip' : format
-      let name = exportFileName(contents, extension)
+      let name = exportFileName(exportPack, extension)
       if (format === 'png') {
         const width = Math.max(640, Math.min(2400, Number(url.searchParams.get('width')) || 1200))
         const scale = Math.max(1, Math.min(3, Number(url.searchParams.get('scale')) || 1))
@@ -1631,11 +1643,16 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
           name = name.replace(/\.png$/i, '') + `-${width}w${scale > 1 ? `-${scale}x` : ''}.png`
         }
       }
+      const countSuffix = selectedCount ? `-${selectedCount}w` : ''
+      const densitySuffix = format === 'pdf' && density === 'compact' ? '-compact' : ''
+      if (countSuffix) name = name.replace(/(\.[^.]+)$/, `${countSuffix}$1`)
+      if (densitySuffix) name = name.replace(/(\.[^.]+)$/, `${densitySuffix}$1`)
       response.writeHead(200, {
         'content-type': contentType,
         'content-length': String(body.length),
         'cache-control': 'no-store',
-        'content-disposition': `attachment; filename="${pack.id}.${extension}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+        ...(selectedCount ? { 'x-export-words': String(selectedCount) } : {}),
+        'content-disposition': `attachment; filename="${pack.id}${countSuffix}${densitySuffix}.${extension}"; filename*=UTF-8''${encodeURIComponent(name)}`,
       })
       response.end(body)
     } catch (error) {
