@@ -2,7 +2,8 @@ import { marked } from 'marked'
 
 import { detectBodyLead } from '../analyze/reading-frontmatter.js'
 import { sentences } from '../analyze/tokenize.js'
-import type { LearningItem, LearningPack, PackAudio, ParagraphNote } from '../types.js'
+import type { LearningItem, LearningPack, PackAudio, ParagraphNote, SentenceCardData, SentenceRewrite } from '../types.js'
+import { collectGames } from './games.js'
 import { packReadingMinutes } from './reading-time.js'
 import { readingGuideMarkdown } from './reading-guide.js'
 import { buildStudyPoints } from './study-points.js'
@@ -97,6 +98,7 @@ function renderSentenceItem(item: LearningItem): string {
           ${item.cefr ? `<span class="tag">${escapeHtml(item.cefr)}</span>` : ''}
         </div>
         <div class="item-actions">
+          ${sentence.rewrites?.length ? '' : `<button class="rewrite" data-rewrite-sentence="${escapeAttribute(item.id)}" title="同一句的三种说法" aria-label="换一种说法">换一种说法</button>`}
           <button class="star" data-favorite="${escapeAttribute(item.id)}" title="收藏" aria-label="收藏">★</button>
           <button class="remove" data-remove="${escapeAttribute(item.id)}" title="从学习包移除并标记为已掌握" aria-label="移除">×</button>
         </div>
@@ -124,6 +126,7 @@ function renderSentenceItem(item: LearningItem): string {
               .join('')}</ul>`
           : ''
       }
+      ${sentence.rewrites?.length ? renderSentenceRewrites(sentence.rewrites) : ''}
       ${sentence.why ? `<div class="memory">${escapeHtml(sentence.why)}</div>` : ''}
     </div>
   `
@@ -163,6 +166,30 @@ function buildFocusData(pack: LearningPack) {
   })
 }
 
+function renderWordStory(story: NonNullable<LearningItem['wordStory']>): string {
+  return `<details class="word-story"><summary>词源小传</summary>
+    <p>${escapeHtml(story.origin)}</p>
+    ${story.roots ? `<p class="word-story-line"><b>词根</b>${escapeHtml(story.roots)}</p>` : ''}
+    ${story.semanticShift ? `<p class="word-story-line"><b>词义变化</b>${escapeHtml(story.semanticShift)}</p>` : ''}
+    ${story.cognates.length ? `<p class="word-story-line"><b>同源词</b>${story.cognates.map(escapeHtml).join(' · ')}</p>` : ''}
+    ${story.confusables.length ? `<p class="word-story-line"><b>易混</b>${story.confusables.map(escapeHtml).join(' · ')}</p>` : ''}
+    ${story.hook ? `<p class="word-story-line"><b>记忆钩子</b>${escapeHtml(story.hook)}</p>` : ''}
+    ${story.caveat ? `<p class="word-story-caveat">${escapeHtml(story.caveat)}</p>` : ''}
+  </details>`
+}
+
+function renderSentenceRewrites(rewrites: SentenceRewrite[]): string {
+  const labels: Record<string, string> = { formal: '正式', casual: '口语', punchy: '简短有力' }
+  return `<details class="sentence-rewrites"><summary>一句三写</summary>
+    <ul>${rewrites
+      .map(
+        (rewrite) =>
+          `<li><b>${escapeHtml(labels[rewrite.register] ?? rewrite.register)}</b><span>${escapeHtml(rewrite.text)}</span><i>${escapeHtml(rewrite.note)}</i></li>`,
+      )
+      .join('')}</ul>
+  </details>`
+}
+
 function renderCompactItem(item: LearningItem, audio: PackAudio): string {
   if (item.type === 'sentence' && item.sentence) return renderSentenceItem(item)
   const examples = item.examples.filter((example) => example.origin !== 'source').slice(0, 3)
@@ -180,6 +207,8 @@ function renderCompactItem(item: LearningItem, audio: PackAudio): string {
         </div>
         <div class="item-actions">
           ${item.tier === 'bonus' && item.libraryState !== 'known' ? `<button class="adopt" data-adopt="${escapeAttribute(item.id)}">加入复习</button>` : ''}
+          <button class="practice" data-practice-word="${escapeAttribute(item.id)}" title="用这个词造句" aria-label="造句">造句</button>
+          <button class="story" data-word-story="${escapeAttribute(item.id)}" title="词源小传" aria-label="词源小传">词源</button>
           <button class="expand" data-expand-word="${escapeAttribute(item.id)}" title="AI 发散相关词" aria-label="发散相关词">发散</button>
           <button class="star" data-favorite="${escapeAttribute(item.id)}" title="收藏" aria-label="收藏">★</button>
           <button class="remove" data-remove="${escapeAttribute(item.id)}" title="从学习包移除并标记为已掌握" aria-label="移除">×</button>
@@ -204,6 +233,7 @@ function renderCompactItem(item: LearningItem, audio: PackAudio): string {
           : ''
       }
       ${item.memoryHook ? `<div class="memory">记忆钩子：${escapeHtml(item.memoryHook)}</div>` : ''}
+      ${item.wordStory ? renderWordStory(item.wordStory) : ''}
       ${item.notes ? `<div class="note">${escapeHtml(item.notes)}</div>` : ''}
       ${audioPath ? `<audio controls preload="none" src="${escapeAttribute(audioPath)}"></audio>` : ''}
     </div>
@@ -532,6 +562,7 @@ export function renderHtml(
           <button class="focus-tool primary" id="output-save" type="button">保存输出</button>
           <span class="output-status" id="output-status"></span>
         </div>
+        <div class="output-feedback" id="output-feedback" hidden></div>
       </section>`
     : ''
   const wordsAudio = audio.words
@@ -555,6 +586,13 @@ export function renderHtml(
   const heroLeadNote = pack.frontMatter?.leadNote?.trim() ?? ''
   const heroSection = pack.frontMatter?.section?.trim() ?? ''
   const readingMinutes = packReadingMinutes(pack)
+  const games = collectGames(pack.items)
+  const hasGames = games.sentences.length > 0 || games.words.length > 0
+  const microEligible = pack.items.filter((item) => item.type !== 'sentence' && item.lemma.trim()).length >= 3
+  const theaterTargets = pack.items
+    .filter((item) => item.type !== 'sentence')
+    .slice(0, 6)
+    .map((item) => ({ lemma: item.lemma, meaning: item.definitionZh ?? item.sense }))
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -1096,7 +1134,7 @@ export function renderHtml(
   .note-form label:nth-child(n+4) { grid-column: 1 / -1; }
   .note-form input:focus, .note-form textarea:focus { border-color: var(--cinnabar); }
   .note-form label:first-child { grid-column: 1 / -1; }
-  body.word-modal-open, body.note-modal-open { overflow: hidden; }
+  body.word-modal-open, body.note-modal-open, body.practice-modal-open, body.theater-modal-open, body.game-modal-open, body.micro-modal-open, body.audio-modal-open { overflow: hidden; }
   .export-mode .note-modal { display: none !important; }
   .word-modal-card { width: min(720px, 100%); max-height: 82vh; overflow: auto; background: var(--card); border-radius: 16px; box-shadow: 0 20px 60px rgba(28,26,22,.25); }
   .word-modal-bar { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; background: var(--card); border-bottom: 1px solid var(--line); color: var(--ink-45); font-size: 12px; }
@@ -1264,8 +1302,8 @@ export function renderHtml(
   .item-zh { font-size: 13.5px; }
   .item-def { font-size: 12px; }
   .item-actions { gap: 2px; }
-  .item-actions .expand, .item-actions .adopt, .item-actions .star, .item-actions .remove { border: 0; border-radius: 0; background: none; padding: 0 3px; color: var(--ink-45); font-size: 11px; }
-  .item-actions .expand:hover, .item-actions .adopt:hover, .item-actions .star:hover, .item-actions .remove:hover { color: var(--ink); border: 0; background: none; }
+  .item-actions .expand, .item-actions .adopt, .item-actions .practice, .item-actions .story, .item-actions .rewrite, .item-actions .star, .item-actions .remove { border: 0; border-radius: 0; background: none; padding: 0 3px; color: var(--ink-45); font-size: 11px; }
+  .item-actions .expand:hover, .item-actions .adopt:hover, .item-actions .practice:hover, .item-actions .story:hover, .item-actions .rewrite:hover, .item-actions .star:hover, .item-actions .remove:hover { color: var(--ink); border: 0; background: none; }
   .item-actions .star.active { color: var(--ink); }
   .tag, .tag.bonus, .tag.known, .tag.stale, .tag.sentence {
     border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 1px;
@@ -1274,6 +1312,163 @@ export function renderHtml(
   .chip, .form-chip { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 1px; background: none; color: var(--ink-70); }
   .relations { gap: 14px; }
   .memory { color: var(--ink-70); }
+  .practice-modal { position: fixed; inset: 0; z-index: 95; background: rgba(28,26,22,.38); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .practice-modal[hidden] { display: none; }
+  .practice-card { width: min(720px, 100%); max-height: 86vh; overflow: auto; background: var(--card); border: 1px solid var(--line-strong); border-radius: 2px; box-shadow: 0 20px 60px rgba(28,26,22,.18); }
+  .practice-body { padding: 18px 22px 24px; }
+  .practice-word { font-family: var(--serif); font-size: 22px; color: var(--ink); }
+  .practice-word span { margin-left: 10px; color: var(--ink-45); font-family: var(--sans); font-size: 13px; }
+  .practice-scenes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
+  .practice-scene { border: 1px solid var(--line); background: transparent; color: var(--ink-45); border-radius: 2px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .practice-scene:hover, .practice-scene.active { border-color: var(--ink); color: var(--ink); }
+  .practice-body textarea { width: 100%; min-height: 100px; margin-top: 12px; border: 1px solid var(--line); border-radius: 2px; background: transparent; padding: 10px 12px; font: inherit; font-size: 14px; line-height: 1.7; resize: vertical; outline: none; }
+  .practice-body textarea:focus { border-color: var(--ink); }
+  .practice-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .practice-status { color: var(--ink-45); font-size: 12px; }
+  .practice-result { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .practice-result p { margin: 8px 0; color: var(--ink-70); font-size: 13px; line-height: 1.7; }
+  .practice-result p b { color: var(--ink); font-weight: 600; }
+  .practice-result blockquote { margin: 9px 0; padding: 8px 12px; border-left: 1px solid var(--line-strong); font-family: var(--serif); font-size: 15px; color: var(--ink); }
+  .theater-modal { position: fixed; inset: 0; z-index: 95; background: rgba(28,26,22,.38); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .theater-modal[hidden] { display: none; }
+  .theater-card { width: min(760px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line-strong); border-radius: 2px; box-shadow: 0 20px 60px rgba(28,26,22,.18); }
+  .theater-body { padding: 16px 22px 22px; overflow: auto; }
+  .theater-modes { display: flex; gap: 6px; }
+  .theater-mode { border: 1px solid var(--line); background: transparent; color: var(--ink-45); border-radius: 2px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .theater-mode:hover, .theater-mode.active { border-color: var(--ink); color: var(--ink); }
+  .theater-hint { margin: 10px 0 0; color: var(--ink-45); font-size: 12px; line-height: 1.65; }
+  .theater-targets { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .theater-target { border-bottom: 1px solid var(--line); color: var(--ink-70); font-size: 11.5px; padding: 1px 0; }
+  .theater-log { display: grid; gap: 10px; margin-top: 14px; max-height: 38vh; overflow: auto; }
+  .theater-message { padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.7; }
+  .theater-message:first-child { border-top: 0; }
+  .theater-message b { display: block; margin-bottom: 3px; color: var(--ink-45); font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
+  .theater-message.user p { margin: 0; color: var(--ink-70); }
+  .theater-message.author p { margin: 0; color: var(--ink); }
+  .theater-message .theater-translation { margin-top: 4px; color: var(--ink-45); font-size: 12px; }
+  .theater-message .theater-note { margin-top: 5px; color: var(--ink-45); font-size: 11.5px; }
+  .theater-message .theater-used { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+  .theater-message .theater-used span { color: var(--ink-45); font-size: 11px; border-bottom: 1px solid var(--line); }
+  .theater-compose { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .theater-compose textarea { width: 100%; min-height: 66px; border: 1px solid var(--line); border-radius: 2px; background: transparent; padding: 8px 10px; font: inherit; font-size: 13.5px; line-height: 1.65; resize: vertical; outline: none; }
+  .theater-compose textarea:focus { border-color: var(--ink); }
+  .theater-actions { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+  .theater-status { color: var(--ink-45); font-size: 11.5px; }
+  .theater-recap { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line-strong); color: var(--ink-70); font-size: 13px; line-height: 1.7; }
+  .theater-recap p { margin: 6px 0; }
+  .theater-recap p b { color: var(--ink); font-weight: 600; }
+  .theater-recap .theater-targets { margin-top: 4px; }
+  .audio-modal { position: fixed; inset: 0; z-index: 95; background: rgba(28,26,22,.38); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .audio-modal[hidden] { display: none; }
+  .audio-card { width: min(760px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line-strong); border-radius: 2px; box-shadow: 0 20px 60px rgba(28,26,22,.18); }
+  .audio-body { padding: 16px 24px 24px; overflow: auto; }
+  .audio-tabs { display: flex; gap: 6px; }
+  .audio-tab { border: 1px solid var(--line); background: transparent; color: var(--ink-45); border-radius: 2px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .audio-tab:hover, .audio-tab.active { border-color: var(--ink); color: var(--ink); }
+  .audio-rates { display: flex; align-items: center; gap: 6px; margin-top: 12px; color: var(--ink-45); font-size: 11px; }
+  .audio-rates button { border: 1px solid var(--line); background: transparent; color: var(--ink-45); border-radius: 999px; padding: 2px 8px; font: inherit; font-size: 11px; cursor: pointer; }
+  .audio-rates button:hover, .audio-rates button.active { border-color: var(--ink); color: var(--ink); }
+  .audio-pane { margin-top: 14px; }
+  .audio-hint { margin: 0 0 10px; color: var(--ink-45); font-size: 12px; line-height: 1.7; }
+  .audio-pane audio { width: 100%; margin: 4px 0 10px; }
+  .audio-actions, .shadow-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .audio-status, .shadow-status { color: var(--ink-45); font-size: 12px; line-height: 1.6; }
+  .audio-note { margin: 10px 0 0; color: var(--ink-45); font-size: 11.5px; line-height: 1.65; }
+  .audio-voice { margin: 8px 0 0; color: var(--ink-70); font-size: 11.5px; }
+  .tts-settings { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .tts-settings summary { cursor: pointer; color: var(--ink-45); font-size: 12px; }
+  .tts-form { display: grid; gap: 8px; margin-top: 10px; }
+  .tts-providers { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tts-provider { border: 1px solid var(--line); background: transparent; color: var(--ink-45); border-radius: 999px; padding: 3px 9px; font: inherit; font-size: 11px; cursor: pointer; }
+  .tts-provider:hover, .tts-provider.active { border-color: var(--ink); color: var(--ink); }
+  .tts-provider-hint { margin: 0; color: var(--ink-45); font-size: 11px; line-height: 1.55; }
+  .tts-local-voices { display: flex; flex-wrap: wrap; gap: 4px; max-height: 96px; overflow: auto; }
+  .tts-local-voice { border: 1px solid var(--line); background: transparent; color: var(--ink-45); border-radius: 999px; padding: 2px 8px; font: inherit; font-size: 10.5px; cursor: pointer; }
+  .tts-local-voice:hover, .tts-local-voice.active { border-color: var(--ink); color: var(--ink); }
+  .tts-form label { display: grid; gap: 3px; color: var(--ink-45); font-size: 11px; }
+  .tts-form input, .tts-form textarea { width: 100%; border: 1px solid var(--line); background: transparent; color: var(--ink); padding: 6px 8px; font: inherit; font-size: 12.5px; line-height: 1.5; outline: none; resize: vertical; }
+  .tts-form input:focus, .tts-form textarea:focus { border-color: var(--ink); }
+  .tts-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .tts-status { color: var(--ink-45); font-size: 11.5px; }
+  .tts-hint { margin: 0; color: var(--ink-45); font-size: 11px; line-height: 1.6; }
+  .shadow-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--ink-45); font-family: var(--mono); font-size: 11px; letter-spacing: .04em; }
+  .shadow-text { margin: 16px 0 0; color: var(--ink); font-family: var(--serif); font-size: 23px; line-height: 1.65; }
+  .shadow-translation { margin: 12px 0 0; padding-left: 12px; border-left: 1px solid var(--line-strong); color: var(--ink-70); font-size: 13px; line-height: 1.75; }
+  .shadow-actions { margin-top: 18px; }
+  .shadow-actions .recording { background: var(--ink); border-color: var(--ink); color: var(--card); }
+  .shadow-hint { margin: 14px 0 0; color: var(--ink-45); font-size: 11.5px; line-height: 1.65; }
+  .shadow-playback-label { margin-top: 14px; color: var(--ink-45); font-size: 11px; letter-spacing: .04em; }
+  #shadow-playback { margin-top: 6px; }
+  .shadow-device { margin: 8px 0 0; color: var(--ink-45); font-size: 11px; }
+  @media (max-width: 640px) {
+    .audio-modal { padding: 0; align-items: stretch; }
+    .audio-card { width: 100%; max-height: 100vh; border: 0; }
+    .audio-body { padding: 16px 18px 24px; }
+    .shadow-text { font-size: 20px; }
+  }
+  .micro-modal { position: fixed; inset: 0; z-index: 95; background: rgba(28,26,22,.38); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .micro-modal[hidden] { display: none; }
+  .micro-card { width: min(720px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line-strong); border-radius: 2px; box-shadow: 0 20px 60px rgba(28,26,22,.18); }
+  .micro-body { padding: 18px 24px 24px; overflow: auto; }
+  .micro-eyebrow { color: var(--ink-45); font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+  .micro-title { margin: 10px 0 8px; color: var(--ink); font-family: var(--serif); font-size: 24px; font-weight: 600; line-height: 1.35; }
+  .micro-text { margin: 0; color: var(--ink); font-family: var(--serif); font-size: 16.5px; line-height: 1.95; white-space: pre-wrap; }
+  .micro-translation { margin: 14px 0 0; padding-left: 12px; border-left: 1px solid var(--line-strong); color: var(--ink-70); font-size: 13px; line-height: 1.8; }
+  .micro-used { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .micro-used span { color: var(--ink-45); font-size: 11.5px; border-bottom: 1px solid var(--line); }
+  .micro-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .micro-status { color: var(--ink-45); font-size: 12px; line-height: 1.6; }
+  .micro-actions .focus-tool[disabled] { opacity: .4; cursor: default; }
+  @media (max-width: 640px) {
+    .micro-modal { padding: 0; align-items: stretch; }
+    .micro-card { width: 100%; max-height: 100vh; border: 0; }
+    .micro-body { padding: 16px 18px 24px; }
+    .micro-title { font-size: 21px; }
+    .micro-text { font-size: 15.5px; }
+  }
+  .game-modal { position: fixed; inset: 0; z-index: 95; background: rgba(28,26,22,.38); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .game-modal[hidden] { display: none; }
+  .game-card { width: min(680px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line-strong); border-radius: 2px; box-shadow: 0 20px 60px rgba(28,26,22,.18); }
+  .game-body { padding: 14px 22px 20px; overflow: auto; }
+  .game-tabs { display: flex; gap: 6px; }
+  .game-tab { border: 1px solid var(--line); background: transparent; color: var(--ink-45); border-radius: 2px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+  .game-tab:hover:not(:disabled), .game-tab.active { border-color: var(--ink); color: var(--ink); }
+  .game-tab:disabled { opacity: .35; cursor: default; }
+  .game-head { display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; color: var(--ink-45); font-family: var(--mono); font-size: 11px; letter-spacing: .04em; }
+  .game-timer { color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .game-prompt { margin-top: 12px; }
+  .game-prompt p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.7; }
+  .game-prompt span { display: block; margin-top: 5px; color: var(--ink-45); font-size: 12.5px; line-height: 1.65; }
+  .game-answer, .game-pool { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); min-height: 54px; align-items: center; }
+  .game-pool { border-top: 0; margin-top: 0; }
+  .game-empty { color: var(--ink-45); font-size: 12px; }
+  .game-token { border: 1px solid var(--line-strong); border-radius: 2px; background: transparent; color: var(--ink); padding: 6px 10px; font: inherit; font-size: 14px; line-height: 1.4; cursor: pointer; transition: border-color .12s ease; }
+  .game-token:hover { border-color: var(--ink); }
+  .game-answer .game-token { border-style: dashed; }
+  .game-solution { color: var(--ink); font-family: var(--serif); font-size: 16px; line-height: 1.7; }
+  .game-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+  .game-actions .focus-tool[disabled] { opacity: .35; cursor: default; }
+  .game-status { color: var(--ink-45); font-size: 12px; }
+  @media (max-width: 640px) {
+    .game-modal { padding: 0; align-items: stretch; }
+    .game-card { width: 100%; max-height: 100vh; border: 0; }
+    .game-body { padding: 14px 18px 24px; }
+  }
+  .output-feedback { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--ink-70); font-size: 13px; line-height: 1.75; }
+  .output-feedback p { margin: 6px 0; }
+  .output-feedback p b { color: var(--ink); font-weight: 600; }
+  .output-feedback blockquote { margin: 8px 0; padding-left: 12px; border-left: 1px solid var(--line-strong); color: var(--ink); font-family: var(--serif); }
+  .word-story { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--ink-70); font-size: 12.5px; line-height: 1.7; }
+  .word-story summary, .sentence-rewrites summary { cursor: pointer; color: var(--ink-45); font-size: 12px; }
+  .word-story p { margin: 6px 0 0; }
+  .word-story-line b { display: inline-block; min-width: 64px; margin-right: 4px; color: var(--ink-45); font-weight: 500; }
+  .word-story-caveat { color: var(--ink-45); font-size: 11.5px; }
+  .sentence-rewrites { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+  .sentence-rewrites ul { list-style: none; margin: 7px 0 0; padding: 0; display: grid; gap: 8px; }
+  .sentence-rewrites li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 2px 10px; font-size: 12.5px; line-height: 1.65; }
+  .sentence-rewrites li b { color: var(--ink-45); font-weight: 500; }
+  .sentence-rewrites li span { color: var(--ink); }
+  .sentence-rewrites li i { grid-column: 2; color: var(--ink-45); font-style: normal; font-size: 11.5px; }
   .sentence-item { background: none; }
   .editorial-body blockquote { border-left: 1px solid var(--line-strong); background: none; }
   .focus-sentence-translation { border-left: 1px solid var(--line-strong); background: none; border-radius: 0; }
@@ -1390,7 +1585,9 @@ export function renderHtml(
       <a class="topbar-action" data-review-pack href="/?tab=review&pack=${encodeURIComponent(pack.id)}">复习这篇</a>
       ${pack.parentResourceId ? '<a class="topbar-action" data-article-list href="#">返回文章列表</a>' : ''}
       ${hasBonus ? '<button class="topbar-action" id="toggle-bonus" type="button">只看核心词</button>' : ''}
-      ${pack.reading?.length ? '<button class="topbar-action" id="focus-mode-open" type="button">单句精读</button><button class="topbar-action" id="toggle-translation" type="button">隐藏译文</button><button class="topbar-action" id="toggle-font" type="button">大字</button>' : ''}
+      ${pack.reading?.length ? '<button class="topbar-action" id="focus-mode-open" type="button">单句精读</button><button class="topbar-action" id="audio-open" type="button">音频跟读</button><button class="topbar-action" id="theater-open" type="button">AI 小剧场</button><button class="topbar-action" id="toggle-translation" type="button">隐藏译文</button><button class="topbar-action" id="toggle-font" type="button">大字</button>' : ''}
+      ${hasGames ? '<button class="topbar-action" id="game-open" type="button">60 秒挑战</button>' : ''}
+      ${microEligible ? '<button class="topbar-action" id="micro-story-open" type="button">微故事</button>' : ''}
       <button class="topbar-action" data-feedback="less" type="button">词太多</button>
       <button class="topbar-action" data-feedback="more" type="button">词太少</button>
       <button class="topbar-action" data-edit-front="title" type="button">编辑标题</button>
@@ -1523,10 +1720,169 @@ export function renderHtml(
 <div class="word-modal" id="word-modal" hidden>
   <div class="word-modal-card" role="dialog" aria-modal="true" aria-label="词汇发散">
     <div class="word-modal-bar">
-      <span>词汇发散 · AI 相关词</span>
+      <span id="word-modal-title">词汇发散 · AI 相关词</span>
       <button class="word-modal-close" id="word-modal-close" type="button">关闭</button>
     </div>
     <div class="word-modal-body" id="word-modal-body"></div>
+  </div>
+</div>
+<div class="practice-modal" id="practice-modal" hidden>
+  <div class="practice-card" role="dialog" aria-modal="true" aria-label="造句实验室">
+    <div class="word-modal-bar">
+      <span id="practice-title">造句实验室</span>
+      <button class="word-modal-close" id="practice-close" type="button">关闭</button>
+    </div>
+    <div class="practice-body">
+      <div class="practice-word" id="practice-word"></div>
+      <div class="practice-scenes" id="practice-scenes"></div>
+      <textarea id="practice-text" placeholder="用这个表达写一句英文…"></textarea>
+      <div class="practice-actions">
+        <button class="focus-tool primary" id="practice-submit" type="button">让 AI 看看</button>
+        <span class="practice-status" id="practice-status"></span>
+      </div>
+      <div class="practice-result" id="practice-result"></div>
+    </div>
+  </div>
+</div>
+<div class="game-modal" id="game-modal" hidden>
+  <div class="game-card" role="dialog" aria-modal="true" aria-label="60 秒挑战">
+    <div class="word-modal-bar">
+      <span id="game-title">60 秒挑战</span>
+      <button class="word-modal-close" id="game-close" type="button">关闭</button>
+    </div>
+    <div class="game-body">
+      <div class="game-tabs" id="game-tabs">
+        <button type="button" class="game-tab active" data-game-mode="sentence">金句拼图</button>
+        <button type="button" class="game-tab" data-game-mode="word">词根拼装</button>
+      </div>
+      <div class="game-head">
+        <span id="game-counter"></span>
+        <span id="game-timer">60s</span>
+      </div>
+      <div class="game-prompt" id="game-prompt"></div>
+      <div class="game-answer" id="game-answer"></div>
+      <div class="game-pool" id="game-pool"></div>
+      <div class="game-actions">
+        <button class="focus-tool primary" id="game-check" type="button">检查</button>
+        <button class="focus-tool" id="game-reset" type="button">重来</button>
+        <button class="focus-tool" id="game-next" type="button" hidden>下一题</button>
+        <span class="game-status" id="game-status"></span>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="audio-modal" id="audio-modal" hidden>
+  <div class="audio-card" role="dialog" aria-modal="true" aria-label="音频与跟读">
+    <div class="word-modal-bar">
+      <span>音频 · 跟读</span>
+      <button class="word-modal-close" id="audio-close" type="button">关闭</button>
+    </div>
+    <div class="audio-body">
+      <div class="audio-tabs">
+        <button type="button" class="audio-tab active" data-audio-mode="listen">听全文</button>
+        <button type="button" class="audio-tab" data-audio-mode="shadow">逐句跟读</button>
+      </div>
+      <div class="audio-rates" id="audio-rates">
+        <span>速度</span>
+        <button type="button" data-audio-rate="0.75">0.75×</button>
+        <button type="button" data-audio-rate="1" class="active">1×</button>
+        <button type="button" data-audio-rate="1.25">1.25×</button>
+      </div>
+      <div class="audio-pane" id="audio-listen-pane">
+        <p class="audio-hint">整篇音频在本地生成，不上传。生成一次后可以离线反复听。</p>
+        <audio id="reading-audio" controls preload="metadata" hidden></audio>
+        <div class="audio-actions">
+          <button class="focus-tool primary" id="audio-generate" type="button">生成整篇音频</button>
+          <button class="focus-tool" id="audio-browser" type="button">浏览器朗读</button>
+          <span class="audio-status" id="audio-status"></span>
+        </div>
+        <p class="audio-note">生成使用 macOS 自带语音，首次可能需要半分钟；其他系统可以改用「浏览器朗读」。想要更自然的声音，可在「系统设置 → 辅助功能 → 朗读内容 → 系统声音 → 管理声音」下载 Premium / Enhanced 英文声音，重新生成后会自动使用。</p>
+        <p class="audio-voice" id="audio-voice"></p>
+        <details class="tts-settings" id="tts-settings">
+          <summary>语音设置 · 神经语音</summary>
+          <div class="tts-form">
+            <div class="tts-providers" id="tts-providers"></div>
+            <p class="tts-provider-hint" id="tts-provider-hint"></p>
+            <label id="tts-key-field">API Key<input id="tts-key" type="password" autocomplete="off" placeholder="sk-..."></label>
+            <label id="tts-base-field">Base URL<input id="tts-base" type="url" placeholder="https://api.openai.com/v1"></label>
+            <label id="tts-model-field">模型<input id="tts-model" type="text" placeholder="gpt-4o-mini-tts"></label>
+            <label>声音<input id="tts-voice" type="text" placeholder="nova"></label>
+            <div class="tts-local-voices" id="tts-local-voices" hidden></div>
+            <label id="tts-instructions-field">语气<textarea id="tts-instructions" rows="2"></textarea></label>
+            <div class="tts-actions">
+              <button class="focus-tool primary" id="tts-save" type="button">保存并使用</button>
+              <button class="focus-tool" id="tts-clear" type="button">改回本地语音</button>
+              <span class="tts-status" id="tts-settings-status"></span>
+            </div>
+            <p class="tts-hint">Key 只保存在本机 data/tts.json（0600），不会返回页面。神经语音会把文章文本发送到你填写的接口。</p>
+          </div>
+        </details>
+      </div>
+      <div class="audio-pane" id="audio-shadow-pane" hidden>
+        <div class="shadow-head">
+          <span id="shadow-count"></span>
+          <span id="shadow-progress"></span>
+        </div>
+        <p class="shadow-text" id="shadow-text"></p>
+        <p class="shadow-translation" id="shadow-translation"></p>
+        <div class="shadow-actions">
+          <button class="focus-tool primary" id="shadow-play" type="button">听原句</button>
+          <button class="focus-tool" id="shadow-record" type="button">录音</button>
+          <button class="focus-tool" id="shadow-prev" type="button">上一句</button>
+          <button class="focus-tool" id="shadow-next" type="button">下一句</button>
+          <span class="shadow-status" id="shadow-status"></span>
+        </div>
+        <audio id="shadow-source" preload="none" hidden></audio>
+        <div class="shadow-playback-label" id="shadow-playback-label" hidden>我的录音</div>
+        <audio id="shadow-playback" controls preload="none" hidden></audio>
+        <p class="shadow-device" id="shadow-device"></p>
+        <p class="shadow-hint">逐句原声优先使用本地缓存的语音，首次可能要等一两秒；没有本地语音时回退浏览器朗读。单句录音最长 30 秒，录音只留在当前页面，关闭后消失。</p>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="micro-modal" id="micro-story-modal" hidden>
+  <div class="micro-card" role="dialog" aria-modal="true" aria-label="微故事">
+    <div class="word-modal-bar">
+      <span>微故事</span>
+      <button class="word-modal-close" id="micro-story-close" type="button">关闭</button>
+    </div>
+    <div class="micro-body">
+      <div class="micro-eyebrow">用这篇的词，写一个短故事</div>
+      <h3 class="micro-title" id="micro-story-title"></h3>
+      <p class="micro-text" id="micro-story-text"></p>
+      <p class="micro-translation" id="micro-story-translation"></p>
+      <div class="micro-used" id="micro-story-used"></div>
+      <div class="micro-actions">
+        <button class="focus-tool primary" id="micro-story-generate" type="button">写一个</button>
+        <span class="micro-status" id="micro-story-status"></span>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="theater-modal" id="theater-modal" hidden>
+  <div class="theater-card" role="dialog" aria-modal="true" aria-label="AI 小剧场">
+    <div class="word-modal-bar">
+      <span id="theater-title">AI 小剧场</span>
+      <button class="word-modal-close" id="theater-close" type="button">关闭</button>
+    </div>
+    <div class="theater-body">
+      <div class="theater-modes" id="theater-modes">
+        <button type="button" class="theater-mode active" data-theater-mode="interview">三句话采访作者</button>
+        <button type="button" class="theater-mode" data-theater-mode="debate">反驳 AI</button>
+      </div>
+      <p class="theater-hint" id="theater-hint">用文章里的表达，向作者提三个问题。最多三轮。</p>
+      <div class="theater-targets" id="theater-targets"></div>
+      <div class="theater-log" id="theater-log"></div>
+      <div class="theater-compose" id="theater-compose">
+        <textarea id="theater-input" placeholder="写下你的问题或反驳…"></textarea>
+        <div class="theater-actions">
+          <button class="focus-tool primary" id="theater-send" type="button">发送</button>
+          <span class="theater-status" id="theater-status">第 1 / 3 轮</span>
+        </div>
+      </div>
+      <div class="theater-recap" id="theater-recap" hidden></div>
+    </div>
   </div>
 </div>
 <div class="edit-modal" id="edit-modal" hidden>
@@ -1591,12 +1947,17 @@ export function renderHtml(
     try { favorites = new Set(JSON.parse(localStorage.getItem(storageKey) || '[]')); } catch (error) {}
     var PACK_ID = ${JSON.stringify(pack.id)};
     var PACK_TITLE = ${jsonForScript(pack.title)};
+    var MICRO_STORY = ${jsonForScript(pack.microStory ?? null)};
     var PARENT_RESOURCE = ${JSON.stringify(pack.parentResourceId ?? null)};
     var ARTICLE_INDEX = ${JSON.stringify(pack.articleIndex ?? null)};
     var editable = location.protocol !== 'file:';
     var READING_TOTAL = ${pack.reading?.length ?? 0};
     var FOCUS_PARAGRAPHS = ${jsonForScript(focusData)};
+    var READING_AUDIO = ${jsonForScript(audio.reading ?? '')};
     var OUTPUT_PROMPT = ${jsonForScript(discussion?.question ?? '')};
+    var THEATER_TARGETS = ${jsonForScript(theaterTargets)};
+    var GAME_SENTENCES = ${jsonForScript(games.sentences)};
+    var GAME_WORDS = ${jsonForScript(games.words)};
     var OUTPUT_ANSWER = ${jsonForScript(discussion?.answer ?? '')};
     var readingState = { read: [], last: 0, lastSentence: 0, finished: false, started: false };
     var readingSaveTimer;
@@ -1996,7 +2357,124 @@ export function renderHtml(
     }
     var wordModal = document.getElementById('word-modal');
     var wordModalBody = document.getElementById('word-modal-body');
+    var wordModalTitle = document.getElementById('word-modal-title');
     var wordModalClose = document.getElementById('word-modal-close');
+    var practiceModal = document.getElementById('practice-modal');
+    var practiceTitle = document.getElementById('practice-title');
+    var practiceWord = document.getElementById('practice-word');
+    var practiceScenes = document.getElementById('practice-scenes');
+    var practiceText = document.getElementById('practice-text');
+    var practiceSubmit = document.getElementById('practice-submit');
+    var practiceStatus = document.getElementById('practice-status');
+    var practiceResult = document.getElementById('practice-result');
+    var practiceClose = document.getElementById('practice-close');
+    var theaterModal = document.getElementById('theater-modal');
+    var theaterClose = document.getElementById('theater-close');
+    var theaterHint = document.getElementById('theater-hint');
+    var theaterTargetsEl = document.getElementById('theater-targets');
+    var theaterLog = document.getElementById('theater-log');
+    var theaterInput = document.getElementById('theater-input');
+    var theaterSend = document.getElementById('theater-send');
+    var theaterStatus = document.getElementById('theater-status');
+    var theaterRecap = document.getElementById('theater-recap');
+    var theaterMode = 'interview';
+    var theaterTurn = 0;
+    var theaterMessages = [];
+    var gameModal = document.getElementById('game-modal');
+    var gameClose = document.getElementById('game-close');
+    var gameTabs = document.getElementById('game-tabs');
+    var gameCounter = document.getElementById('game-counter');
+    var gameTimer = document.getElementById('game-timer');
+    var gamePrompt = document.getElementById('game-prompt');
+    var gameAnswer = document.getElementById('game-answer');
+    var gamePool = document.getElementById('game-pool');
+    var gameCheck = document.getElementById('game-check');
+    var gameReset = document.getElementById('game-reset');
+    var gameNext = document.getElementById('game-next');
+    var gameStatus = document.getElementById('game-status');
+    var gameMode = 'sentence';
+    var gameIndex = 0;
+    var gameSelected = [];
+    var gamePoolTokens = [];
+    var gameSeconds = 60;
+    var gameInterval = null;
+    var gameStartedAt = 0;
+    var microStoryModal = document.getElementById('micro-story-modal');
+    var microStoryClose = document.getElementById('micro-story-close');
+    var microStoryTitle = document.getElementById('micro-story-title');
+    var microStoryText = document.getElementById('micro-story-text');
+    var microStoryTranslation = document.getElementById('micro-story-translation');
+    var microStoryUsed = document.getElementById('micro-story-used');
+    var microStoryGenerate = document.getElementById('micro-story-generate');
+    var microStoryStatus = document.getElementById('micro-story-status');
+    var microStory = MICRO_STORY;
+    var microStoryLoading = false;
+    var audioModal = document.getElementById('audio-modal');
+    var audioClose = document.getElementById('audio-close');
+    var audioListenPane = document.getElementById('audio-listen-pane');
+    var audioShadowPane = document.getElementById('audio-shadow-pane');
+    var readingAudioEl = document.getElementById('reading-audio');
+    var audioGenerate = document.getElementById('audio-generate');
+    var audioBrowser = document.getElementById('audio-browser');
+    var audioStatus = document.getElementById('audio-status');
+    var audioVoice = document.getElementById('audio-voice');
+    var ttsKey = document.getElementById('tts-key');
+    var ttsBase = document.getElementById('tts-base');
+    var ttsModel = document.getElementById('tts-model');
+    var ttsVoiceInput = document.getElementById('tts-voice');
+    var ttsInstructions = document.getElementById('tts-instructions');
+    var ttsSave = document.getElementById('tts-save');
+    var ttsClear = document.getElementById('tts-clear');
+    var ttsSettingsStatus = document.getElementById('tts-settings-status');
+    var ttsProvidersEl = document.getElementById('tts-providers');
+    var ttsKeyField = document.getElementById('tts-key-field');
+    var ttsBaseField = document.getElementById('tts-base-field');
+    var ttsModelField = document.getElementById('tts-model-field');
+    var ttsInstructionsField = document.getElementById('tts-instructions-field');
+    var ttsLocalVoices = document.getElementById('tts-local-voices');
+    var ttsProviderHint = document.getElementById('tts-provider-hint');
+    var ttsProviders = [];
+    var ttsProvider = 'local';
+    var systemVoices = [];
+    var ttsRefreshToken = 0;
+    var shadowCount = document.getElementById('shadow-count');
+    var shadowProgress = document.getElementById('shadow-progress');
+    var shadowText = document.getElementById('shadow-text');
+    var shadowTranslation = document.getElementById('shadow-translation');
+    var shadowPlay = document.getElementById('shadow-play');
+    var shadowRecord = document.getElementById('shadow-record');
+    var shadowPrev = document.getElementById('shadow-prev');
+    var shadowNext = document.getElementById('shadow-next');
+    var shadowStatus = document.getElementById('shadow-status');
+    var shadowPlayback = document.getElementById('shadow-playback');
+    var shadowPlaybackLabel = document.getElementById('shadow-playback-label');
+    var shadowDevice = document.getElementById('shadow-device');
+    var shadowSource = document.getElementById('shadow-source');
+    var audioMode = 'listen';
+    var audioRate = 1;
+    var readingAudio = READING_AUDIO;
+    var audioBusy = false;
+    var browserSpeaking = false;
+    var browserQueue = [];
+    var browserIndex = 0;
+    var shadowSentences = [];
+    var shadowIndex = 0;
+    var shadowRecorder = null;
+    var shadowStream = null;
+    var shadowRecording = false;
+    var shadowTimer = null;
+    var shadowSeconds = 0;
+    var shadowUrl = null;
+    var shadowRequestToken = 0;
+    var shadowSpeakToken = 0;
+    var practiceItemId = null;
+    var practiceScene = 'daily';
+    var PRACTICE_SCENES = [
+      { id: 'daily', label: '日常' },
+      { id: 'work', label: '工作' },
+      { id: 'travel', label: '旅行' },
+      { id: 'argument', label: '争论' },
+    ];
 
     function closeWordModal() {
       if (!wordModal) return;
@@ -2156,6 +2634,7 @@ export function renderHtml(
 
     function renderWordExpansion(item) {
       if (!wordModalBody) return;
+      if (wordModalTitle) wordModalTitle.textContent = '词汇发散 · AI 相关词';
       wordModalBody.innerHTML = '';
       var head = document.createElement('div');
       head.className = 'word-modal-head';
@@ -2241,6 +2720,1423 @@ export function renderHtml(
       });
     }
 
+    function renderWordStory(item, story) {
+      if (!wordModalBody) return;
+      if (wordModalTitle) wordModalTitle.textContent = '词源小传 · ' + item.lemma;
+      wordModalBody.innerHTML = '';
+      var head = document.createElement('div');
+      head.className = 'word-modal-head';
+      var word = document.createElement('h3');
+      word.textContent = item.lemma;
+      head.appendChild(word);
+      if (item.ipa) {
+        var ipa = document.createElement('span');
+        ipa.className = 'ipa';
+        ipa.textContent = item.ipa;
+        head.appendChild(ipa);
+      }
+      wordModalBody.appendChild(head);
+      var origin = document.createElement('p');
+      origin.className = 'word-modal-def';
+      origin.textContent = story.origin;
+      wordModalBody.appendChild(origin);
+      modalSection('词根', [story.roots], true);
+      if (story.semanticShift) modalSection('词义变化', [story.semanticShift], true);
+      modalSection('同源词', story.cognates || []);
+      modalSection('易混词', story.confusables || []);
+      if (story.hook) modalSection('记忆钩子', [story.hook], true);
+      if (story.caveat) {
+        var caveat = document.createElement('p');
+        caveat.className = 'word-modal-empty';
+        caveat.textContent = story.caveat;
+        wordModalBody.appendChild(caveat);
+      }
+    }
+
+    function openWordStory(itemId) {
+      if (!editable) {
+        showToast('请通过 pnpm dev review 打开学习包后再看词源');
+        return;
+      }
+      if (!wordModal || !wordModalBody) return;
+      wordModal.hidden = false;
+      document.body.classList.add('word-modal-open');
+      if (wordModalTitle) wordModalTitle.textContent = '词源小传';
+      wordModalBody.innerHTML = '';
+      var loading = document.createElement('p');
+      loading.className = 'word-modal-empty';
+      loading.textContent = 'AI 正在整理词源，通常需要 10–20 秒…';
+      wordModalBody.appendChild(loading);
+      fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/items/' + encodeURIComponent(itemId) + '/story', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) throw new Error(data.error || '词源生成失败');
+          renderWordStory(data.item, data.story);
+        });
+      }).catch(function (error) {
+        wordModalBody.innerHTML = '';
+        var message = document.createElement('p');
+        message.className = 'word-modal-empty';
+        message.textContent = error.message;
+        wordModalBody.appendChild(message);
+      });
+    }
+
+    function appendSentenceRewrites(itemElement, rewrites) {
+      if (!itemElement || itemElement.querySelector('.sentence-rewrites')) return;
+      var labels = { formal: '正式', casual: '口语', punchy: '简短有力' };
+      var details = document.createElement('details');
+      details.className = 'sentence-rewrites';
+      details.open = true;
+      var summary = document.createElement('summary');
+      summary.textContent = '一句三写';
+      var list = document.createElement('ul');
+      rewrites.forEach(function (rewrite) {
+        var row = document.createElement('li');
+        var label = document.createElement('b');
+        label.textContent = labels[rewrite.register] || rewrite.register;
+        var text = document.createElement('span');
+        text.textContent = rewrite.text;
+        var note = document.createElement('i');
+        note.textContent = rewrite.note;
+        row.appendChild(label);
+        row.appendChild(text);
+        row.appendChild(note);
+        list.appendChild(row);
+      });
+      details.appendChild(summary);
+      details.appendChild(list);
+      itemElement.appendChild(details);
+    }
+
+    function theaterHintText() {
+      return theaterMode === 'interview'
+        ? '用文章里的表达，向作者提三个问题。最多三轮。'
+        : 'AI 扮演文章作者，你用文章里的表达反驳他。最多三轮。';
+    }
+
+    function renderTheaterTargets() {
+      if (!theaterTargetsEl) return;
+      theaterTargetsEl.innerHTML = '';
+      THEATER_TARGETS.forEach(function (target) {
+        var chip = document.createElement('span');
+        chip.className = 'theater-target';
+        chip.textContent = target.lemma + ' · ' + target.meaning;
+        chip.title = target.meaning;
+        theaterTargetsEl.appendChild(chip);
+      });
+    }
+
+    function updateTheaterModes() {
+      document.querySelectorAll('[data-theater-mode]').forEach(function (button) {
+        button.classList.toggle('active', button.getAttribute('data-theater-mode') === theaterMode);
+      });
+      if (theaterHint) theaterHint.textContent = theaterHintText();
+    }
+
+    function resetTheater() {
+      theaterTurn = 0;
+      theaterMessages = [];
+      if (theaterLog) theaterLog.innerHTML = '';
+      if (theaterInput) {
+        theaterInput.value = '';
+        theaterInput.disabled = false;
+      }
+      if (theaterSend) {
+        theaterSend.disabled = false;
+        theaterSend.textContent = '发送';
+      }
+      if (theaterStatus) theaterStatus.textContent = '第 1 / 3 轮';
+      if (theaterRecap) {
+        theaterRecap.hidden = true;
+        theaterRecap.innerHTML = '';
+      }
+      updateTheaterModes();
+      renderTheaterTargets();
+    }
+
+    function appendTheaterMessage(entry) {
+      if (!theaterLog) return;
+      var message = document.createElement('div');
+      message.className = 'theater-message ' + entry.role;
+      var label = document.createElement('b');
+      label.textContent = entry.role === 'user' ? '你' : '作者';
+      message.appendChild(label);
+      var text = document.createElement('p');
+      text.textContent = entry.content;
+      message.appendChild(text);
+      if (entry.translation) {
+        var translation = document.createElement('div');
+        translation.className = 'theater-translation';
+        translation.textContent = entry.translation;
+        message.appendChild(translation);
+      }
+      if (entry.note) {
+        var note = document.createElement('div');
+        note.className = 'theater-note';
+        note.textContent = entry.note;
+        message.appendChild(note);
+      }
+      if (entry.used && entry.used.length) {
+        var used = document.createElement('div');
+        used.className = 'theater-used';
+        entry.used.forEach(function (value) {
+          var chip = document.createElement('span');
+          chip.textContent = value;
+          used.appendChild(chip);
+        });
+        message.appendChild(used);
+      }
+      theaterLog.appendChild(message);
+      theaterLog.scrollTop = theaterLog.scrollHeight;
+    }
+
+    function renderTheaterRecap(recap) {
+      if (!theaterRecap || !recap) return;
+      theaterRecap.hidden = false;
+      theaterRecap.innerHTML = '';
+      var summary = document.createElement('p');
+      summary.textContent = recap.summary;
+      theaterRecap.appendChild(summary);
+      if (recap.used && recap.used.length) {
+        var usedLabel = document.createElement('p');
+        usedLabel.innerHTML = '<b>用上了</b> ';
+        usedLabel.appendChild(document.createTextNode(recap.used.join(' · ')));
+        theaterRecap.appendChild(usedLabel);
+      }
+      if (recap.missed && recap.missed.length) {
+        var missedLabel = document.createElement('p');
+        missedLabel.innerHTML = '<b>还没用上</b> ';
+        missedLabel.appendChild(document.createTextNode(recap.missed.join(' · ')));
+        theaterRecap.appendChild(missedLabel);
+      }
+      if (recap.suggestion) {
+        var suggestion = document.createElement('p');
+        suggestion.innerHTML = '<b>下一句可以试</b> ';
+        suggestion.appendChild(document.createTextNode(recap.suggestion));
+        theaterRecap.appendChild(suggestion);
+      }
+    }
+
+    function openTheater() {
+      if (!editable) {
+        showToast('请通过 pnpm dev review 打开学习包后再进入小剧场');
+        return;
+      }
+      if (!theaterModal) return;
+      resetTheater();
+      theaterModal.hidden = false;
+      document.body.classList.add('theater-modal-open');
+      if (theaterInput) theaterInput.focus();
+    }
+
+    function closeTheater() {
+      if (!theaterModal) return;
+      theaterModal.hidden = true;
+      document.body.classList.remove('theater-modal-open');
+    }
+
+    function sendTheater() {
+      if (!theaterInput || !theaterSend || theaterTurn >= 3) return;
+      var text = theaterInput.value.trim();
+      if (!text) {
+        if (theaterStatus) theaterStatus.textContent = '先写一句英文';
+        theaterInput.focus();
+        return;
+      }
+      theaterMessages.push({ role: 'user', content: text });
+      appendTheaterMessage({ role: 'user', content: text });
+      theaterInput.value = '';
+      theaterInput.disabled = true;
+      theaterSend.disabled = true;
+      theaterSend.textContent = '作者正在回应…';
+      if (theaterStatus) theaterStatus.textContent = 'AI 正在回应…';
+      fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/theater', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: theaterMode, messages: theaterMessages }),
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) throw new Error(data.error || '小剧场失败');
+          theaterTurn = data.turn;
+          theaterMessages.push({ role: 'assistant', content: data.reply });
+          appendTheaterMessage({
+            role: 'assistant',
+            content: data.reply,
+            translation: data.translation,
+            note: data.note,
+            used: data.used,
+          });
+          theaterSend.textContent = '发送';
+          theaterSend.disabled = theaterTurn >= 3;
+          theaterInput.disabled = theaterTurn >= 3;
+          if (theaterStatus) {
+            theaterStatus.textContent = theaterTurn >= 3 ? '本局结束 · 可切换模式重新开始' : '第 ' + (theaterTurn + 1) + ' / 3 轮';
+          }
+          if (data.recap) renderTheaterRecap(data.recap);
+          if (theaterTurn < 3) theaterInput.focus();
+        });
+      }).catch(function (error) {
+        theaterMessages.pop();
+        var last = theaterLog && theaterLog.lastElementChild;
+        if (last) last.remove();
+        theaterInput.disabled = false;
+        theaterSend.disabled = false;
+        theaterSend.textContent = '发送';
+        if (theaterStatus) theaterStatus.textContent = error.message;
+      });
+    }
+
+    function setAudioRate(rate) {
+      audioRate = rate;
+      Array.from(document.querySelectorAll('[data-audio-rate]')).forEach(function (button) {
+        button.classList.toggle('active', Number(button.getAttribute('data-audio-rate')) === rate);
+      });
+      if (readingAudioEl) readingAudioEl.playbackRate = rate;
+      if (shadowSource) shadowSource.playbackRate = rate;
+    }
+
+    function setReadingAudio(path) {
+      readingAudio = path || '';
+      if (!readingAudioEl || !audioGenerate) return;
+      if (readingAudio) {
+        if (readingAudioEl.getAttribute('src') !== readingAudio) readingAudioEl.src = readingAudio;
+        readingAudioEl.hidden = false;
+        readingAudioEl.playbackRate = audioRate;
+        audioGenerate.textContent = '重新生成';
+      } else {
+        readingAudioEl.pause();
+        readingAudioEl.removeAttribute('src');
+        readingAudioEl.load();
+        readingAudioEl.hidden = true;
+        audioGenerate.textContent = '生成整篇音频';
+      }
+    }
+
+    function renderTtsProviders(current) {
+      if (!ttsProvidersEl) return;
+      ttsProvidersEl.innerHTML = '';
+      ttsProviders.forEach(function (provider) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'tts-provider' + (provider.id === current ? ' active' : '');
+        button.textContent = provider.label;
+        button.addEventListener('click', function () { selectTtsProvider(provider.id); });
+        ttsProvidersEl.appendChild(button);
+      });
+    }
+
+    function renderLocalVoices(voices, current) {
+      if (!ttsLocalVoices) return;
+      ttsLocalVoices.innerHTML = '';
+      var preferred = ['Ava', 'Zoe', 'Samantha', 'Daniel', 'Karen', 'Alex', 'Allison', 'Susan', 'Tom', 'Nicky', 'Kathy'];
+      var novelty = /^(Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Good News|Jester|Organ|Superstar|Trinoids|Whisper|Wobble|Zarvox)$/i;
+      function voiceRank(voice) {
+        if (voice.premium) return 0;
+        for (var i = 0; i < preferred.length; i++) {
+          if (voice.name.toLowerCase().indexOf(preferred[i].toLowerCase()) >= 0) return 1 + i;
+        }
+        return 100;
+      }
+      var sorted = voices.filter(function (voice) { return !novelty.test(voice.name); }).sort(function (a, b) {
+        return voiceRank(a) - voiceRank(b) || a.name.localeCompare(b.name);
+      });
+      sorted.forEach(function (voice) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'tts-local-voice' + (voice.name === current ? ' active' : '');
+        button.textContent = (voice.premium ? '★ ' : '') + voice.name;
+        button.title = voice.lang;
+        button.addEventListener('click', function () {
+          if (ttsVoiceInput) ttsVoiceInput.value = voice.name;
+          renderLocalVoices(voices, voice.name);
+        });
+        ttsLocalVoices.appendChild(button);
+      });
+    }
+
+    function applyTtsProviderLayout(id, fillDefaults) {
+      var preset = ttsProviders.find(function (provider) { return provider.id === id; });
+      if (!preset) return;
+      var local = preset.id === 'local';
+      var edge = preset.id === 'edge';
+      var keyless = local || edge;
+      [ttsKeyField, ttsBaseField, ttsModelField].forEach(function (field) {
+        if (field) field.hidden = keyless;
+      });
+      if (ttsLocalVoices) ttsLocalVoices.hidden = !keyless;
+      if (ttsInstructionsField) ttsInstructionsField.hidden = keyless;
+      if (keyless) {
+        if (fillDefaults && ttsVoiceInput) {
+          ttsVoiceInput.value = edge ? preset.voice : '';
+          ttsVoiceInput.placeholder = edge ? preset.voices.slice(0, 4).join(' / ') : '系统默认 / 选择下方声音';
+        }
+        var choices = edge
+          ? preset.voices.map(function (name) { return { name: name, lang: 'en', premium: false }; })
+          : systemVoices;
+        renderLocalVoices(choices, ttsVoiceInput ? ttsVoiceInput.value : '');
+        if (ttsProviderHint) {
+          ttsProviderHint.textContent = edge
+            ? preset.hint
+            : preset.hint + (systemVoices.length ? ' 已安装 ' + systemVoices.length + ' 个英文声音。' : ' 还没有检测到英文声音。');
+        }
+        return;
+      }
+      if (fillDefaults) {
+        if (ttsBase) ttsBase.value = preset.baseUrl;
+        if (ttsModel) ttsModel.value = preset.model;
+        if (ttsVoiceInput) {
+          ttsVoiceInput.value = preset.voice;
+          ttsVoiceInput.placeholder = preset.voices.length ? preset.voices.slice(0, 4).join(' / ') : 'voice id';
+        }
+      }
+      if (ttsInstructions) {
+        ttsInstructions.disabled = !preset.instructions;
+        if (!preset.instructions) ttsInstructions.value = '';
+      }
+      if (ttsProviderHint) {
+        ttsProviderHint.textContent = preset.hint + (preset.voices.length ? ' 音色：' + preset.voices.slice(0, 5).join(' / ') : '');
+      }
+    }
+
+    function selectTtsProvider(id) {
+      var preset = ttsProviders.find(function (provider) { return provider.id === id; });
+      if (!preset) return;
+      ttsProvider = preset.id;
+      renderTtsProviders(ttsProvider);
+      applyTtsProviderLayout(ttsProvider, true);
+    }
+
+    function refreshTtsVoice() {
+      if (!audioVoice) return;
+      var token = ++ttsRefreshToken;
+      fetch('/api/tts').then(function (response) {
+        return response.json();
+      }).then(function (data) {
+        if (token !== ttsRefreshToken) return;
+        var settings = data.tts || {};
+        if (Array.isArray(data.systemVoices)) systemVoices = data.systemVoices;
+        if (Array.isArray(data.providers) && data.providers.length) {
+          ttsProviders = data.providers;
+          ttsProvider = settings.provider || ttsProvider;
+          renderTtsProviders(ttsProvider);
+          applyTtsProviderLayout(ttsProvider, false);
+        }
+        if (ttsBase && settings.baseUrl) ttsBase.value = settings.baseUrl;
+        if (ttsModel && settings.model) ttsModel.value = settings.model;
+        if (ttsVoiceInput && settings.voice) {
+          ttsVoiceInput.value = settings.voice;
+          var voices = settings.voices || [];
+          ttsVoiceInput.placeholder = voices.length ? voices.slice(0, 4).join(' / ') : 'voice id';
+          renderLocalVoices(systemVoices, ttsVoiceInput.value);
+        }
+        if (settings.provider === 'local') {
+          var localVoice = settings.voice || data.systemVoice || '';
+          if (ttsVoiceInput) ttsVoiceInput.value = localVoice;
+          renderLocalVoices(systemVoices, localVoice);
+        } else if (settings.provider === 'edge') {
+          var edgePreset = ttsProviders.find(function (provider) { return provider.id === 'edge'; });
+          var edgeVoices = edgePreset ? edgePreset.voices.map(function (name) { return { name: name, lang: 'en', premium: false }; }) : [];
+          var edgeVoice = settings.voice || 'en-US-AvaNeural';
+          if (ttsVoiceInput) ttsVoiceInput.value = edgeVoice;
+          renderLocalVoices(edgeVoices, edgeVoice);
+        }
+        if (ttsInstructions) {
+          ttsInstructions.value = settings.instructions || '';
+          ttsInstructions.disabled = settings.supportsInstructions === false;
+        }
+        if (ttsKey) ttsKey.placeholder = settings.configured ? '已保存，留空不修改' : 'sk-...';
+        if (settings.provider === 'local') {
+          audioVoice.textContent = data.systemVoice ? '当前声音：本地 ' + data.systemVoice : '当前声音：本地系统默认';
+        } else if (settings.configured) {
+          audioVoice.textContent = '当前声音：' + (settings.providerLabel || '神经语音') + ' · ' + settings.voice;
+        } else if (data.systemVoice) {
+          audioVoice.textContent = '当前声音：本地 ' + data.systemVoice;
+        } else if (data.say === false) {
+          audioVoice.textContent = '当前声音：没有本地语音，将回退浏览器朗读。配置神经语音可获得稳定音色。';
+        } else {
+          audioVoice.textContent = '当前声音：系统默认（下载 Premium / Enhanced 后会显示在这里）';
+        }
+      }).catch(function () {
+        audioVoice.textContent = '';
+      });
+    }
+
+    function saveTtsSettingsRequest(clear) {
+      if (!ttsSave || !ttsSettingsStatus) return;
+      var payload = clear ? { clear: true } : {
+        provider: ttsProvider,
+        apiKey: ttsKey ? ttsKey.value.trim() : '',
+        baseUrl: ttsBase ? ttsBase.value.trim() : '',
+        model: ttsModel ? ttsModel.value.trim() : '',
+        voice: ttsVoiceInput ? ttsVoiceInput.value.trim() : '',
+        instructions: ttsInstructions ? ttsInstructions.value.trim() : ''
+      };
+      ttsSave.disabled = true;
+      ttsSettingsStatus.textContent = clear ? '正在改回本地语音…' : '正在保存…';
+      fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+          return data;
+        });
+      }).then(function () {
+        if (ttsKey) ttsKey.value = '';
+        ttsSettingsStatus.textContent = clear ? '已改回本地语音。' : '已保存。点「重新生成」应用新声音。';
+        refreshTtsVoice();
+      }).catch(function (error) {
+        ttsSettingsStatus.textContent = error.message;
+      }).finally(function () {
+        ttsSave.disabled = false;
+      });
+    }
+
+    function generateArticleAudio() {
+      if (audioBusy || !audioGenerate) return;
+      audioBusy = true;
+      audioGenerate.disabled = true;
+      audioStatus.textContent = '正在生成整篇音频…（首次约需半分钟）';
+      fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/audio', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ regenerate: Boolean(readingAudio) })
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+          return data;
+        });
+      }).then(function (data) {
+        var path = data.audio && data.audio.reading;
+        if (!path) throw new Error('没有拿到音频文件。');
+        setReadingAudio(path);
+        audioStatus.textContent = data.cached ? '已使用缓存音频' : '生成好了，点播放开始听';
+        refreshTtsVoice();
+      }).catch(function (error) {
+        audioStatus.textContent = error.message;
+      }).finally(function () {
+        audioBusy = false;
+        audioGenerate.disabled = false;
+      });
+    }
+
+    function stopBrowserReading() {
+      browserSpeaking = false;
+      browserQueue = [];
+      browserIndex = 0;
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (audioBrowser) audioBrowser.textContent = '浏览器朗读';
+      if (audioStatus) audioStatus.textContent = '';
+    }
+
+    function startBrowserReading() {
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        audioStatus.textContent = '当前浏览器不支持朗读。';
+        return;
+      }
+      if (browserSpeaking) {
+        stopBrowserReading();
+        audioStatus.textContent = '';
+        return;
+      }
+      var paragraphs = FOCUS_PARAGRAPHS.map(function (paragraph) {
+        return paragraph.sentences.map(function (sentence) { return sentence.text; }).join(' ');
+      }).filter(Boolean);
+      if (!paragraphs.length) {
+        audioStatus.textContent = '这篇还没有可朗读的正文。';
+        return;
+      }
+      if (readingAudioEl) readingAudioEl.pause();
+      if (shadowSource) shadowSource.pause();
+      browserQueue = paragraphs;
+      browserIndex = 0;
+      browserSpeaking = true;
+      audioBrowser.textContent = '停止朗读';
+      audioStatus.textContent = '浏览器朗读中…';
+      function speakNext() {
+        if (!browserSpeaking) return;
+        if (browserIndex >= browserQueue.length) {
+          stopBrowserReading();
+          audioStatus.textContent = '朗读结束';
+          return;
+        }
+        var utterance = new SpeechSynthesisUtterance(browserQueue[browserIndex++]);
+        utterance.lang = 'en-US';
+        utterance.rate = audioRate;
+        utterance.onend = speakNext;
+        utterance.onerror = function () {
+          stopBrowserReading();
+          audioStatus.textContent = '浏览器朗读中断了。';
+        };
+        window.speechSynthesis.speak(utterance);
+      }
+      speakNext();
+    }
+
+    function renderShadow() {
+      if (!shadowSentences.length) {
+        if (shadowCount) shadowCount.textContent = '';
+        if (shadowProgress) shadowProgress.textContent = '';
+        if (shadowText) shadowText.textContent = '这篇还没有可跟读的句子。';
+        if (shadowTranslation) shadowTranslation.hidden = true;
+        if (shadowPlay) shadowPlay.disabled = true;
+        if (shadowRecord) shadowRecord.disabled = true;
+        return;
+      }
+      var current = shadowSentences[shadowIndex];
+      if (!current) return;
+      shadowCount.textContent = '第 ' + (shadowIndex + 1) + ' / ' + shadowSentences.length + ' 句';
+      shadowProgress.textContent = Math.round(((shadowIndex + 1) / shadowSentences.length) * 100) + '%';
+      shadowText.textContent = current.text;
+      shadowTranslation.textContent = current.translation || '';
+      shadowTranslation.hidden = !current.translation;
+      shadowPrev.disabled = shadowIndex <= 0;
+      shadowNext.disabled = shadowIndex >= shadowSentences.length - 1;
+      shadowPlay.disabled = false;
+      shadowRecord.disabled = false;
+    }
+
+    function speakShadowBrowser(current, token) {
+      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+        shadowStatus.textContent = '当前浏览器不支持朗读，也没有可用的本地语音。';
+        return;
+      }
+      window.speechSynthesis.cancel();
+      var utterance = new SpeechSynthesisUtterance(current.text);
+      utterance.lang = 'en-US';
+      utterance.rate = audioRate;
+      utterance.onstart = function () {
+        if (token === shadowSpeakToken) shadowStatus.textContent = '播放中…';
+      };
+      utterance.onend = function () {
+        if (token === shadowSpeakToken) shadowStatus.textContent = '';
+      };
+      utterance.onerror = function () {
+        if (token === shadowSpeakToken) shadowStatus.textContent = '朗读中断了。';
+      };
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function speakShadow() {
+      var current = shadowSentences[shadowIndex];
+      if (!current) return;
+      if (shadowRecording) {
+        shadowStatus.textContent = '先停止录音，再听原句。';
+        return;
+      }
+      var token = ++shadowSpeakToken;
+      var fellBack = false;
+      function fallbackToBrowser() {
+        if (fellBack) return;
+        fellBack = true;
+        if (token === shadowSpeakToken) speakShadowBrowser(current, token);
+      }
+      stopBrowserReading();
+      if (readingAudioEl) readingAudioEl.pause();
+      if (shadowPlayback) shadowPlayback.pause();
+      if (shadowSource) {
+        shadowSource.pause();
+        shadowSource.removeAttribute('src');
+        shadowSource.onerror = null;
+        shadowSource.onplaying = null;
+        shadowSource.load();
+      }
+      shadowStatus.textContent = '正在准备原句…';
+      fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/sentence-audio', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ paragraph: current.paragraphIndex, sentence: current.localIndex })
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+          return data;
+        });
+      }).then(function (data) {
+        if (token !== shadowSpeakToken) return;
+        if (!data.audio) throw new Error('没有拿到原句音频。');
+        if (data.text && String(data.text).replace(/\\s+/g, ' ').trim() !== String(current.text).replace(/\\s+/g, ' ').trim()) {
+          throw new Error('原句索引和页面文本不一致，请刷新后再试。');
+        }
+        var started = false;
+        shadowSource.src = data.audio;
+        shadowSource.playbackRate = audioRate;
+        shadowSource.onplaying = function () { started = true; };
+        shadowSource.onended = function () {
+          if (token === shadowSpeakToken) shadowStatus.textContent = '';
+        };
+        shadowSource.onerror = function () {
+          if (!started) fallbackToBrowser();
+        };
+        return shadowSource.play().then(function () {
+          started = true;
+          if (token === shadowSpeakToken) shadowStatus.textContent = '播放中…';
+        }).catch(function () {
+          if (!started) fallbackToBrowser();
+        });
+      }).catch(function () {
+        fallbackToBrowser();
+      });
+    }
+
+    function clearShadowPlayback() {
+      if (shadowUrl) {
+        URL.revokeObjectURL(shadowUrl);
+        shadowUrl = null;
+      }
+      if (shadowPlayback) {
+        shadowPlayback.pause();
+        shadowPlayback.removeAttribute('src');
+        shadowPlayback.load();
+        shadowPlayback.hidden = true;
+      }
+      if (shadowPlaybackLabel) shadowPlaybackLabel.hidden = true;
+    }
+
+    function stopShadowCapture(discard) {
+      if (shadowTimer) clearInterval(shadowTimer);
+      shadowTimer = null;
+      if (shadowRecorder && shadowRecorder.state !== 'inactive') {
+        if (discard) shadowRecorder.onstop = null;
+        try { shadowRecorder.stop(); } catch { /* already stopped */ }
+      }
+      shadowRecorder = null;
+      if (shadowStream) {
+        shadowStream.getTracks().forEach(function (track) { track.stop(); });
+        shadowStream = null;
+      }
+      shadowRecording = false;
+      if (shadowRecord) {
+        shadowRecord.textContent = '录音';
+        shadowRecord.classList.remove('recording');
+      }
+      if (discard) clearShadowPlayback();
+      if (shadowSentences.length) renderShadow();
+    }
+
+    function startShadowRecording() {
+      if (shadowRecording) {
+        stopShadowCapture(false);
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+        shadowStatus.textContent = '当前浏览器不能录音，可以先用「听原句」跟读。';
+        return;
+      }
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (readingAudioEl) readingAudioEl.pause();
+      if (shadowPlayback) shadowPlayback.pause();
+      if (shadowSource) shadowSource.pause();
+      shadowSpeakToken += 1;
+      clearShadowPlayback();
+      shadowStatus.textContent = '准备麦克风…';
+      shadowPlay.disabled = true;
+      shadowPrev.disabled = true;
+      shadowNext.disabled = true;
+      var token = ++shadowRequestToken;
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        if (token !== shadowRequestToken) {
+          stream.getTracks().forEach(function (track) { track.stop(); });
+          return;
+        }
+        shadowStream = stream;
+        var mime = '';
+        if (window.MediaRecorder.isTypeSupported) {
+          if (window.MediaRecorder.isTypeSupported('audio/webm')) mime = 'audio/webm';
+          else if (window.MediaRecorder.isTypeSupported('audio/mp4')) mime = 'audio/mp4';
+        }
+        var recorder;
+        try {
+          recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+        } catch (error) {
+          stream.getTracks().forEach(function (track) { track.stop(); });
+          shadowStream = null;
+          shadowStatus.textContent = '无法创建录音器：' + error.message;
+          return;
+        }
+        shadowRecorder = recorder;
+        var chunks = [];
+        var track = stream.getAudioTracks()[0];
+        if (shadowDevice) shadowDevice.textContent = track && track.label ? '输入：' + track.label : '';
+        recorder.ondataavailable = function (event) {
+          if (event.data && event.data.size) chunks.push(event.data);
+        };
+        recorder.onstop = function () {
+          if (token !== shadowRequestToken) return;
+          if (shadowTimer) clearInterval(shadowTimer);
+          shadowTimer = null;
+          if (shadowStream) {
+            shadowStream.getTracks().forEach(function (track) { track.stop(); });
+            shadowStream = null;
+          }
+          shadowRecording = false;
+          if (shadowRecord) {
+            shadowRecord.textContent = '录音';
+            shadowRecord.classList.remove('recording');
+          }
+          var blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+          if (!blob.size) {
+            shadowStatus.textContent = '没有录到声音，再试一次。';
+            return;
+          }
+          clearShadowPlayback();
+          shadowUrl = URL.createObjectURL(blob);
+          shadowPlayback.src = shadowUrl;
+          shadowPlayback.hidden = false;
+          if (shadowPlaybackLabel) shadowPlaybackLabel.hidden = false;
+          shadowStatus.textContent = '录好了，播放对比一下。';
+        };
+        recorder.start();
+        shadowRecording = true;
+        shadowSeconds = 0;
+        shadowRecord.textContent = '停止录音';
+        shadowRecord.classList.add('recording');
+        shadowStatus.textContent = '录音中… 0s';
+        shadowTimer = setInterval(function () {
+          shadowSeconds += 1;
+          shadowStatus.textContent = '录音中… ' + shadowSeconds + 's';
+          if (shadowSeconds >= 30) {
+            shadowStatus.textContent = '30 秒到了，自动停止。';
+            stopShadowCapture(false);
+          }
+        }, 1000);
+      }).catch(function (error) {
+        shadowStatus.textContent = '没有拿到麦克风权限：' + error.message;
+      });
+    }
+
+    function moveShadow(delta) {
+      if (!shadowSentences.length) return;
+      if (shadowRecording) {
+        shadowStatus.textContent = '先停止录音，再切换句子。';
+        return;
+      }
+      var next = shadowIndex + delta;
+      if (next < 0 || next >= shadowSentences.length) return;
+      shadowRequestToken += 1;
+      shadowSpeakToken += 1;
+      stopShadowCapture(true);
+      if (shadowSource) shadowSource.pause();
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      shadowIndex = next;
+      shadowStatus.textContent = '';
+      renderShadow();
+    }
+
+    function switchAudioMode(mode) {
+      audioMode = mode === 'shadow' ? 'shadow' : 'listen';
+      Array.from(document.querySelectorAll('[data-audio-mode]')).forEach(function (button) {
+        button.classList.toggle('active', button.getAttribute('data-audio-mode') === audioMode);
+      });
+      audioListenPane.hidden = audioMode !== 'listen';
+      audioShadowPane.hidden = audioMode !== 'shadow';
+      if (audioMode === 'listen') {
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        shadowRequestToken += 1;
+        shadowSpeakToken += 1;
+        if (shadowSource) shadowSource.pause();
+        stopShadowCapture(true);
+        if (shadowStatus) shadowStatus.textContent = '';
+      } else {
+        stopBrowserReading();
+        if (readingAudioEl) readingAudioEl.pause();
+        renderShadow();
+      }
+    }
+
+    function openAudio() {
+      if (!audioModal) return;
+      audioModal.hidden = false;
+      document.body.classList.add('audio-modal-open');
+      setReadingAudio(readingAudio);
+      setAudioRate(audioRate);
+      refreshTtsVoice();
+      shadowSentences = focusSentences.slice();
+      shadowIndex = 0;
+      shadowStatus.textContent = '';
+      audioStatus.textContent = '';
+      switchAudioMode('listen');
+      renderShadow();
+    }
+
+    function closeAudio() {
+      stopBrowserReading();
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      shadowRequestToken += 1;
+      shadowSpeakToken += 1;
+      stopShadowCapture(true);
+      clearShadowPlayback();
+      if (shadowSource) shadowSource.pause();
+      if (readingAudioEl) readingAudioEl.pause();
+      if (!audioModal) return;
+      audioModal.hidden = true;
+      document.body.classList.remove('audio-modal-open');
+    }
+
+    function renderMicroStory(story) {
+      if (!story) return;
+      microStoryTitle.textContent = String(story.title || '').replace(/\\*\\*?/g, '');
+      microStoryText.textContent = String(story.text || '').replace(/\\*\\*?/g, '');
+      microStoryTranslation.textContent = String(story.translation || '').replace(/\\*\\*?/g, '');
+      microStoryTranslation.hidden = !story.translation;
+      microStoryUsed.innerHTML = '';
+      (story.used || []).forEach(function (word) {
+        var chip = document.createElement('span');
+        chip.textContent = word;
+        microStoryUsed.appendChild(chip);
+      });
+      microStoryUsed.hidden = !(story.used && story.used.length);
+      microStoryGenerate.textContent = '换一个';
+      microStoryGenerate.disabled = false;
+    }
+
+    function requestMicroStory(regenerate) {
+      if (microStoryLoading) return;
+      microStoryLoading = true;
+      microStoryGenerate.disabled = true;
+      microStoryStatus.textContent = '正在写一个短故事…';
+      fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/micro-story', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ regenerate: Boolean(regenerate) })
+      }).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+          return data;
+        });
+      }).then(function (data) {
+        microStory = data.story;
+        renderMicroStory(microStory);
+        microStoryStatus.textContent = data.cached ? '这是上次写的故事' : '';
+      }).catch(function (error) {
+        var message = error.message === 'No LLM API key configured.'
+          ? '还没有配置模型，先到首页「模型设置」填入 API Key。'
+          : error.message;
+        microStoryStatus.textContent = message;
+        microStoryGenerate.textContent = microStory ? '换一个' : '再试一次';
+        microStoryGenerate.disabled = false;
+      }).finally(function () {
+        microStoryLoading = false;
+      });
+    }
+
+    function openMicroStory() {
+      if (!microStoryModal) return;
+      microStoryModal.hidden = false;
+      document.body.classList.add('micro-modal-open');
+      if (microStory) {
+        renderMicroStory(microStory);
+        microStoryStatus.textContent = '';
+      } else {
+        requestMicroStory(false);
+      }
+    }
+
+    function closeMicroStory() {
+      if (!microStoryModal) return;
+      microStoryModal.hidden = true;
+      document.body.classList.remove('micro-modal-open');
+    }
+
+    function gameItems(mode) {
+      return mode === 'word' ? GAME_WORDS : GAME_SENTENCES;
+    }
+
+    function shuffleGame(values) {
+      var copy = values.slice();
+      for (var i = copy.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1));
+        var tmp = copy[i];
+        copy[i] = copy[j];
+        copy[j] = tmp;
+      }
+      return copy;
+    }
+
+    function stopGameTimer() {
+      if (gameInterval) clearInterval(gameInterval);
+      gameInterval = null;
+    }
+
+    function updateGameTimer() {
+      if (gameTimer) gameTimer.textContent = gameSeconds + 's';
+    }
+
+    function startGameTimer() {
+      stopGameTimer();
+      gameSeconds = 60;
+      gameStartedAt = Date.now();
+      updateGameTimer();
+      gameInterval = setInterval(function () {
+        gameSeconds -= 1;
+        updateGameTimer();
+        if (gameSeconds <= 0) {
+          stopGameTimer();
+          if (gameStatus) gameStatus.textContent = '时间到，点「重来」再试';
+        }
+      }, 1000);
+    }
+
+    function gameData() {
+      return gameItems(gameMode)[gameIndex];
+    }
+
+    function renderGame() {
+      var data = gameData();
+      if (!data) {
+        if (gameCounter) gameCounter.textContent = '';
+        if (gamePrompt) gamePrompt.textContent = '这里还没有可玩的卡片。';
+        if (gamePool) gamePool.innerHTML = '';
+        if (gameAnswer) gameAnswer.innerHTML = '';
+        if (gameCheck) gameCheck.disabled = true;
+        return;
+      }
+      var list = gameItems(gameMode);
+      if (gameCounter) {
+        gameCounter.textContent = '第 ' + (gameIndex + 1) + ' / ' + list.length + ' 题 · ' +
+          (gameMode === 'word' ? '词根拼装' : '金句拼图');
+      }
+      if (gamePrompt) {
+        gamePrompt.innerHTML = '';
+        var prompt = document.createElement('p');
+        prompt.textContent = gameMode === 'word'
+          ? '按前缀 / 词根 / 后缀的顺序拼出「' + data.lemma + '」'
+          : '把下面的片段拼回原文';
+        gamePrompt.appendChild(prompt);
+        var hint = document.createElement('span');
+        hint.textContent = gameMode === 'word' ? data.meaning : data.translation;
+        gamePrompt.appendChild(hint);
+      }
+      if (gameAnswer) {
+        gameAnswer.innerHTML = '';
+        if (gameSelected.length === 0) {
+          var empty = document.createElement('span');
+          empty.className = 'game-empty';
+          empty.textContent = '点下面的片段开始拼';
+          gameAnswer.appendChild(empty);
+        }
+        gameSelected.forEach(function (token, index) {
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'game-token';
+          button.textContent = token;
+          button.title = '点击移回';
+          button.addEventListener('click', function () {
+            gameSelected.splice(index, 1);
+            gamePoolTokens.push(token);
+            renderGame();
+          });
+          gameAnswer.appendChild(button);
+        });
+      }
+      if (gamePool) {
+        gamePool.innerHTML = '';
+        gamePoolTokens.forEach(function (token, index) {
+          var button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'game-token';
+          button.textContent = token;
+          if (gameMode === 'word' && data.hints && data.hints[token]) button.title = data.hints[token];
+          button.addEventListener('click', function () {
+            gamePoolTokens.splice(index, 1);
+            gameSelected.push(token);
+            renderGame();
+          });
+          gamePool.appendChild(button);
+        });
+      }
+      if (gameCheck) gameCheck.disabled = false;
+      if (gameNext) gameNext.hidden = true;
+    }
+
+    function beginGame(mode) {
+      var list = gameItems(mode);
+      if (!list.length) return;
+      gameMode = mode;
+      gameIndex = 0;
+      gameSelected = [];
+      gamePoolTokens = shuffleGame(list[0].answer);
+      if (gameStatus) gameStatus.textContent = '';
+      Array.from(document.querySelectorAll('[data-game-mode]')).forEach(function (button) {
+        button.classList.toggle('active', button.getAttribute('data-game-mode') === mode);
+      });
+      startGameTimer();
+      renderGame();
+    }
+
+    function switchGameMode(mode) {
+      if (!gameItems(mode).length) return;
+      beginGame(mode);
+    }
+
+    function checkGame() {
+      var data = gameData();
+      if (!data) return;
+      var correct = gameSelected.length === data.answer.length &&
+        gameSelected.every(function (token, index) { return token === data.answer[index]; });
+      if (!correct) {
+        if (gameStatus) gameStatus.textContent = '还差一点，再看看顺序';
+        return;
+      }
+      stopGameTimer();
+      var used = Math.max(0, Math.round((Date.now() - gameStartedAt) / 1000));
+      if (gameStatus) gameStatus.textContent = '拼好了 · ' + used + ' 秒';
+      if (gameNext) {
+        gameNext.hidden = false;
+        gameNext.textContent = gameIndex + 1 < gameItems(gameMode).length ? '下一题' : '再来一轮';
+      }
+      if (gameCheck) gameCheck.disabled = true;
+      if (gameAnswer) {
+        gameAnswer.innerHTML = '';
+        var solution = document.createElement('div');
+        solution.className = 'game-solution';
+        solution.textContent = gameMode === 'word' ? data.lemma : data.answer.join(' ');
+        gameAnswer.appendChild(solution);
+      }
+    }
+
+    function resetGame() {
+      var data = gameData();
+      if (!data) return;
+      gameSelected = [];
+      gamePoolTokens = shuffleGame(data.answer);
+      if (gameStatus) gameStatus.textContent = '';
+      if (gameNext) gameNext.hidden = true;
+      if (gameCheck) gameCheck.disabled = false;
+      startGameTimer();
+      renderGame();
+    }
+
+    function nextGame() {
+      var list = gameItems(gameMode);
+      gameIndex = (gameIndex + 1) % list.length;
+      gameSelected = [];
+      gamePoolTokens = shuffleGame(list[gameIndex].answer);
+      if (gameStatus) gameStatus.textContent = '';
+      if (gameNext) gameNext.hidden = true;
+      if (gameCheck) gameCheck.disabled = false;
+      startGameTimer();
+      renderGame();
+    }
+
+    function updateGameTabs() {
+      Array.from(document.querySelectorAll('[data-game-mode]')).forEach(function (button) {
+        var mode = button.getAttribute('data-game-mode') === 'word' ? 'word' : 'sentence';
+        button.disabled = gameItems(mode).length === 0;
+        button.classList.toggle('active', mode === gameMode);
+      });
+    }
+
+    function openGame() {
+      if (!gameModal) return;
+      gameMode = GAME_SENTENCES.length ? 'sentence' : 'word';
+      gameIndex = 0;
+      gameSelected = [];
+      var list = gameItems(gameMode);
+      if (!list.length) return;
+      gamePoolTokens = shuffleGame(list[0].answer);
+      if (gameStatus) gameStatus.textContent = '';
+      if (gameNext) gameNext.hidden = true;
+      if (gameCheck) gameCheck.disabled = false;
+      updateGameTabs();
+      startGameTimer();
+      renderGame();
+      gameModal.hidden = false;
+      document.body.classList.add('game-modal-open');
+    }
+
+    function closeGame() {
+      stopGameTimer();
+      if (!gameModal) return;
+      gameModal.hidden = true;
+      document.body.classList.remove('game-modal-open');
+    }
+
+    function closePractice() {
+      if (!practiceModal) return;
+      practiceModal.hidden = true;
+      document.body.classList.remove('practice-modal-open');
+      practiceItemId = null;
+    }
+
+    function renderPracticeScenes() {
+      if (!practiceScenes) return;
+      practiceScenes.innerHTML = '';
+      PRACTICE_SCENES.forEach(function (scene) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'practice-scene' + (scene.id === practiceScene ? ' active' : '');
+        button.dataset.scene = scene.id;
+        button.textContent = scene.label;
+        button.addEventListener('click', function () {
+          practiceScene = scene.id;
+          renderPracticeScenes();
+        });
+        practiceScenes.appendChild(button);
+      });
+    }
+
+    function openPractice(itemId, itemElement) {
+      if (!editable) {
+        showToast('请通过 pnpm dev review 打开学习包后再造句');
+        return;
+      }
+      if (!practiceModal) return;
+      practiceItemId = itemId;
+      practiceScene = 'daily';
+      if (practiceTitle) {
+        practiceTitle.textContent = '造句实验室 · ' + (itemElement?.querySelector('.item-word')?.textContent || '');
+      }
+      if (practiceWord) {
+        var word = itemElement?.querySelector('.item-word')?.textContent || '';
+        var zh = itemElement?.querySelector('.item-zh')?.textContent || '';
+        practiceWord.innerHTML = '';
+        var strong = document.createElement('strong');
+        strong.textContent = word;
+        practiceWord.appendChild(strong);
+        if (zh) {
+          var span = document.createElement('span');
+          span.textContent = zh;
+          practiceWord.appendChild(span);
+        }
+      }
+      if (practiceText) practiceText.value = '';
+      if (practiceStatus) practiceStatus.textContent = '';
+      if (practiceResult) practiceResult.innerHTML = '';
+      if (practiceSubmit) {
+        practiceSubmit.disabled = false;
+        practiceSubmit.textContent = '让 AI 看看';
+      }
+      renderPracticeScenes();
+      practiceModal.hidden = false;
+      document.body.classList.add('practice-modal-open');
+      if (practiceText) practiceText.focus();
+    }
+
+    function renderPracticeResult(feedback) {
+      if (!practiceResult) return;
+      practiceResult.innerHTML = '';
+      [['写得好', feedback.praise], ['可以升级', feedback.improvement]].forEach(function (entry) {
+        var p = document.createElement('p');
+        var label = document.createElement('b');
+        label.textContent = entry[0];
+        p.appendChild(label);
+        p.appendChild(document.createTextNode(' ' + entry[1]));
+        practiceResult.appendChild(p);
+      });
+      var quote = document.createElement('blockquote');
+      quote.textContent = feedback.revision;
+      practiceResult.appendChild(quote);
+      if (feedback.followUp) {
+        var follow = document.createElement('p');
+        var label = document.createElement('b');
+        label.textContent = '再写一句';
+        follow.appendChild(label);
+        follow.appendChild(document.createTextNode(' ' + feedback.followUp));
+        practiceResult.appendChild(follow);
+      }
+    }
+
+    function submitPractice() {
+      if (!practiceItemId || !practiceText) return;
+      var sentence = practiceText.value.trim();
+      if (sentence.length < 3) {
+        if (practiceStatus) practiceStatus.textContent = '先写一句英文';
+        practiceText.focus();
+        return;
+      }
+      if (practiceSubmit) {
+        practiceSubmit.disabled = true;
+        practiceSubmit.textContent = '生成中…';
+      }
+      if (practiceStatus) practiceStatus.textContent = 'AI 正在看你的句子…';
+      fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/items/' + encodeURIComponent(practiceItemId) + '/practice', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sentence: sentence, scene: practiceScene }),
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) throw new Error(data.error || '生成失败');
+          renderPracticeResult(data.feedback);
+          if (practiceStatus) practiceStatus.textContent = '可以继续改一版，再让 AI 看看。';
+        });
+      }).catch(function (error) {
+        if (practiceStatus) practiceStatus.textContent = error.message;
+      }).finally(function () {
+        if (practiceSubmit) {
+          practiceSubmit.disabled = false;
+          practiceSubmit.textContent = '让 AI 看看';
+        }
+      });
+    }
+
+    if (practiceClose) practiceClose.addEventListener('click', closePractice);
+    if (practiceModal) {
+      practiceModal.addEventListener('click', function (event) {
+        if (event.target === practiceModal) closePractice();
+      });
+    }
+    if (practiceSubmit) practiceSubmit.addEventListener('click', submitPractice);
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && practiceModal && !practiceModal.hidden) closePractice();
+    });
+
+    var theaterOpen = document.getElementById('theater-open');
+    if (theaterOpen) theaterOpen.addEventListener('click', openTheater);
+    if (theaterClose) theaterClose.addEventListener('click', closeTheater);
+    if (theaterModal) {
+      theaterModal.addEventListener('click', function (event) {
+        if (event.target === theaterModal) closeTheater();
+      });
+    }
+    if (theaterSend) theaterSend.addEventListener('click', sendTheater);
+    if (theaterInput) {
+      theaterInput.addEventListener('keydown', function (event) {
+        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+          event.preventDefault();
+          sendTheater();
+        }
+      });
+    }
+    document.querySelectorAll('[data-theater-mode]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        theaterMode = button.getAttribute('data-theater-mode') === 'debate' ? 'debate' : 'interview';
+        resetTheater();
+        if (theaterInput) theaterInput.focus();
+      });
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && theaterModal && !theaterModal.hidden) closeTheater();
+    });
+
+    var audioOpen = document.getElementById('audio-open');
+    if (audioOpen) audioOpen.addEventListener('click', openAudio);
+    if (audioClose) audioClose.addEventListener('click', closeAudio);
+    if (audioModal) {
+      audioModal.addEventListener('click', function (event) {
+        if (event.target === audioModal) closeAudio();
+      });
+    }
+    document.querySelectorAll('[data-audio-mode]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        switchAudioMode(button.getAttribute('data-audio-mode'));
+      });
+    });
+    document.querySelectorAll('[data-audio-rate]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        setAudioRate(Number(button.getAttribute('data-audio-rate')) || 1);
+      });
+    });
+    if (audioGenerate) audioGenerate.addEventListener('click', generateArticleAudio);
+    if (audioBrowser) audioBrowser.addEventListener('click', startBrowserReading);
+    if (ttsSave) ttsSave.addEventListener('click', function () { saveTtsSettingsRequest(false); });
+    if (ttsClear) ttsClear.addEventListener('click', function () { saveTtsSettingsRequest(true); });
+    if (readingAudioEl) {
+      readingAudioEl.addEventListener('error', function () {
+        if (readingAudio) audioStatus.textContent = '音频文件不在了，可以重新生成。';
+      });
+    }
+    if (shadowPlay) shadowPlay.addEventListener('click', speakShadow);
+    if (shadowRecord) shadowRecord.addEventListener('click', startShadowRecording);
+    if (shadowPrev) shadowPrev.addEventListener('click', function () { moveShadow(-1); });
+    if (shadowNext) shadowNext.addEventListener('click', function () { moveShadow(1); });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && audioModal && !audioModal.hidden) closeAudio();
+    });
+
+    var microStoryOpen = document.getElementById('micro-story-open');
+    if (microStoryOpen) microStoryOpen.addEventListener('click', openMicroStory);
+    if (microStoryClose) microStoryClose.addEventListener('click', closeMicroStory);
+    if (microStoryGenerate) {
+      microStoryGenerate.addEventListener('click', function () {
+        requestMicroStory(Boolean(microStory));
+      });
+    }
+    if (microStoryModal) {
+      microStoryModal.addEventListener('click', function (event) {
+        if (event.target === microStoryModal) closeMicroStory();
+      });
+    }
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && microStoryModal && !microStoryModal.hidden) closeMicroStory();
+    });
+
+    var gameOpen = document.getElementById('game-open');
+    if (gameOpen) gameOpen.addEventListener('click', openGame);
+    if (gameClose) gameClose.addEventListener('click', closeGame);
+    if (gameModal) {
+      gameModal.addEventListener('click', function (event) {
+        if (event.target === gameModal) closeGame();
+      });
+    }
+    document.querySelectorAll('[data-game-mode]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        switchGameMode(button.getAttribute('data-game-mode') === 'word' ? 'word' : 'sentence');
+      });
+    });
+    if (gameCheck) gameCheck.addEventListener('click', checkGame);
+    if (gameReset) gameReset.addEventListener('click', resetGame);
+    if (gameNext) gameNext.addEventListener('click', nextGame);
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && gameModal && !gameModal.hidden) closeGame();
+    });
+
+    function renderOutputFeedback(feedback) {
+      var slot = document.getElementById('output-feedback');
+      if (!slot) return;
+      slot.hidden = false;
+      slot.innerHTML = '';
+      [['编辑说', feedback.praise], ['可以升级', feedback.upgrade]].forEach(function (entry) {
+        var p = document.createElement('p');
+        var label = document.createElement('b');
+        label.textContent = entry[0];
+        p.appendChild(label);
+        p.appendChild(document.createTextNode(' ' + entry[1]));
+        slot.appendChild(p);
+      });
+      var quote = document.createElement('blockquote');
+      quote.textContent = feedback.revision;
+      slot.appendChild(quote);
+      if (feedback.question) {
+        var follow = document.createElement('p');
+        var label = document.createElement('b');
+        label.textContent = '再写一句';
+        follow.appendChild(label);
+        follow.appendChild(document.createTextNode(' ' + feedback.question));
+        slot.appendChild(follow);
+      }
+    }
+
+    function offerOutputFeedback(outputId) {
+      var slot = document.getElementById('output-feedback');
+      if (!slot) return;
+      slot.hidden = false;
+      slot.innerHTML = '';
+      var button = document.createElement('button');
+      button.className = 'focus-tool';
+      button.type = 'button';
+      button.textContent = '让编辑看看';
+      button.addEventListener('click', function () {
+        button.disabled = true;
+        button.textContent = '编辑正在看…';
+        fetch('/api/outputs/' + encodeURIComponent(outputId) + '/feedback', { method: 'POST' }).then(function (response) {
+          return response.json().then(function (data) {
+            if (!response.ok) throw new Error(data.error || '生成失败');
+            renderOutputFeedback(data.feedback);
+          });
+        }).catch(function (error) {
+          button.disabled = false;
+          button.textContent = '让编辑看看';
+          showToast(error.message);
+        });
+      });
+      slot.appendChild(button);
+    }
+
     if (wordModalClose) wordModalClose.addEventListener('click', closeWordModal);
     if (wordModal) {
       wordModal.addEventListener('click', function (event) {
@@ -2257,6 +4153,48 @@ export function renderHtml(
       if (!trigger) return;
       event.preventDefault();
       openWordExpansion(trigger.getAttribute('data-expand-word'));
+    });
+
+    document.addEventListener('click', function (event) {
+      var trigger = event.target && event.target.closest ? event.target.closest('[data-word-story]') : null;
+      if (!trigger) return;
+      event.preventDefault();
+      openWordStory(trigger.getAttribute('data-word-story'));
+    });
+
+    document.addEventListener('click', function (event) {
+      var trigger = event.target && event.target.closest ? event.target.closest('[data-practice-word]') : null;
+      if (!trigger) return;
+      event.preventDefault();
+      openPractice(trigger.getAttribute('data-practice-word'), trigger.closest('.item'));
+    });
+
+    document.addEventListener('click', function (event) {
+      var button = event.target && event.target.closest ? event.target.closest('[data-rewrite-sentence]') : null;
+      if (!button) return;
+      if (!editable) {
+        showToast('请通过 pnpm dev review 打开学习包后再生成');
+        return;
+      }
+      event.preventDefault();
+      var itemElement = button.closest('.item');
+      button.disabled = true;
+      button.textContent = '生成中…';
+      fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/items/' + encodeURIComponent(button.getAttribute('data-rewrite-sentence')) + '/rewrites', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      }).then(function (response) {
+        return response.json().then(function (data) {
+          if (!response.ok) throw new Error(data.error || '生成失败');
+          appendSentenceRewrites(itemElement, data.rewrites);
+          button.remove();
+        });
+      }).catch(function (error) {
+        button.disabled = false;
+        button.textContent = '换一种说法';
+        showToast(error.message);
+      });
     });
 
     document.addEventListener('click', function (event) {
@@ -2705,6 +4643,7 @@ export function renderHtml(
               if (!response.ok) throw new Error(data.error || '保存失败');
               outputSave.textContent = '已保存';
               if (outputStatus) outputStatus.textContent = '已保存到「今日」的输出历史';
+              if (data.output && data.output.id) offerOutputFeedback(data.output.id);
               showToast('输出已保存');
             });
           }).catch(function (error) {

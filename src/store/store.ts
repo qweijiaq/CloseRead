@@ -15,6 +15,13 @@ interface StoreData {
   preferences: StorePreferences
 }
 
+export interface EditorFeedback {
+  praise: string
+  upgrade: string
+  revision: string
+  question?: string
+}
+
 export interface OutputEntry {
   id: string
   date: string
@@ -23,6 +30,8 @@ export interface OutputEntry {
   answer?: string
   packId?: string
   articleTitle?: string
+  /** Cached AI editor reply; generated only when the learner asks. */
+  feedback?: EditorFeedback
   createdAt: string
 }
 
@@ -555,6 +564,19 @@ export class Store {
     return [...this.data.outputs]
       .filter((entry) => entry.date === date)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]
+  }
+
+  getOutput(id: string): OutputEntry | undefined {
+    const entry = this.data.outputs.find((output) => output.id === id)
+    return entry ? { ...entry } : undefined
+  }
+
+  async saveOutputFeedback(id: string, feedback: EditorFeedback): Promise<OutputEntry> {
+    const entry = this.data.outputs.find((output) => output.id === id)
+    if (!entry) throw new Error('Output not found.')
+    entry.feedback = feedback
+    await this.save()
+    return { ...entry }
   }
 
   async saveOutput(

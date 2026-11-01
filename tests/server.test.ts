@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -449,5 +450,368 @@ describe('review server', () => {
   it('returns 404 for an unknown build job', async () => {
     const response = await fetch(`${server.url}/api/jobs/nope`)
     assert.equal(response.status, 404)
+  })
+
+  it('returns a cached editor reply for written output', async () => {
+    const entry = await server.store.saveOutput({
+      text: 'Public transport makes cities more equal.',
+      prompt: 'Why does public transport matter?',
+    })
+    await server.store.saveOutputFeedback(entry.id, {
+      praise: '观点清楚。',
+      upgrade: '可以更具体。',
+      revision: 'Public transport makes cities more equal.',
+      question: '能举个例子吗？',
+    })
+    const result = (await fetch(`${server.url}/api/outputs/${entry.id}/feedback`, {
+      method: 'POST',
+    }).then((response) => response.json())) as {
+      cached: boolean
+      feedback: { praise: string; question: string }
+    }
+    assert.equal(result.cached, true)
+    assert.equal(result.feedback.praise, '观点清楚。')
+    assert.equal(result.feedback.question, '能举个例子吗？')
+  })
+
+  it('returns cached word stories and sentence rewrites', async () => {
+    const dir = path.join(tempPacks, 'pack-phase1')
+    await fs.mkdir(dir, { recursive: true })
+    const now = new Date().toISOString()
+    const pack = {
+      id: 'pack-phase1',
+      resourceId: 'r',
+      title: 'Phase one',
+      source: 'sample',
+      mode: 'llm',
+      generatedAt: now,
+      summary: 'Summary',
+      difficulty: { cefr: 'B2', reason: 'test' },
+      stats: { wordCount: 20, itemCount: 2, readingMinutes: 2 },
+      items: [
+        {
+          id: 'word-1',
+          type: 'word_sense',
+          lemma: 'company',
+          sense: '陪伴',
+          definition: 'the state of being with others',
+          definitionZh: '陪伴',
+          contexts: [],
+          collocations: [],
+          examples: [],
+          relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
+          wordStory: {
+            origin: 'test origin',
+            roots: 'com + panis',
+            cognates: ['companion'],
+            confusables: [],
+            hook: 'test hook',
+          },
+          tags: [],
+          sourceRef: 'Resource',
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'sentence-1',
+          type: 'sentence',
+          lemma: 'A sentence.',
+          sense: '一句话。',
+          definition: 'A sentence.',
+          contexts: [],
+          collocations: [],
+          examples: [],
+          relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
+          sentence: {
+            original: 'A sentence.',
+            translation: '一句话。',
+            chunks: [],
+            variants: [],
+            rewrites: [
+              { register: 'formal', text: 'A formal sentence.', note: '正式。' },
+              { register: 'casual', text: 'A casual sentence.', note: '口语。' },
+              { register: 'punchy', text: 'A sentence.', note: '简短。' },
+            ],
+          },
+          tags: ['sentence'],
+          sourceRef: 'Resource',
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+      exercises: { cloze: [], comprehension: [], discussion: [] },
+      reading: [],
+    }
+    await fs.writeFile(path.join(dir, 'pack.json'), JSON.stringify(pack), 'utf8')
+    await server.store.addPack({
+      id: 'pack-phase1',
+      resourceId: 'r',
+      dir,
+      mode: 'llm',
+      itemCount: 2,
+      createdAt: now,
+    })
+
+    const story = (await fetch(`${server.url}/api/pack/pack-phase1/items/word-1/story`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }).then((response) => response.json())) as { cached: boolean; story: { hook: string } }
+    assert.equal(story.cached, true)
+    assert.equal(story.story.hook, 'test hook')
+
+    const rewrites = (await fetch(`${server.url}/api/pack/pack-phase1/items/sentence-1/rewrites`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }).then((response) => response.json())) as { cached: boolean; rewrites: Array<{ register: string }> }
+    assert.equal(rewrites.cached, true)
+    assert.deepEqual(rewrites.rewrites.map((entry) => entry.register), ['formal', 'casual', 'punchy'])
+
+    await fetch(`${server.url}/api/packs/pack-phase1/delete`, { method: 'POST' })
+  })
+
+  it('serves cached micro stories and aggregates the reading passport', async () => {
+    const dir = path.join(tempPacks, 'pack-passport')
+    await fs.mkdir(dir, { recursive: true })
+    const now = new Date().toISOString()
+    const word = (id: string, lemma: string) => ({
+      ...makeItem(),
+      id,
+      lemma,
+    })
+    const pack = {
+      id: 'pack-passport',
+      resourceId: 'r',
+      title: 'Passport Article',
+      source: 'sample',
+      mode: 'llm',
+      generatedAt: now,
+      summary: 'A short summary.',
+      difficulty: { cefr: 'C1', reason: 'test' },
+      frontMatter: {
+        title: 'Passport Article',
+        titleZh: '护照文章',
+        lead: 'A line worth keeping.',
+        leadZh: '值得记住的一句。',
+        itemIds: [],
+      },
+      stats: { wordCount: 800, itemCount: 3, readingMinutes: 18 },
+      items: [word('p1', 'attention'), word('p2', 'scarcity'), word('p3', 'deliberate')],
+      exercises: { cloze: [], comprehension: [], discussion: [] },
+      reading: [
+        {
+          index: 0,
+          original: 'A line worth keeping.',
+          translation: '值得记住的一句。',
+          itemIds: [],
+        },
+      ],
+      microStory: {
+        title: 'The Quiet Room',
+        text: 'Attention was scarce, so she made a deliberate choice.',
+        translation: '注意力很稀缺，所以她做了一个刻意的选择。',
+        used: ['attention', 'scarce', 'deliberate'],
+      },
+    }
+    await fs.writeFile(path.join(dir, 'pack.json'), JSON.stringify(pack), 'utf8')
+    await server.store.addPack({
+      id: 'pack-passport',
+      resourceId: 'r',
+      dir,
+      mode: 'llm',
+      itemCount: 3,
+      title: 'Passport Article',
+      createdAt: now,
+    })
+
+    const cached = (await fetch(`${server.url}/api/pack/pack-passport/micro-story`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }).then((response) => response.json())) as { cached: boolean; story: { title: string } }
+    assert.equal(cached.cached, true)
+    assert.equal(cached.story.title, 'The Quiet Room')
+
+    await fetch(`${server.url}/api/packs/pack-passport/reading`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ readParagraphs: [0], lastParagraph: 0, totalParagraphs: 1, finished: true }),
+    })
+
+    const passport = (await fetch(`${server.url}/api/passport`).then((response) => response.json())) as {
+      stats: { finished: number; words: number; minutes: number }
+      stamps: Array<{ packId: string; title: string; titleZh?: string; quote?: string; finished: boolean }>
+    }
+    assert.ok(passport.stats.finished >= 1)
+    assert.ok(passport.stats.words >= 800)
+    assert.ok(passport.stats.minutes >= 18)
+    const stamp = passport.stamps.find((entry) => entry.packId === 'pack-passport')
+    assert.ok(stamp)
+    assert.equal(stamp?.title, 'Passport Article')
+    assert.equal(stamp?.titleZh, '护照文章')
+    assert.equal(stamp?.quote, 'A line worth keeping.')
+    assert.equal(stamp?.finished, true)
+
+    await fetch(`${server.url}/api/packs/pack-passport/delete`, { method: 'POST' })
+  })
+
+  it('returns cached sentence audio and validates the sentence position', async () => {
+    const dir = path.join(tempPacks, 'pack-shadow')
+    const text = 'Listen carefully to this sentence.'
+    const hash = createHash('sha1').update(`say:system\n${text}`).digest('hex').slice(0, 16)
+    await fs.mkdir(path.join(dir, 'audio', 'shadow'), { recursive: true })
+    await fs.writeFile(path.join(dir, 'audio', 'shadow', `${hash}.m4a`), Buffer.from('fake-sentence-audio'))
+    const now = new Date().toISOString()
+    const pack = {
+      id: 'pack-shadow',
+      resourceId: 'r',
+      title: 'Shadow Article',
+      source: 'sample',
+      mode: 'heuristic',
+      generatedAt: now,
+      summary: 'Summary.',
+      difficulty: { cefr: 'B1', reason: 'test' },
+      stats: { wordCount: 10, itemCount: 0, readingMinutes: 1 },
+      items: [],
+      exercises: { cloze: [], comprehension: [], discussion: [] },
+      reading: [{ index: 0, original: text, translation: '仔细听这句话。', itemIds: [] }],
+    }
+    await fs.writeFile(path.join(dir, 'pack.json'), JSON.stringify(pack), 'utf8')
+    await server.store.addPack({
+      id: 'pack-shadow',
+      resourceId: 'r',
+      dir,
+      mode: 'heuristic',
+      itemCount: 0,
+      createdAt: now,
+    })
+
+    const result = (await fetch(`${server.url}/api/pack/pack-shadow/sentence-audio`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ paragraph: 0, sentence: 0 }),
+    }).then((response) => response.json())) as { cached: boolean; audio: string }
+    assert.equal(result.cached, true)
+    assert.equal(result.audio, `audio/shadow/${hash}.m4a`)
+
+    const missing = await fetch(`${server.url}/api/pack/pack-shadow/sentence-audio`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ paragraph: 0, sentence: 99 }),
+    })
+    assert.equal(missing.status, 400)
+
+    await fetch(`${server.url}/api/packs/pack-shadow/delete`, { method: 'POST' })
+  })
+
+  it('stores neural TTS settings without leaking the key', async () => {
+    const initial = (await fetch(`${server.url}/api/tts`).then((response) => response.json())) as {
+      tts: { configured: boolean; provider: string }
+      providers: Array<{ id: string }>
+    }
+    assert.equal(typeof initial.tts.configured, 'boolean')
+    assert.ok(initial.providers.some((provider) => provider.id === 'glm'))
+    assert.ok(initial.providers.some((provider) => provider.id === 'gemini'))
+
+    const saved = (await fetch(`${server.url}/api/tts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: 'glm',
+        apiKey: 'test-tts-key',
+        baseUrl: 'https://example.com/v1',
+        model: 'glm-tts',
+        voice: 'tongtong',
+        instructions: '',
+      }),
+    }).then((response) => response.json())) as {
+      ok: boolean
+      tts: { configured: boolean; provider: string; voice: string; baseUrl: string }
+    }
+    assert.equal(saved.ok, true)
+    assert.equal(saved.tts.configured, true)
+    assert.equal(saved.tts.provider, 'glm')
+    assert.equal(saved.tts.voice, 'tongtong')
+    assert.equal(saved.tts.baseUrl, 'https://example.com/v1')
+    assert.ok(!JSON.stringify(saved).includes('test-tts-key'))
+
+    const edge = (await fetch(`${server.url}/api/tts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'edge', voice: 'en-US-AvaNeural' }),
+    }).then((response) => response.json())) as {
+      tts: { configured: boolean; provider: string; voice: string }
+    }
+    assert.equal(edge.tts.configured, true)
+    assert.equal(edge.tts.provider, 'edge')
+    assert.equal(edge.tts.voice, 'en-US-AvaNeural')
+
+    const local = (await fetch(`${server.url}/api/tts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'local', voice: 'Samantha' }),
+    }).then((response) => response.json())) as {
+      tts: { provider: string; voice: string }
+    }
+    assert.equal(local.tts.provider, 'local')
+    assert.equal(local.tts.voice, 'Samantha')
+
+    const cleared = (await fetch(`${server.url}/api/tts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ clear: true }),
+    }).then((response) => response.json())) as { tts: { configured: boolean; provider: string } }
+    assert.equal(cleared.tts.configured, false)
+    assert.equal(cleared.tts.provider, 'local')
+  })
+
+  it('returns cached article audio without regenerating it', async () => {
+    const dir = path.join(tempPacks, 'pack-audio')
+    await fs.mkdir(path.join(dir, 'audio'), { recursive: true })
+    await fs.writeFile(path.join(dir, 'audio', 'reading.m4a'), Buffer.from('fake-audio'))
+    const now = new Date().toISOString()
+    const pack = {
+      id: 'pack-audio',
+      resourceId: 'r',
+      title: 'Audio Article',
+      source: 'sample',
+      mode: 'heuristic',
+      generatedAt: now,
+      summary: 'Summary.',
+      difficulty: { cefr: 'B2', reason: 'test' },
+      stats: { wordCount: 100, itemCount: 0, readingMinutes: 3 },
+      items: [],
+      exercises: { cloze: [], comprehension: [], discussion: [] },
+      reading: [{ index: 0, original: 'Listen to this sentence.', translation: '听这句话。', itemIds: [] }],
+      audio: { items: {}, reading: 'audio/reading.m4a' },
+    }
+    await fs.writeFile(path.join(dir, 'pack.json'), JSON.stringify(pack), 'utf8')
+    await server.store.addPack({
+      id: 'pack-audio',
+      resourceId: 'r',
+      dir,
+      mode: 'heuristic',
+      itemCount: 0,
+      title: 'Audio Article',
+      createdAt: now,
+    })
+
+    const result = (await fetch(`${server.url}/api/pack/pack-audio/audio`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    }).then((response) => response.json())) as {
+      cached: boolean
+      audio: { reading: string }
+    }
+    assert.equal(result.cached, true)
+    assert.equal(result.audio.reading, 'audio/reading.m4a')
+
+    const file = await fetch(`${server.url}/pack/pack-audio/audio/reading.m4a`)
+    assert.equal(file.status, 200)
+    assert.equal(await file.text(), 'fake-audio')
+
+    await fetch(`${server.url}/api/packs/pack-audio/delete`, { method: 'POST' })
   })
 })

@@ -76,8 +76,9 @@ export function renderReviewApp(): string {
   .stats { display: flex; flex-wrap: wrap; gap: 8px; }
   .stat { border: 1px solid var(--line); background: rgba(255,253,248,.75); border-radius: 999px; padding: 5px 10px; font-size: 12px; color: var(--muted); }
   .stat strong { color: var(--ink); }
-  nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 24px; }
-  nav button { border: 0; background: transparent; padding: 10px 14px; font-size: 14px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
+  nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
+  nav::-webkit-scrollbar { display: none; }
+  nav button { flex: 0 0 auto; white-space: nowrap; border: 0; background: transparent; padding: 10px 14px; font-size: 14px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; }
   nav button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
   .view { display: none; }
   .view.active { display: block; }
@@ -110,11 +111,56 @@ export function renderReviewApp(): string {
   .home-review-line strong { font-family: ui-serif, Georgia, serif; font-size: 28px; }
   .home-review-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
   .home-outputs { margin-top: 14px; }
+  .passport-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 24px; padding: 26px 28px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); box-shadow: var(--shadow); }
+  .passport-eyebrow { color: var(--rust); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; }
+  .passport-head h1 { margin: 6px 0 4px; font-family: ui-serif, Georgia, serif; font-size: clamp(26px, 4vw, 36px); line-height: 1.2; letter-spacing: -.02em; }
+  .passport-intro { margin: 0; color: var(--muted); font-size: 12.5px; max-width: 420px; }
+  .passport-stats { display: grid; grid-template-columns: repeat(3, minmax(82px, 1fr)); gap: 12px 24px; align-content: center; flex: 1 1 260px; }
+  .passport-stat { min-width: 0; }
+  .passport-stat strong { display: block; font-family: ui-serif, Georgia, serif; font-size: 24px; line-height: 1.2; color: var(--ink); }
+  .passport-stat span { color: var(--muted); font-size: 11.5px; }
+  .passport-stamps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 16px; }
+  .passport-stamp { display: flex; flex-direction: column; gap: 7px; min-height: 178px; padding: 16px 17px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--card); color: var(--ink); font: inherit; text-align: left; cursor: pointer; box-shadow: var(--shadow); transition: border-color .15s ease, transform .15s ease; }
+  .passport-stamp:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .passport-stamp .stamp-date { color: var(--rust); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+  .passport-stamp .stamp-date.reading { color: var(--accent); }
+  .passport-stamp .stamp-title { display: block; font-family: ui-serif, Georgia, serif; font-size: 16px; line-height: 1.35; }
+  .passport-stamp .stamp-zh { color: var(--muted); font-size: 11.5px; }
+  .passport-stamp .stamp-quote { flex: 1; margin: 2px 0 0; color: var(--muted); font-family: ui-serif, Georgia, serif; font-size: 12px; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .passport-stamp .stamp-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10.5px; }
+  .passport-stamp .stamp-share { color: var(--accent); }
+  .passport-empty { grid-column: 1 / -1; padding: 34px 24px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); font-size: 13px; text-align: center; }
+  .passport-modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 22px; background: rgba(28,26,22,.42); }
+  .passport-modal[hidden] { display: none; }
+  body.passport-modal-open { overflow: hidden; }
+  .passport-sheet { width: min(480px, 100%); max-height: 94vh; overflow: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: 0 24px 70px rgba(28,26,22,.24); }
+  .passport-sheet-bar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .passport-sheet-bar button { border: 0; background: none; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+  .passport-canvas-wrap { padding: 16px; background: var(--paper-2); }
+  .passport-canvas-wrap canvas { display: block; width: 100%; height: auto; border-radius: 3px; box-shadow: 0 10px 30px rgba(28,26,22,.16); }
+  .passport-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px 18px; }
+  .passport-card-actions span { color: var(--muted); font-size: 11px; }
+  @media (max-width: 720px) {
+    .passport-head { padding: 22px 20px; }
+    .passport-stats { flex-basis: 100%; }
+    .passport-stamps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 480px) {
+    .passport-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .passport-stamps { grid-template-columns: 1fr; }
+    .passport-modal { padding: 0; align-items: stretch; }
+    .passport-sheet { width: 100%; max-height: 100vh; border: 0; border-radius: 0; }
+  }
   .output-entry { padding: 9px 0; border-top: 1px solid var(--line); }
   .output-entry:first-of-type { border-top: 0; }
   .output-meta { color: var(--muted); font-size: 11.5px; }
   .output-entry summary { cursor: pointer; color: var(--ink); font-size: 13px; margin-top: 3px; }
   .output-text { margin-top: 7px; padding: 10px 12px; border-radius: 9px; background: var(--accent-soft); color: var(--ink); font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+  .output-feedback { margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; line-height: 1.7; }
+  .output-feedback p { margin: 5px 0; }
+  .output-feedback p b { color: var(--ink); font-weight: 600; }
+  .output-feedback blockquote { margin: 7px 0; padding-left: 10px; border-left: 1px solid var(--line-strong); color: var(--ink); font-family: ui-serif, Georgia, serif; }
+  .output-feedback .link-button { margin-top: 2px; }
   .today-output-input { width: 100%; min-height: 92px; margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 10px 12px; font: inherit; font-size: 13.5px; line-height: 1.65; resize: vertical; outline: none; }
   .today-output-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(63,95,127,.12); }
   .today-output-text { margin-top: 8px; padding: 9px 11px; border-radius: 9px; background: var(--accent-soft); color: var(--ink); font-size: 12.5px; line-height: 1.65; white-space: pre-wrap; }
@@ -443,6 +489,7 @@ export function renderReviewApp(): string {
     <button data-tab="review">复习</button>
     <button data-tab="library">词库</button>
     <button data-tab="packs">学习包</button>
+    <button data-tab="passport">护照</button>
     <button data-tab="graph">词网</button>
     <button data-tab="import">导入</button>
   </nav>
@@ -479,6 +526,11 @@ export function renderReviewApp(): string {
 
   <section class="view" id="view-packs">
     <div class="list" id="packs-list"></div>
+  </section>
+
+  <section class="view" id="view-passport">
+    <div id="passport-head"></div>
+    <div class="passport-stamps" id="passport-stamps"></div>
   </section>
 
   <section class="view" id="view-graph">
@@ -614,13 +666,23 @@ export function renderReviewApp(): string {
     </div>
   </section>
 </div>
+<div class="passport-modal" id="passport-modal" hidden>
+  <div class="passport-sheet" role="dialog" aria-modal="true" aria-label="阅读分享卡">
+    <div class="passport-sheet-bar"><span>阅读分享卡</span><button id="passport-card-close" type="button">关闭</button></div>
+    <div class="passport-canvas-wrap" id="passport-canvas-wrap"></div>
+    <div class="passport-card-actions">
+      <button class="btn btn-primary" id="passport-download" type="button">下载 PNG</button>
+      <span>3:4 · 1080 × 1440</span>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
 (function () {
   var state = {
     queue: [], current: null, revealed: false, tab: 'home', stats: {}, typeFilter: null,
-    today: null,
+    today: null, passport: null, shareStamp: null,
     resources: [], building: null, currentJobId: null, buildFromQueue: false,
     buildQueue: [], selectedArticles: {}, queueStats: null, savedQueue: [],
     articleResource: null, articles: [], articlePacks: [], articleHidden: [],
@@ -831,12 +893,271 @@ export function renderReviewApp(): string {
       '<span class="stat">待复习 <strong>' + (s.due || 0) + '</strong></span>';
   }
 
+  function passportDate(value) {
+    if (!value) return '';
+    var date = new Date(value);
+    if (isNaN(date.getTime())) return String(value).slice(0, 10).replace(/-/g, '.');
+    var month = String(date.getMonth() + 1).padStart(2, '0');
+    var day = String(date.getDate()).padStart(2, '0');
+    return date.getFullYear() + '.' + month + '.' + day;
+  }
+
+  function passportNumber(value) {
+    return Number(value || 0).toLocaleString('en-US');
+  }
+
+  function renderPassport() {
+    var data = state.passport || {};
+    var stats = data.stats || {};
+    var stamps = data.stamps || [];
+    var head = document.getElementById('passport-head');
+    var grid = document.getElementById('passport-stamps');
+    if (!head || !grid) return;
+    head.className = 'passport-head';
+    head.innerHTML =
+      '<div>' +
+        '<div class="passport-eyebrow">READING PASSPORT</div>' +
+        '<h1>阅读护照</h1>' +
+        '<p class="passport-intro">开始读的文章会在这里留下一个章；读完后再回来，可以生成一张 3:4 分享卡。</p>' +
+      '</div>' +
+      '<div class="passport-stats">' +
+        '<div class="passport-stat"><strong>' + passportNumber(stats.streak) + '</strong><span>连续天数</span></div>' +
+        '<div class="passport-stat"><strong>' + passportNumber(stats.finished) + '</strong><span>读完文章</span></div>' +
+        '<div class="passport-stat"><strong>' + passportNumber(stats.inProgress) + '</strong><span>在读文章</span></div>' +
+        '<div class="passport-stat"><strong>' + passportNumber(stats.paragraphsRead) + '</strong><span>精读段落</span></div>' +
+        '<div class="passport-stat"><strong>' + passportNumber(stats.words) + '</strong><span>读完词数</span></div>' +
+        '<div class="passport-stat"><strong>' + passportNumber(stats.minutes) + '</strong><span>精读分钟</span></div>' +
+      '</div>';
+    if (!stamps.length) {
+      grid.innerHTML = '<div class="passport-empty">还没有阅读记录。打开一篇文章开始精读，护照上就会出现第一个章。</div>';
+      return;
+    }
+    grid.innerHTML = stamps.map(function (stamp) {
+      var finished = Boolean(stamp.finished);
+      var date = passportDate(finished ? stamp.finishedAt : stamp.updatedAt);
+      var when = finished
+        ? '读完 · ' + date
+        : stamp.read
+          ? '在读 · ' + (stamp.percent || 0) + '%'
+          : '刚开始 · ' + date;
+      var meta = [
+        stamp.cefr || '',
+        stamp.wordCount ? passportNumber(stamp.wordCount) + ' 词' : '',
+        stamp.minutes ? passportNumber(stamp.minutes) + ' 分钟' : ''
+      ].filter(Boolean).join(' · ');
+      return '<button class="passport-stamp" type="button" data-passport-share="' + escapeHtml(stamp.packId) + '">' +
+        '<span class="stamp-date' + (finished ? '' : ' reading') + '">' + escapeHtml(when) + '</span>' +
+        '<span class="stamp-title">' + escapeHtml(stamp.title) + '</span>' +
+        (stamp.titleZh ? '<span class="stamp-zh">' + escapeHtml(stamp.titleZh) + '</span>' : '') +
+        (stamp.quote ? '<span class="stamp-quote">“' + escapeHtml(stamp.quote) + '”</span>' : '') +
+        '<span class="stamp-foot"><span>' + escapeHtml(meta) + '</span><span class="stamp-share">分享卡 ↗</span></span>' +
+      '</button>';
+    }).join('');
+  }
+
+  function loadPassport() {
+    if (state.passportLoading) return state.passportPromise;
+    state.passportLoading = true;
+    state.passportPromise = api('/api/passport').then(function (result) {
+      state.passport = result;
+      renderPassport();
+    }).catch(function (error) {
+      var head = document.getElementById('passport-head');
+      var grid = document.getElementById('passport-stamps');
+      if (head) {
+        head.className = 'passport-head';
+        head.innerHTML = '<div><div class="passport-eyebrow">READING PASSPORT</div><h1>阅读护照</h1>' +
+          '<p class="passport-intro">护照暂时打不开：' + escapeHtml(error.message) + '</p></div>';
+      }
+      if (grid) grid.innerHTML = '';
+    }).finally(function () {
+      state.passportLoading = false;
+    });
+    return state.passportPromise;
+  }
+
+  function fitCanvasText(ctx, text, maxWidth) {
+    var value = String(text || '');
+    if (ctx.measureText(value).width <= maxWidth) return value;
+    while (value.length > 1 && ctx.measureText(value + '…').width > maxWidth) value = value.slice(0, -1);
+    return value + '…';
+  }
+
+  function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines) {
+    var words = String(text || '').replace(/\\s+/g, ' ').trim().split(' ');
+    if (!words.length || !words[0]) return y;
+    var lines = [];
+    var line = '';
+    for (var i = 0; i < words.length; i++) {
+      var test = line ? line + ' ' + words[i] : words[i];
+      if (ctx.measureText(test).width > maxWidth && line) {
+        lines.push(line);
+        line = words[i];
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    var shown = lines.slice(0, maxLines);
+    if (lines.length > maxLines) shown[maxLines - 1] = fitCanvasText(ctx, shown[maxLines - 1] + ' …', maxWidth);
+    shown.forEach(function (value, index) { ctx.fillText(value, x, y + index * lineHeight); });
+    return y + shown.length * lineHeight;
+  }
+
+  function drawPassportCard(stamp) {
+    var canvas = document.createElement('canvas');
+    canvas.width = 1080;
+    canvas.height = 1440;
+    var ctx = canvas.getContext('2d');
+    var width = canvas.width;
+    var height = canvas.height;
+    var margin = 88;
+    var rust = '#a43a2c';
+
+    ctx.fillStyle = '#f7f2e8';
+    ctx.fillRect(0, 0, width, height);
+    ctx.strokeStyle = 'rgba(28,26,22,.22)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(44, 44, width - 88, height - 88);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(28,26,22,.5)';
+    ctx.font = '500 18px "Helvetica Neue", Arial, sans-serif';
+    ctx.fillText('C L O S E R E A D', margin, 130);
+    ctx.textAlign = 'right';
+    ctx.fillText('READING PASSPORT', width - margin, 130);
+    ctx.textAlign = 'left';
+
+    var y = 220;
+    ctx.fillStyle = '#1c1a16';
+    ctx.font = '600 58px Georgia, "Times New Roman", serif';
+    y = wrapCanvasText(ctx, stamp.title || 'Reading', margin, y, width - margin * 2, 70, 3);
+    if (stamp.titleZh) {
+      y += 14;
+      ctx.fillStyle = 'rgba(28,26,22,.58)';
+      ctx.font = '30px "PingFang SC", "Hiragino Sans GB", sans-serif';
+      ctx.fillText(fitCanvasText(ctx, stamp.titleZh, width - margin * 2), margin, y);
+      y += 38;
+    }
+
+    var divider = Math.max(410, y + 26);
+    ctx.strokeStyle = 'rgba(28,26,22,.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(margin, divider);
+    ctx.lineTo(width - margin, divider);
+    ctx.stroke();
+
+    if (stamp.quote) {
+      ctx.fillStyle = rust;
+      ctx.font = '500 16px "Helvetica Neue", Arial, sans-serif';
+      ctx.fillText('A LINE TO KEEP', margin, divider + 52);
+      ctx.fillStyle = '#2d2922';
+      ctx.font = 'italic 38px Georgia, "Times New Roman", serif';
+      wrapCanvasText(ctx, stamp.quote, margin, divider + 110, width - margin * 2, 52, 5);
+    }
+
+    ctx.strokeStyle = 'rgba(28,26,22,.18)';
+    ctx.beginPath();
+    ctx.moveTo(margin, 1140);
+    ctx.lineTo(width - margin, 1140);
+    ctx.stroke();
+
+    var meta = [
+      stamp.cefr || '',
+      stamp.wordCount ? passportNumber(stamp.wordCount) + ' WORDS' : '',
+      stamp.minutes ? passportNumber(stamp.minutes) + ' MIN' : ''
+    ].filter(Boolean).join('   ·   ');
+    ctx.fillStyle = '#2d2922';
+    ctx.font = '500 21px "Helvetica Neue", Arial, sans-serif';
+    ctx.fillText(fitCanvasText(ctx, meta, 700), margin, 1204);
+
+    var when = stamp.finished
+      ? '读完于 ' + passportDate(stamp.finishedAt)
+      : '读到 ' + (stamp.percent || 0) + '% · ' + passportDate(stamp.updatedAt);
+    ctx.fillStyle = 'rgba(28,26,22,.6)';
+    ctx.font = '22px "PingFang SC", "Hiragino Sans GB", sans-serif';
+    ctx.fillText(when, margin, 1262);
+    ctx.fillStyle = 'rgba(28,26,22,.42)';
+    ctx.font = '15px "Helvetica Neue", Arial, sans-serif';
+    ctx.fillText('CLOSEREAD  ·  READ SLOWLY, KEEP A LINE', margin, 1340);
+
+    ctx.save();
+    ctx.translate(888, 1240);
+    ctx.rotate(-0.13);
+    ctx.strokeStyle = rust;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, 66, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, 57, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = rust;
+    ctx.textAlign = 'center';
+    ctx.font = '600 16px "Helvetica Neue", Arial, sans-serif';
+    ctx.fillText('CLOSEREAD', 0, -4);
+    ctx.font = '500 12px "Helvetica Neue", Arial, sans-serif';
+    ctx.fillText('R E A D', 0, 22);
+    ctx.restore();
+
+    return canvas;
+  }
+
+  function openPassportCard(packId) {
+    var stamps = (state.passport && state.passport.stamps) || [];
+    var stamp = stamps.find(function (entry) { return entry.packId === packId; });
+    if (!stamp) return;
+    state.shareStamp = stamp;
+    var wrap = document.getElementById('passport-canvas-wrap');
+    var modal = document.getElementById('passport-modal');
+    if (!wrap || !modal) return;
+    wrap.innerHTML = '';
+    wrap.appendChild(drawPassportCard(stamp));
+    modal.hidden = false;
+    document.body.classList.add('passport-modal-open');
+  }
+
+  function closePassportCard() {
+    var modal = document.getElementById('passport-modal');
+    if (!modal) return;
+    modal.hidden = true;
+    document.body.classList.remove('passport-modal-open');
+  }
+
+  function downloadPassportCard() {
+    var canvas = document.querySelector('#passport-canvas-wrap canvas');
+    var stamp = state.shareStamp;
+    if (!canvas || !stamp) return;
+    canvas.toBlob(function (blob) {
+      if (!blob) {
+        toast('浏览器暂时无法导出这张卡');
+        return;
+      }
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement('a');
+      link.href = url;
+      link.download = 'CloseRead-' + String(stamp.title || 'reading').replace(/[^A-Za-z0-9\\u4e00-\\u9fa5_-]+/g, '-').slice(0, 40) + '.png';
+      link.click();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    }, 'image/png');
+  }
+
   function readingHref(card, continueReading) {
     if (!card || !card.url) return '#';
     if (continueReading && card.started && card.lastParagraph > 0 && !card.finished) {
       return card.url + '#p-' + String(card.lastParagraph + 1).padStart(2, '0');
     }
     return card.url;
+  }
+
+  function editorFeedbackHtml(feedback) {
+    return '<div class="output-feedback">' +
+      '<p><b>编辑说</b> ' + escapeHtml(feedback.praise) + '</p>' +
+      '<p><b>可以升级</b> ' + escapeHtml(feedback.upgrade) + '</p>' +
+      '<blockquote>' + escapeHtml(feedback.revision) + '</blockquote>' +
+      (feedback.question ? '<p><b>再写一句</b> ' + escapeHtml(feedback.question) + '</p>' : '') +
+    '</div>';
   }
 
   function loadPlan() {
@@ -1004,10 +1325,13 @@ export function renderReviewApp(): string {
             if (preview.length > 80) preview = preview.slice(0, 77) + '…';
             return '<div class="output-entry"><div class="output-meta">' + escapeHtml(entry.date) +
               (entry.articleTitle ? ' · ' + escapeHtml(entry.articleTitle) : '') + '</div>' +
-              '<details><summary>' + escapeHtml(preview) + '</summary>' +
+              '<details' + (entry.feedback ? ' open' : '') + '><summary>' + escapeHtml(preview) + '</summary>' +
                 '<div class="output-text">' + escapeHtml(entry.text) + '</div>' +
                 (entry.answer ? '<details><summary>参考回答</summary><div class="output-text">' +
                   escapeHtml(entry.answer) + '</div></details>' : '') +
+                (entry.feedback
+                  ? editorFeedbackHtml(entry.feedback)
+                  : '<button class="link-button" data-output-feedback="' + escapeHtml(entry.id) + '">让编辑看看</button>') +
               '</details></div>';
           }).join('')
         : '<div class="muted">还没有输出记录。精读完成后写下三句英文，会保存在这里。</div>');
@@ -2469,6 +2793,24 @@ export function renderReviewApp(): string {
       clearPackFilter();
       return;
     }
+    var outputFeedbackTarget = target.closest('[data-output-feedback]');
+    if (outputFeedbackTarget) {
+      event.preventDefault();
+      var feedbackId = outputFeedbackTarget.getAttribute('data-output-feedback');
+      outputFeedbackTarget.disabled = true;
+      outputFeedbackTarget.textContent = '编辑正在看…';
+      api('/api/outputs/' + encodeURIComponent(feedbackId) + '/feedback', { method: 'POST' })
+        .then(function () {
+          toast('编辑回信已收到');
+          loadPlan();
+        })
+        .catch(function (error) {
+          outputFeedbackTarget.disabled = false;
+          outputFeedbackTarget.textContent = '让编辑看看';
+          toast('生成失败：' + error.message);
+        });
+      return;
+    }
     var clearTypeTarget = target.closest('[data-clear-type]');
     if (clearTypeTarget) {
       event.preventDefault();
@@ -3079,12 +3421,14 @@ export function renderReviewApp(): string {
     document.getElementById('view-review').classList.toggle('active', tab === 'review');
     document.getElementById('view-library').classList.toggle('active', tab === 'library');
     document.getElementById('view-packs').classList.toggle('active', tab === 'packs');
+    document.getElementById('view-passport').classList.toggle('active', tab === 'passport');
     document.getElementById('view-graph').classList.toggle('active', tab === 'graph');
     document.getElementById('view-import').classList.toggle('active', tab === 'import');
     updateUrl();
     if (tab === 'home') loadPlan();
     if (tab === 'library') loadLibrary();
     if (tab === 'packs') loadPacks();
+    if (tab === 'passport') loadPassport();
     if (tab === 'graph') loadGraph();
     if (tab === 'import') loadRecentImports();
     if (tab === 'review' && !state.current && state.queue.length === 0) loadQueue();
@@ -3092,6 +3436,26 @@ export function renderReviewApp(): string {
 
   document.querySelectorAll('nav button').forEach(function (button) {
     button.addEventListener('click', function () { switchTab(button.getAttribute('data-tab')); });
+  });
+  var passportStamps = document.getElementById('passport-stamps');
+  if (passportStamps) {
+    passportStamps.addEventListener('click', function (event) {
+      var target = event.target && event.target.closest ? event.target.closest('[data-passport-share]') : null;
+      if (target) openPassportCard(target.getAttribute('data-passport-share'));
+    });
+  }
+  var passportClose = document.getElementById('passport-card-close');
+  if (passportClose) passportClose.addEventListener('click', closePassportCard);
+  var passportDownload = document.getElementById('passport-download');
+  if (passportDownload) passportDownload.addEventListener('click', downloadPassportCard);
+  var passportModal = document.getElementById('passport-modal');
+  if (passportModal) {
+    passportModal.addEventListener('click', function (event) {
+      if (event.target === passportModal) closePassportCard();
+    });
+  }
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && passportModal && !passportModal.hidden) closePassportCard();
   });
   els.clearPack.addEventListener('click', clearPackFilter);
   var reviewSentenceOnly = document.getElementById('review-sentence-only');
@@ -3295,6 +3659,7 @@ export function renderReviewApp(): string {
 
   var initialParams = new URLSearchParams(location.search);
   var initialTab = initialParams.get('tab');
+  var initialShare = initialParams.get('share');
   applyGraphSettings();
   state.packFilter = initialParams.get('pack');
   state.wordFilter = initialParams.get('words');
@@ -3304,7 +3669,7 @@ export function renderReviewApp(): string {
   var articleParam = initialParams.get('article');
   var initialArticle = articleParam === null ? NaN : Number(articleParam);
   state.importArticle = Number.isFinite(initialArticle) ? initialArticle : null;
-  if (initialTab === 'home' || initialTab === 'library' || initialTab === 'packs' || initialTab === 'graph' || initialTab === 'import' || initialTab === 'review') {
+  if (initialTab === 'home' || initialTab === 'library' || initialTab === 'packs' || initialTab === 'passport' || initialTab === 'graph' || initialTab === 'import' || initialTab === 'review') {
     state.tab = initialTab;
   }
   if (state.tab === 'home') {
@@ -3314,6 +3679,9 @@ export function renderReviewApp(): string {
   } else {
     switchTab(state.tab);
     loadPlan();
+    if (state.tab === 'passport' && initialShare) {
+      loadPassport().then(function () { openPassportCard(initialShare); });
+    }
     if (state.tab === 'import' && state.importArticlesView && state.importResource) {
       openArticleList(state.importResource, state.importArticle);
     }

@@ -71,6 +71,12 @@ export interface SentenceChunk {
   meaning?: string
 }
 
+export interface SentenceRewrite {
+  register: 'formal' | 'casual' | 'punchy'
+  text: string
+  note: string
+}
+
 export interface SentenceCardData {
   original: string
   translation: string
@@ -78,10 +84,22 @@ export interface SentenceCardData {
   pattern?: string
   grammar?: string
   variants: string[]
+  /** Same meaning rewritten in three registers; cached after the first request. */
+  rewrites?: SentenceRewrite[]
   why?: string
   paragraphIndex?: number
   /** The source paragraph was edited/deleted and the sentence needs review. */
   stale?: boolean
+}
+
+export interface WordStory {
+  origin: string
+  roots: string
+  semanticShift?: string
+  cognates: string[]
+  confusables: string[]
+  hook: string
+  caveat?: string
 }
 
 export interface DerivationNode {
@@ -140,6 +158,8 @@ export interface LearningItem {
   sentence?: SentenceCardData
   /** AI-generated word-family/derivation graph, cached with the card. */
   derivation?: DerivationGraph
+  /** A short, cached etymology story for the word card. */
+  wordStory?: WordStory
   /** Roots, prefixes and suffixes that help remember this word and its family. */
   wordFormation?: WordFormation
   /** A short, accurate mnemonic or usage hook. */
@@ -253,6 +273,14 @@ export interface PackFrontMatter {
   itemIds: string[]
 }
 
+export interface MicroStory {
+  title: string
+  text: string
+  translation: string
+  /** Target lemmas the model actually reused in the story. */
+  used: string[]
+}
+
 export interface LearningPack {
   id: string
   resourceId: string
@@ -278,6 +306,8 @@ export interface LearningPack {
   editorial?: string
   selection?: SelectionMetadata
   parentResourceId?: string
+  /** Cached, pack-level micro-story built from the target words. */
+  microStory?: MicroStory
   articleIndex?: number
   audio?: PackAudio
 }
@@ -298,6 +328,10 @@ export interface PackRecord {
 export interface PackAudio {
   summary?: string
   words?: string
+  /** Full article read aloud, generated on demand with macOS say. */
+  reading?: string
+  /** macOS voice used for the cached article audio. */
+  voice?: string
   items: Record<string, string>
 }
 

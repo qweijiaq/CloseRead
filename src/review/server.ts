@@ -4,6 +4,7 @@ import http from 'node:http'
 import path from 'node:path'
 
 import { analyzeResource } from '../analyze/index.js'
+import { generateReadingAudio, generateSentenceAudio, getTtsVoice, isSayAvailable, listSystemVoices, speechFingerprint } from '../audio/tts.js'
 import { seedCardCache } from '../analyze/card-cache.js'
 import { knownRatioInText } from '../analyze/known.js'
 import { generateDerivationGraph } from '../analyze/derivation.js'
@@ -16,10 +17,17 @@ import { filterPackForExport, selectExportWords } from '../analyze/export-words.
 import { translateExercise } from '../analyze/exercise-translation.js'
 import type { ExerciseKind } from '../analyze/exercise-translation.js'
 import { generateSentenceCard, sentenceIdentity } from '../analyze/sentence-card.js'
+import { generateSentenceRewrites } from '../analyze/sentence-rewrites.js'
+import { generatePracticeFeedback } from '../analyze/sentence-practice.js'
+import { generateTheaterTurn } from '../analyze/theater.js'
+import type { TheaterMessage, TheaterMode } from '../analyze/theater.js'
 import { sentences } from '../analyze/tokenize.js'
 import { translateSentence } from '../analyze/sentence-translation.js'
 import { generateWordCard, enrichWordRelations } from '../analyze/word-card.js'
-import { config, ensureDirs, hasLlm, llmProviderOptions, llmStatus, saveLlmSettings, storePath } from '../config.js'
+import { generateWordStory } from '../analyze/word-story.js'
+import { generateOutputFeedback } from '../analyze/output-feedback.js'
+import { generateMicroStory } from '../analyze/micro-story.js'
+import { config, ensureDirs, hasLlm, llmProviderOptions, llmStatus, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
 import { buildWordGraph } from '../graph/build.js'
 import {
   articleSections,
@@ -59,7 +67,7 @@ import { loadReadingProgress, readingPercent, readingSummary, resetReadingProgre
 import { Store } from '../store/store.js'
 import type { DailyProgress } from '../store/store.js'
 import { resolveDefaultStyle } from '../style/profile.js'
-import type { PackRecord, Resource, ResourceArticle, StoredItem } from '../types.js'
+import type { LearningPack, PackRecord, Resource, ResourceArticle, StoredItem } from '../types.js'
 import { isDue, isNew, stateLabel } from './scheduler.js'
 import type { Grade } from './scheduler.js'
 import { renderReviewApp } from './web.js'
@@ -581,6 +589,133 @@ async function readingDashboard(store: Store, daily: DailyProgress) {
   }
 }
 
+interface PassportStamp {
+  packId: string
+  title: string
+  titleZh?: string
+  url: string
+  finishedAt?: string
+  updatedAt: string
+  finished: boolean
+  percent: number
+  read: number
+  total: number
+  wordCount?: number
+  cefr?: string
+  minutes?: number
+  itemCount?: number
+  quote?: string
+  quoteZh?: string
+}
+
+function firstSentence(value: string): string {
+  const compact = value.replace(/\s+/g, ' ').trim()
+  const match = /^(.+?[.!?])(?:\s|$)/.exec(compact)
+  return (match?.[1] ?? compact).slice(0, 220)
+}
+
+function passportQuote(pack: LearningPack): { quote?: string; quoteZh?: string } {
+  const lead = pack.frontMatter?.lead?.trim()
+  if (lead) {
+    return {
+      quote: lead.slice(0, 220),
+      ...(pack.frontMatter?.leadZh?.trim() ? { quoteZh: pack.frontMatter.leadZh.trim().slice(0, 220) } : {}),
+    }
+  }
+  const paragraph = pack.reading?.find((entry) => entry.original.trim())
+  if (paragraph) {
+    return { quote: firstSentence(paragraph.original) }
+  }
+  if (pack.summary.trim()) return { quote: firstSentence(pack.summary) }
+  return {}
+}
+
+async function passportPayload(store: Store) {
+  const packs = store.packs()
+  const storeStats = store.stats()
+  const progressEntries: Array<{
+    pack: PackRecord
+    contents?: LearningPack
+    progress: Awaited<ReturnType<typeof loadReadingProgress>>
+  }> = []
+  let finished = 0
+  let inProgress = 0
+  let paragraphsRead = 0
+  let words = 0
+  let minutes = 0
+  const days = new Set<string>()
+
+  for (const pack of packs) {
+    let contents: LearningPack | undefined
+    let total = 0
+    try {
+      contents = await loadPack(pack.dir)
+      total = contents.reading?.length ?? 0
+    } catch {
+      // A pack whose body was deleted can still contribute stored progress.
+    }
+    const progress = await loadReadingProgress(pack.dir, pack.id, total)
+    const touched = Boolean(progress.startedAt || progress.finishedAt || progress.readParagraphs.length)
+    if (!touched) continue
+    progressEntries.push({ pack, contents, progress })
+    paragraphsRead += progress.readParagraphs.length
+    if (progress.finishedAt) {
+      finished += 1
+      if (contents) {
+        words += contents.stats.wordCount
+        minutes += contents.stats.readingMinutes
+      }
+    } else {
+      inProgress += 1
+    }
+    if (progress.readParagraphs.length || progress.finishedAt) {
+      for (const value of [progress.startedAt, progress.finishedAt, progress.updatedAt]) {
+        if (value) days.add(value.slice(0, 10))
+      }
+    }
+  }
+
+  const stamps: PassportStamp[] = progressEntries
+    .map(({ pack, contents, progress }) => {
+      const title = contents?.frontMatter?.title ?? pack.title ?? store.getResource(pack.resourceId)?.title ?? pack.id
+      const quote = contents ? passportQuote(contents) : {}
+      return {
+        packId: pack.id,
+        title,
+        ...(contents?.frontMatter?.titleZh ? { titleZh: contents.frontMatter.titleZh } : {}),
+        url: packUrl(pack.id),
+        ...(progress.finishedAt ? { finishedAt: progress.finishedAt } : {}),
+        updatedAt: progress.updatedAt,
+        finished: Boolean(progress.finishedAt),
+        percent: readingPercent(progress),
+        read: progress.readParagraphs.length,
+        total: progress.totalParagraphs,
+        ...(contents ? { wordCount: contents.stats.wordCount } : {}),
+        ...(contents?.difficulty.cefr ? { cefr: contents.difficulty.cefr } : {}),
+        ...(contents ? { minutes: contents.stats.readingMinutes } : {}),
+        ...(contents ? { itemCount: contents.items.length } : {}),
+        ...quote,
+      }
+    })
+    .sort((a, b) => (b.finishedAt ?? b.updatedAt).localeCompare(a.finishedAt ?? a.updatedAt))
+
+  return {
+    stats: {
+      streak: store.preferences().streak,
+      finished,
+      inProgress,
+      paragraphsRead,
+      words,
+      minutes,
+      days: days.size,
+      cards: storeStats.total,
+      sentenceCards: store.listItems().filter((item) => item.type === 'sentence').length,
+      outputs: store.listOutputs(500).length,
+    },
+    stamps,
+  }
+}
+
 async function todayPayload(store: Store, now: Date = new Date()) {
   const stats = store.stats(now)
   const preferences = store.preferences()
@@ -781,6 +916,259 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       await savePackFiles(contents, pack.dir)
       await store.upsertItems([item])
       sendJson(response, 200, { ok: true, derivation })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const sentenceAudioMatch = /^\/api\/pack\/([^/]+)\/sentence-audio$/.exec(url.pathname)
+  if (method === 'POST' && sentenceAudioMatch) {
+    try {
+      const body = await readJson(request)
+      const paragraphIndex = Number(body.paragraph)
+      const sentenceIndex = Number(body.sentence)
+      if (!Number.isInteger(paragraphIndex) || !Number.isInteger(sentenceIndex)) {
+        sendJson(response, 400, { error: '句子位置不正确。', fallback: 'browser' })
+        return
+      }
+      const pack = store.findPack(decodeURIComponent(sentenceAudioMatch[1]!))
+      if (!pack) {
+        sendJson(response, 404, { error: 'Pack not found' })
+        return
+      }
+      const contents = await loadPack(pack.dir)
+      const paragraph = (contents.reading ?? []).find((entry) => entry.index === paragraphIndex)
+      if (!paragraph) {
+        sendJson(response, 400, { error: '找不到这个段落。', fallback: 'browser' })
+        return
+      }
+      const parts = paragraph.customSentences?.length ? paragraph.customSentences : sentences(paragraph.original)
+      const text = parts[sentenceIndex]?.trim()
+      if (!text) {
+        sendJson(response, 400, { error: '找不到这句话。', fallback: 'browser' })
+        return
+      }
+      const result = await generateSentenceAudio(text, pack.dir)
+      if (!result) {
+        sendJson(response, 400, {
+          error: '当前系统没有可用的离线语音（macOS say）。',
+          fallback: 'browser',
+        })
+        return
+      }
+      sendJson(response, 200, { ok: true, audio: result.path, cached: result.cached, text })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error), fallback: 'browser' })
+    }
+    return
+  }
+
+  const audioMatch = /^\/api\/pack\/([^/]+)\/audio$/.exec(url.pathname)
+  if (method === 'POST' && audioMatch) {
+    try {
+      const body = (await readJson(request).catch(() => ({}))) as Record<string, unknown>
+      const pack = store.findPack(decodeURIComponent(audioMatch[1]!))
+      if (!pack) {
+        sendJson(response, 404, { error: 'Pack not found' })
+        return
+      }
+      const contents = await loadPack(pack.dir)
+      const fingerprint = await speechFingerprint()
+      const cached = contents.audio?.reading
+      if (!body.regenerate && cached && (!contents.audio?.voice || contents.audio.voice === fingerprint)) {
+        try {
+          await fs.access(path.join(pack.dir, cached))
+          sendJson(response, 200, { ok: true, audio: contents.audio, cached: true })
+          return
+        } catch {
+          // Regenerate when the cached file was deleted.
+        }
+      }
+      const reading = await generateReadingAudio(contents, pack.dir)
+      if (!reading) {
+        sendJson(response, 400, { error: '这篇文章还没有可朗读的正文。', fallback: 'browser' })
+        return
+      }
+      const audio = { ...(contents.audio ?? { items: {} }), reading: reading.path, voice: reading.fingerprint }
+      contents.audio = audio
+      await savePackFiles(contents, pack.dir)
+      sendJson(response, 200, { ok: true, audio })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const microStoryMatch = /^\/api\/pack\/([^/]+)\/micro-story$/.exec(url.pathname)
+  if (method === 'POST' && microStoryMatch) {
+    try {
+      const body = (await readJson(request).catch(() => ({}))) as Record<string, unknown>
+      const pack = store.findPack(decodeURIComponent(microStoryMatch[1]!))
+      if (!pack) {
+        sendJson(response, 404, { error: 'Pack not found' })
+        return
+      }
+      const contents = await loadPack(pack.dir)
+      if (!body.regenerate && contents.microStory) {
+        sendJson(response, 200, { ok: true, story: contents.microStory, cached: true })
+        return
+      }
+      const story = await generateMicroStory(contents)
+      contents.microStory = story
+      await savePackFiles(contents, pack.dir)
+      sendJson(response, 200, { ok: true, story })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const wordStoryMatch = /^\/api\/pack\/([^/]+)\/items\/([^/]+)\/story$/.exec(url.pathname)
+  if (method === 'POST' && wordStoryMatch) {
+    try {
+      const pack = store.findPack(decodeURIComponent(wordStoryMatch[1]!))
+      if (!pack) {
+        sendJson(response, 404, { error: 'Pack not found' })
+        return
+      }
+      const contents = await loadPack(pack.dir)
+      const item = contents.items.find((entry) => entry.id === decodeURIComponent(wordStoryMatch[2]!))
+      if (!item) {
+        sendJson(response, 404, { error: 'Item not found in pack' })
+        return
+      }
+      if (item.type === 'sentence') {
+        sendJson(response, 400, { error: '句子卡没有词源。' })
+        return
+      }
+      if (item.wordStory) {
+        sendJson(response, 200, { ok: true, item, story: item.wordStory, cached: true })
+        return
+      }
+      const story = await generateWordStory(item)
+      item.wordStory = story
+      await savePackFiles(contents, pack.dir)
+      await store.upsertItems([item])
+      sendJson(response, 200, { ok: true, item, story })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const sentenceRewritesMatch = /^\/api\/pack\/([^/]+)\/items\/([^/]+)\/rewrites$/.exec(url.pathname)
+  if (method === 'POST' && sentenceRewritesMatch) {
+    try {
+      const body = (await readJson(request).catch(() => ({}))) as Record<string, unknown>
+      const pack = store.findPack(decodeURIComponent(sentenceRewritesMatch[1]!))
+      if (!pack) {
+        sendJson(response, 404, { error: 'Pack not found' })
+        return
+      }
+      const contents = await loadPack(pack.dir)
+      const item = contents.items.find((entry) => entry.id === decodeURIComponent(sentenceRewritesMatch[2]!))
+      if (!item) {
+        sendJson(response, 404, { error: 'Item not found in pack' })
+        return
+      }
+      if (item.type !== 'sentence' || !item.sentence) {
+        sendJson(response, 400, { error: '这不是句子卡。' })
+        return
+      }
+      if (!body.regenerate && item.sentence.rewrites?.length) {
+        sendJson(response, 200, { ok: true, item, rewrites: item.sentence.rewrites, cached: true })
+        return
+      }
+      const rewrites = await generateSentenceRewrites(item)
+      item.sentence.rewrites = rewrites
+      await savePackFiles(contents, pack.dir)
+      await store.upsertItems([item])
+      sendJson(response, 200, { ok: true, item, rewrites })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const practiceMatch = /^\/api\/pack\/([^/]+)\/items\/([^/]+)\/practice$/.exec(url.pathname)
+  if (method === 'POST' && practiceMatch) {
+    try {
+      const pack = store.findPack(decodeURIComponent(practiceMatch[1]!))
+      if (!pack) {
+        sendJson(response, 404, { error: 'Pack not found' })
+        return
+      }
+      const contents = await loadPack(pack.dir)
+      const item = contents.items.find((entry) => entry.id === decodeURIComponent(practiceMatch[2]!))
+      if (!item) {
+        sendJson(response, 404, { error: 'Item not found in pack' })
+        return
+      }
+      if (item.type === 'sentence') {
+        sendJson(response, 400, { error: '句子卡不需要造句练习。' })
+        return
+      }
+      const body = await readJson(request)
+      const sentence = typeof body.sentence === 'string' ? body.sentence.trim() : ''
+      if (sentence.length < 3) {
+        sendJson(response, 400, { error: '先写一句英文。' })
+        return
+      }
+      if (sentence.length > 500) {
+        sendJson(response, 400, { error: '句子太长了，控制在 500 字符以内。' })
+        return
+      }
+      const scene = typeof body.scene === 'string' ? body.scene : 'daily'
+      const feedback = await generatePracticeFeedback(item, sentence, scene)
+      sendJson(response, 200, { ok: true, feedback })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const theaterMatch = /^\/api\/pack\/([^/]+)\/theater$/.exec(url.pathname)
+  if (method === 'POST' && theaterMatch) {
+    try {
+      const pack = store.findPack(decodeURIComponent(theaterMatch[1]!))
+      if (!pack) {
+        sendJson(response, 404, { error: 'Pack not found' })
+        return
+      }
+      const body = await readJson(request)
+      const mode: TheaterMode = body.mode === 'debate' ? 'debate' : 'interview'
+      const rawMessages = Array.isArray(body.messages) ? body.messages : []
+      if (rawMessages.length === 0 || rawMessages.length > 5) {
+        sendJson(response, 400, { error: '这一局最多三轮，请重新开始。' })
+        return
+      }
+      const messages: TheaterMessage[] = []
+      for (const [index, entry] of rawMessages.entries()) {
+        if (!entry || typeof entry !== 'object') continue
+        const role = (entry as { role?: unknown }).role === 'assistant' ? 'assistant' : 'user'
+        const content = typeof (entry as { content?: unknown }).content === 'string'
+          ? (entry as { content: string }).content.trim()
+          : ''
+        if (!content) continue
+        const expected = index % 2 === 0 ? 'user' : 'assistant'
+        if (role !== expected) {
+          sendJson(response, 400, { error: '对话顺序不正确。' })
+          return
+        }
+        messages.push({ role, content: content.slice(0, 1000) })
+      }
+      if (messages.length === 0 || messages[messages.length - 1]?.role !== 'user') {
+        sendJson(response, 400, { error: '先写下你的问题或反驳。' })
+        return
+      }
+      if (messages.filter((message) => message.role === 'user').length > 3) {
+        sendJson(response, 400, { error: '这一局已经结束，请重新开始。' })
+        return
+      }
+      const contents = await loadPack(pack.dir)
+      const { result, turn } = await generateTheaterTurn(contents, mode, messages)
+      sendJson(response, 200, { ok: true, turn, ...result })
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
     }
@@ -1002,6 +1390,32 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     return
   }
 
+  const outputFeedbackMatch = /^\/api\/outputs\/([^/]+)\/feedback$/.exec(url.pathname)
+  if (method === 'POST' && outputFeedbackMatch) {
+    try {
+      const output = store.getOutput(decodeURIComponent(outputFeedbackMatch[1]!))
+      if (!output) {
+        sendJson(response, 404, { error: 'Output not found' })
+        return
+      }
+      if (output.feedback) {
+        sendJson(response, 200, { ok: true, output, feedback: output.feedback, cached: true })
+        return
+      }
+      const feedback = await generateOutputFeedback(
+        output.text,
+        output.prompt,
+        output.answer,
+        output.articleTitle,
+      )
+      const saved = await store.saveOutputFeedback(output.id, feedback)
+      sendJson(response, 200, { ok: true, output: saved, feedback })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   if (method === 'POST' && url.pathname === '/api/feedback/selection') {
     const body = await readJson(request)
     const delta = Number(body.delta)
@@ -1104,6 +1518,46 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       items: store.listItems(query).map((item) => viewModel(item, store, now)),
       summary: store.stats(now),
     })
+    return
+  }
+
+  if (url.pathname === '/api/tts') {
+    if (method === 'GET') {
+      const status = ttsStatus()
+      const systemVoice = await getTtsVoice(true)
+      sendJson(response, 200, {
+        tts: status,
+        providers: ttsProviderOptions,
+        voice: status.configured ? status.voice : systemVoice,
+        default: !status.configured,
+        say: await isSayAvailable(),
+        systemVoice: systemVoice ?? null,
+        systemVoices: await listSystemVoices(true),
+      })
+      return
+    }
+    if (method === 'POST') {
+      try {
+        const body = await readJson(request)
+        const tts = saveTtsSettings({
+          provider: typeof body.provider === 'string' ? body.provider : undefined,
+          apiKey: typeof body.apiKey === 'string' ? body.apiKey : undefined,
+          baseUrl: typeof body.baseUrl === 'string' ? body.baseUrl : undefined,
+          model: typeof body.model === 'string' ? body.model : undefined,
+          voice: typeof body.voice === 'string' ? body.voice : undefined,
+          instructions: typeof body.instructions === 'string' ? body.instructions : undefined,
+          clear: body.clear === true,
+        })
+        sendJson(response, 200, { ok: true, tts })
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
+  }
+
+  if (method === 'GET' && url.pathname === '/api/passport') {
+    sendJson(response, 200, await passportPayload(store))
     return
   }
 
@@ -2358,7 +2812,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     return
   }
 
-  if (method === 'GET' && url.pathname.startsWith('/pack/')) {
+  if ((method === 'GET' || method === 'HEAD') && url.pathname.startsWith('/pack/')) {
     const parts = url.pathname.split('/').filter(Boolean)
     const packId = decodeURIComponent(parts[1] ?? '')
     const relative = parts.slice(2).join('/') || 'index.html'
@@ -2375,7 +2829,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       response.end('Forbidden')
       return
     }
-    if (relative === 'index.html') {
+    if (method === 'GET' && relative === 'index.html') {
       // 用当前模板重新渲染，旧学习包也能获得新的阅读进度和导航
       try {
         const contents = await loadPack(pack.dir)
@@ -2388,9 +2842,50 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       }
     }
     try {
-      const content = await fs.readFile(filePath)
-      response.writeHead(200, { 'content-type': contentType(filePath), 'cache-control': 'no-store' })
-      response.end(content)
+      const stat = await fs.stat(filePath)
+      const type = contentType(filePath)
+      const range = request.headers.range
+      if (range) {
+        const match = /^bytes=(\d*)-(\d*)$/.exec(range)
+        if (!match) {
+          response.writeHead(416, { 'content-range': `bytes */${stat.size}` })
+          response.end()
+          return
+        }
+        const rawStart = match[1] ?? ''
+        const rawEnd = match[2] ?? ''
+        let start = rawStart ? Number(rawStart) : Math.max(0, stat.size - Number(rawEnd))
+        let end = rawEnd && rawStart ? Number(rawEnd) : stat.size - 1
+        if (!rawStart && !rawEnd) {
+          response.writeHead(416, { 'content-range': `bytes */${stat.size}` })
+          response.end()
+          return
+        }
+        if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || start > end || start >= stat.size) {
+          response.writeHead(416, { 'content-range': `bytes */${stat.size}` })
+          response.end()
+          return
+        }
+        end = Math.min(end, stat.size - 1)
+        const content = await fs.readFile(filePath)
+        const chunk = content.subarray(start, end + 1)
+        response.writeHead(206, {
+          'content-type': type,
+          'content-length': String(chunk.length),
+          'content-range': `bytes ${start}-${end}/${stat.size}`,
+          'accept-ranges': 'bytes',
+          'cache-control': 'no-store',
+        })
+        response.end(method === 'HEAD' ? undefined : chunk)
+        return
+      }
+      response.writeHead(200, {
+        'content-type': type,
+        'content-length': String(stat.size),
+        'accept-ranges': 'bytes',
+        'cache-control': 'no-store',
+      })
+      response.end(method === 'HEAD' ? undefined : await fs.readFile(filePath))
     } catch {
       response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
       response.end('File not found')

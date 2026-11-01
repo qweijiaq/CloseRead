@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 
 import { renderHtml } from '../src/pack/html.js'
 import { renderReviewApp } from '../src/review/web.js'
-import type { LearningPack } from '../src/types.js'
+import type { LearningItem, LearningPack } from '../src/types.js'
 
 function makePack(): LearningPack {
   return {
@@ -283,6 +283,207 @@ describe('pack html', () => {
     assert.ok(html.includes('not so much A as B'))
     assert.ok(html.includes('sentence-original'))
   })
+
+  it('renders cached word stories and sentence rewrites', () => {
+    const pack = makePack()
+    const now = new Date().toISOString()
+    const word: LearningItem = {
+      id: 'story-word',
+      type: 'word_sense',
+      lemma: 'company',
+      sense: 'companionship',
+      definition: 'the state of being with others',
+      definitionZh: '陪伴',
+      contexts: [],
+      collocations: [],
+      examples: [],
+      relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
+      wordStory: {
+        origin: '来自拉丁语 com 和 panis，原意是“一起吃面包的人”。',
+        roots: 'com-（一起）+ panis（面包）',
+        semanticShift: '从共同进餐的伙伴扩展为商业组织。',
+        cognates: ['companion', 'company'],
+        confusables: ['companionship'],
+        hook: '一起吃过面包的人，才是 company。',
+      },
+      tags: [],
+      sourceRef: 'Resource',
+      createdAt: now,
+      updatedAt: now,
+    }
+    const sentence: LearningItem = {
+      id: 'rewrite-sentence',
+      type: 'sentence',
+      lemma: 'The rivalry is not so much a strategy as a reflex.',
+      sense: '这场竞争与其说是战略，不如说是条件反射。',
+      definition: 'not so much A as B',
+      contexts: [],
+      collocations: [],
+      examples: [],
+      relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
+      sentence: {
+        original: 'The rivalry is not so much a strategy as a reflex.',
+        translation: '这场竞争与其说是战略，不如说是条件反射。',
+        chunks: [],
+        variants: [],
+        rewrites: [
+          { register: 'formal', text: 'The rivalry is less a deliberate strategy than a reflex.', note: '更书面，适合评论。' },
+          { register: 'casual', text: 'The rivalry is basically a reflex, not a strategy.', note: '口语化。' },
+          { register: 'punchy', text: 'Not strategy. Reflex.', note: '短句对照。' },
+        ],
+      },
+      tags: ['sentence'],
+      sourceRef: 'Resource',
+      createdAt: now,
+      updatedAt: now,
+    }
+    pack.items = [word, sentence]
+    const html = renderHtml(pack, { items: {} })
+    assert.ok(html.includes('data-word-story="story-word"'))
+    assert.ok(html.includes('data-practice-word="story-word"'))
+    assert.ok(html.includes('id="practice-modal"'))
+    assert.ok(html.includes('id="theater-modal"'))
+    assert.ok(html.includes('id="theater-open"'))
+    assert.ok(html.includes('data-theater-mode="interview"'))
+    assert.ok(html.includes('data-theater-mode="debate"'))
+    assert.ok(html.includes('词源小传'))
+    assert.ok(html.includes('一起吃面包的人'))
+    assert.ok(html.includes('sentence-rewrites'))
+    assert.ok(html.includes('一句三写'))
+    assert.ok(html.includes('正式'))
+    assert.ok(html.includes('简短有力'))
+  })
+
+  it('offers the 60-second puzzles only when playable cards exist', () => {
+    const empty = renderHtml(makePack(), { items: {} })
+    assert.ok(!empty.includes('id="game-open"'))
+
+    const pack = makePack()
+    const now = new Date().toISOString()
+    pack.items = [
+      {
+        id: 'game-sentence',
+        type: 'sentence',
+        lemma: 'The rivalry is not so much a strategy as a reflex.',
+        sense: '这场竞争与其说是战略，不如说是条件反射。',
+        definition: 'not so much A as B',
+        contexts: [],
+        collocations: [],
+        examples: [],
+        relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
+        sentence: {
+          original: 'The rivalry is not so much a strategy as a reflex.',
+          translation: '这场竞争与其说是战略，不如说是条件反射。',
+          chunks: [],
+          variants: [],
+        },
+        tags: ['sentence'],
+        sourceRef: 'Resource',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'game-word',
+        type: 'word_sense',
+        lemma: 'unbelievable',
+        sense: 'hard to believe',
+        definition: 'hard to believe',
+        contexts: [],
+        collocations: [],
+        examples: [],
+        relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
+        wordFormation: {
+          prefixes: [{ form: 'un-', meaning: '不', examples: [] }],
+          roots: [{ form: 'believe', meaning: '相信', examples: [] }],
+          suffixes: [{ form: '-able', meaning: '可以……的', examples: [] }],
+        },
+        tags: [],
+        sourceRef: 'Resource',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]
+    const html = renderHtml(pack, { items: {} })
+    assert.ok(html.includes('id="game-open"'))
+    assert.ok(html.includes('id="game-modal"'))
+    assert.ok(html.includes('data-game-mode="sentence"'))
+    assert.ok(html.includes('data-game-mode="word"'))
+    assert.ok(html.includes('id="game-check"'))
+    assert.ok(html.includes('GAME_SENTENCES = [{\"id\":\"game-sentence\"'))
+    assert.ok(html.includes('GAME_WORDS = [{\"id\":\"game-word\"'))
+    assert.ok(html.includes('function checkGame()'))
+  })
+
+  it('includes the audio player, shadowing recorder and cached reading audio', () => {
+    const pack = makePack()
+    pack.audio = { items: {}, reading: 'audio/reading.m4a' }
+    const html = renderHtml(pack, pack.audio)
+    assert.ok(html.includes('id="audio-open"'))
+    assert.ok(html.includes('id="audio-modal"'))
+    assert.ok(html.includes('data-audio-mode="listen"'))
+    assert.ok(html.includes('data-audio-mode="shadow"'))
+    assert.ok(html.includes('id="reading-audio"'))
+    assert.ok(html.includes('id="audio-generate"'))
+    assert.ok(html.includes('id="audio-browser"'))
+    assert.ok(html.includes('id="shadow-record"'))
+    assert.ok(html.includes('id="shadow-playback"'))
+    assert.ok(html.includes('id="shadow-source"'))
+    assert.ok(html.includes('id="tts-settings"'))
+    assert.ok(html.includes('id="tts-key"'))
+    assert.ok(html.includes('id="tts-providers"'))
+    assert.ok(html.includes('id="tts-local-voices"'))
+    assert.ok(html.includes('function renderLocalVoices('))
+    assert.ok(html.includes('function selectTtsProvider('))
+    assert.ok(html.includes('/api/tts'))
+    assert.ok(html.includes('function saveTtsSettingsRequest('))
+    assert.ok(html.includes('/sentence-audio'))
+    assert.ok(html.includes('function speakShadowBrowser('))
+    assert.ok(html.includes('MediaRecorder'))
+    assert.ok(html.includes('READING_AUDIO = \"audio/reading.m4a\"'))
+    assert.ok(html.includes('/audio'))
+
+    pack.reading = []
+    const noReading = renderHtml(pack, pack.audio)
+    assert.ok(!noReading.includes('id="audio-open"'))
+  })
+
+  it('shows the cached micro story and its trigger only for word-rich packs', () => {
+    const pack = makePack()
+    const now = new Date().toISOString()
+    const word = (id: string, lemma: string): LearningItem => ({
+      id,
+      type: 'word_sense',
+      lemma,
+      sense: 'test sense',
+      definition: 'test definition',
+      contexts: [],
+      collocations: [],
+      examples: [],
+      relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
+      tags: [],
+      sourceRef: 'Resource',
+      createdAt: now,
+      updatedAt: now,
+    })
+    pack.items = [word('w1', 'attention'), word('w2', 'scarcity'), word('w3', 'deliberate')]
+    pack.microStory = {
+      title: 'The Quiet Room',
+      text: 'Attention was scarce. She made a deliberate choice.',
+      translation: '注意力很稀缺。她做了一个刻意的选择。',
+      used: ['attention', 'scarce', 'deliberate'],
+    }
+    const html = renderHtml(pack, { items: {} })
+    assert.ok(html.includes('id="micro-story-open"'))
+    assert.ok(html.includes('id="micro-story-modal"'))
+    assert.ok(html.includes('MICRO_STORY = {\"title\":\"The Quiet Room\"'))
+    assert.ok(html.includes('function requestMicroStory('))
+    assert.ok(html.includes('/micro-story'))
+
+    pack.items = pack.items.slice(0, 2)
+    pack.microStory = undefined
+    const sparse = renderHtml(pack, { items: {} })
+    assert.ok(!sparse.includes('id="micro-story-open"'))
+  })
 })
 
 describe('review html', () => {
@@ -291,6 +492,18 @@ describe('review html', () => {
     const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? '')
     assert.ok(scripts.length > 0)
     for (const script of scripts) new Function(script)
+  })
+
+  it('includes the reading passport and its share card canvas', () => {
+    const html = renderReviewApp()
+    assert.ok(html.includes('data-tab="passport"'))
+    assert.ok(html.includes('id="view-passport"'))
+    assert.ok(html.includes('id="passport-stamps"'))
+    assert.ok(html.includes('id="passport-modal"'))
+    assert.ok(html.includes('id="passport-download"'))
+    assert.ok(html.includes('/api/passport'))
+    assert.ok(html.includes('function drawPassportCard('))
+    assert.ok(html.includes('function downloadPassportCard('))
   })
 
   it('has a first-class import entry for text, URL and PDF', () => {
