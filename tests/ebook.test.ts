@@ -7,6 +7,7 @@ import { strToU8, zipSync } from 'fflate'
 
 import { readEpubBuffer } from '../src/ingest/epub.js'
 import { readMobi, readMobiBuffer } from '../src/ingest/mobi.js'
+import { readDocxBuffer } from '../src/ingest/docx.js'
 
 const fixtures = fileURLToPath(new URL('./fixtures/', import.meta.url))
 
@@ -115,6 +116,45 @@ describe('mobi parsing', () => {
     await assert.rejects(
       () => readMobiBuffer(Buffer.from('not a mobi'), { fallbackTitle: 'bad.mobi' }),
       /Could not read bad\.mobi/,
+    )
+  })
+})
+
+describe('docx parsing', () => {
+  function makeDocx(withTitle = true): Buffer {
+    const document = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:r><w:t>Attention is scarce.</w:t></w:r></w:p>
+    <w:p><w:r><w:t xml:space="preserve">Focus &amp; rest</w:t></w:r><w:r><w:tab/><w:t>matter</w:t></w:r></w:p>
+    <w:p/>
+  </w:body>
+</w:document>`
+    const core = `<?xml version="1.0" encoding="UTF-8"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <dc:title>Docx Test</dc:title>
+</cp:coreProperties>`
+    return Buffer.from(
+      zipSync({
+        'word/document.xml': strToU8(document),
+        ...(withTitle ? { 'docProps/core.xml': strToU8(core) } : {}),
+      }),
+    )
+  }
+
+  it('extracts paragraphs, tabs, entities and the core title', () => {
+    const result = readDocxBuffer(makeDocx(), 'fallback')
+    assert.equal(result.title, 'Docx Test')
+    assert.equal(result.text, 'Attention is scarce.\n\nFocus & rest\tmatter')
+  })
+
+  it('falls back to the file name and rejects broken packages', () => {
+    const fallback = readDocxBuffer(makeDocx(false), 'chapter-one')
+    assert.equal(fallback.title, 'chapter-one')
+    assert.throws(() => readDocxBuffer(Buffer.from('not a zip'), 'bad'), /not a valid DOCX/i)
+    assert.throws(
+      () => readDocxBuffer(Buffer.from(zipSync({ 'word/styles.xml': strToU8('<styles/>') })), 'bad'),
+      /word\/document\.xml/,
     )
   })
 })

@@ -167,6 +167,9 @@ export interface LearningItem {
   notes?: string
   tags: string[]
   sourceRef: string
+  /** Wordbook words wait here until the daily new-word budget releases them. */
+  staged?: boolean
+  introducedAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -234,6 +237,9 @@ export interface ReadingParagraph {
   original: string
   translation?: string
   itemIds: string[]
+  /** Source PDF page or transcript timestamp, when available. */
+  page?: number
+  timestamp?: string
   /** Manual sentence boundaries for the sentence-focus reader. */
   customSentences?: string[]
   /** Intensive-reading annotation for this paragraph. */
@@ -281,6 +287,16 @@ export interface MicroStory {
   used: string[]
 }
 
+export interface BuildMetadata {
+  inputHash: string
+  mode: 'heuristic' | 'llm'
+  provider: string
+  model: string
+  promptVersion: string
+  generatedAt: string
+  warnings: string[]
+}
+
 export interface LearningPack {
   id: string
   resourceId: string
@@ -305,6 +321,8 @@ export interface LearningPack {
   styleName?: string
   editorial?: string
   selection?: SelectionMetadata
+  /** Reproducible build fingerprint and warnings. */
+  build?: BuildMetadata
   parentResourceId?: string
   /** Cached, pack-level micro-story built from the target words. */
   microStory?: MicroStory
@@ -340,4 +358,6 @@ export interface ReviewLogEntry {
   rating: number
   reviewedAt: string
   dueAfter: string
+  /** Snapshot before the rating, so the last review can be undone. */
+  before?: ReviewState
 }

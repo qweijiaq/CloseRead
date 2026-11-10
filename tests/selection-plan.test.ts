@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { suggestSelection } from '../src/analyze/index.js'
+import { applySelectionTiers, suggestSelection } from '../src/analyze/index.js'
 import type { Resource } from '../src/types.js'
 
 function makeResource(wordCount: number): Resource {
@@ -30,30 +30,61 @@ describe('adaptive selection', () => {
     const short = suggestSelection(makeResource(300), { limit: 'auto' })
     const long = suggestSelection(makeResource(2500), { limit: 'auto' })
     assert.equal(short.mode, 'auto')
-    assert.equal(short.recommended, 15)
-    assert.equal(long.recommended, 100)
-    assert.equal(suggestSelection(makeResource(1037), { limit: 'auto' }).recommended, 52)
+    assert.equal(short.recommended, 8)
+    assert.equal(long.recommended, 16)
+    assert.equal(suggestSelection(makeResource(1037), { limit: 'auto' }).recommended, 13)
     assert.match(long.reason, /2500 词/)
-    assert.match(long.reason, /每 20 词选 1 个/)
+    assert.match(long.reason, /20–25 分钟/)
   })
 
-  it('keeps the default count independent of the known-word ratio', () => {
+  it('nudges the count with the known-word ratio when data exists', () => {
+    const base = suggestSelection(makeResource(900), { limit: 'auto' })
     const low = suggestSelection(makeResource(900), { limit: 'auto', knownRatio: 0.05 })
     const high = suggestSelection(makeResource(900), { limit: 'auto', knownRatio: 0.9 })
-    assert.equal(high.recommended, low.recommended)
+    assert.equal(base.recommended, 11)
+    assert.equal(low.recommended, 10)
+    assert.equal(high.recommended, 12)
+    assert.match(low.reason, /减少 1 项/)
+    assert.match(high.reason, /增加 1 项/)
   })
 
   it('applies pack feedback to the automatic count', () => {
     const base = suggestSelection(makeResource(900), { limit: 'auto' })
     const more = suggestSelection(makeResource(900), { limit: 'auto', selectionBias: 3 })
     const less = suggestSelection(makeResource(900), { limit: 'auto', selectionBias: -3 })
-    assert.equal(more.recommended, base.recommended + 3)
-    assert.equal(less.recommended, base.recommended - 3)
+    assert.equal(base.recommended, 11)
+    assert.equal(more.recommended, 14)
+    assert.equal(less.recommended, 8)
     assert.match(more.reason, /增加 3 项/)
     assert.match(less.reason, /减少 3 项/)
 
     const extreme = suggestSelection(makeResource(900), { limit: 'auto', selectionBias: 99 })
-    assert.equal(base.recommended, 45)
-    assert.ok(extreme.recommended <= 100)
+    assert.equal(extreme.recommended, 16)
+  })
+
+  it('splits tiers by the items actually returned, not the recommendation', () => {
+    const recommendation = {
+      mode: 'auto' as const,
+      recommended: 48,
+      core: 48,
+      bonus: 0,
+      wordCount: 954,
+      cefr: 'C1',
+      reason: 'test',
+    }
+    const analysis = {
+      items: Array.from({ length: 10 }, (_, index) => ({ id: String(index) })),
+    } as unknown as Parameters<typeof applySelectionTiers>[0]
+    const result = applySelectionTiers(analysis, recommendation)
+    assert.equal(result.core, 7)
+    assert.equal(result.bonus, 3)
+    assert.equal(analysis.items[6]?.tier, 'core')
+    assert.equal(analysis.items[7]?.tier, 'bonus')
+    assert.equal(analysis.items[9]?.tier, 'bonus')
+    assert.equal(analysis.items[0]?.tier, 'core')
+
+    const empty = applySelectionTiers({ items: [] } as unknown as Parameters<typeof applySelectionTiers>[0], recommendation)
+    assert.equal(empty.core, 0)
+    assert.equal(empty.bonus, 0)
   })
 })

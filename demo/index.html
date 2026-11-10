@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Quiet Cost of Cheap Attention · 精读导出</title>
+<style>
+  :root { --ink: #1c1a16; --muted: rgba(28,26,22,.55); --line: rgba(28,26,22,.14); --paper: #f6f2e8; --card: #fffdf8; --rust: #b03a2e; --ochre: #a8732f; --indigo: #3f5f7f; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif; line-height: 1.75; }
+  .sheet { max-width: 840px; margin: 0 auto; padding: 48px 48px 70px; background: var(--card); }
+  .export-block { break-inside: avoid; }
+  .export-heading { margin-top: 8px; }
+  h1, h2, h3 { font-family: "Songti SC", "Noto Serif SC", "Source Han Serif SC", STSong, SimSun, serif; }
+  .cover { text-align: center; padding: 30px 0 34px; border-bottom: 2px solid var(--ink); }
+  .kicker { color: var(--rust); font-family: "SF Mono", monospace; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+  .cover h1 { font-size: 36px; line-height: 1.25; margin: 14px 0 8px; }
+  .title-zh { color: var(--muted); font-size: 18px; }
+  .title-note { color: var(--ochre); font-size: 13px; margin-top: 10px; }
+  .summary { max-width: 680px; margin: 18px auto 0; color: var(--muted); font-size: 14px; text-align: left; }
+  .lead { max-width: 680px; margin: 20px auto 0; padding-top: 16px; border-top: 1px dashed var(--line); font-family: "Songti SC", serif; font-size: 16px; text-align: left; }
+  .lead .translation { margin-top: 7px; }
+  h2 { font-size: 22px; margin: 34px 0 12px; padding-bottom: 7px; border-bottom: 1px solid var(--line); break-after: avoid; }
+  .preface { margin-top: 22px; }
+  .preface h3 { margin: 14px 0 5px; color: var(--ochre); font-family: monospace; font-size: 11px; letter-spacing: .05em; }
+  .preface p { margin: 0 0 9px; font-size: 13.5px; line-height: 1.75; }
+  .preface ul { margin: 5px 0 10px; padding-left: 20px; font-size: 12.5px; line-height: 1.7; }
+  .para { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); break-inside: avoid; }
+  .para-no { color: var(--muted); font-family: "SF Mono", monospace; font-size: 11px; padding-top: 4px; }
+  .original { margin: 0; font-family: "Songti SC", "Noto Serif SC", serif; font-size: 17px; line-height: 1.85; }
+  .translation { color: var(--muted); font-size: 13.5px; line-height: 1.8; margin: 7px 0 0; }
+  .note { margin-top: 12px; padding: 12px 15px; border-left: 3px solid var(--ochre); background: rgba(239,231,215,.55); break-inside: avoid; }
+  .note p { margin: 5px 0; font-size: 12.5px; line-height: 1.7; }
+  .note-role { display: inline-block; margin-right: 7px; color: var(--ochre); font-family: monospace; font-size: 10px; }
+  .note-summary { font-weight: 700; }
+  blockquote { margin: 8px 0; padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted); font-family: "Songti SC", serif; }
+  .para-words { margin-top: 12px; display: grid; gap: 10px; }
+  .vocab-grid { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 24px; align-items: start; }
+  .word-card { padding: 12px 14px; border: 1px solid var(--line); border-radius: 9px; background: #fff; break-inside: avoid; }
+  .word-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+  .word-lemma { font-family: "Songti SC", serif; font-size: 18px; font-weight: 700; }
+  .word-ipa { color: var(--muted); font-size: 12px; }
+  .word-tag { padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-family: monospace; font-size: 10px; }
+  .word-zh { margin: 4px 0 0; font-weight: 700; font-size: 14px; }
+  .word-def { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .chips span { padding: 1px 7px; border-radius: 999px; background: rgba(63,95,127,.08); color: var(--indigo); font-size: 11.5px; }
+  .examples { margin: 7px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+  .rel, .formation, .memory { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+  .rel b, .formation b, .memory b { color: var(--ink); }
+  .derivation-tree { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fffdf8; break-inside: avoid; }
+  .derivation-caption { color: var(--muted); font-size: 10px; margin: 2px 3px 0; }
+  .derivation-tree ul { list-style: none; margin: 0; padding-left: 0; }
+  .derivation-tree ul.tree-children { margin-left: 9px; padding-left: 14px; border-left: 1px solid var(--line); }
+  .derivation-tree li { position: relative; padding: 4px 0; }
+  .derivation-tree ul.tree-children > li::before { content: ''; position: absolute; left: -14px; top: 17px; width: 12px; border-top: 1px solid var(--line); }
+  .tree-node { display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 5px; padding: 2px 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; font-size: 12px; }
+  .tree-node b { font-family: "Songti SC", serif; font-size: 13px; }
+  .tree-node span { color: var(--muted); font-size: 10.5px; }
+  .tree-node.tree-center { border-color: var(--rust); background: rgba(176,58,46,.06); }
+  .tree-node.tree-center b { color: var(--rust); }
+  .tree-node.tree-root { border-color: rgba(63,95,127,.4); }
+  .tree-node.tree-prefix, .tree-node.tree-suffix { border-color: rgba(168,115,47,.4); }
+  .tree-edge { display: block; margin-bottom: 2px; color: var(--ochre); font-family: "SF Mono", monospace; font-size: 9px; }
+  .sentence-card { padding: 14px 16px; margin: 12px 0; border: 1px solid var(--line); border-radius: 9px; break-inside: avoid; }
+  .sentence-card h3 { margin: 0 0 7px; font-size: 19px; }
+  .quote { margin: 0; padding-left: 12px; border-left: 3px solid var(--rust); font-family: "Songti SC", serif; font-size: 15px; }
+  .chunks { margin: 8px 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+  .sentence-card p { margin: 5px 0; font-size: 12.5px; }
+  .exercise li { margin: 10px 0; }
+  .answer { color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+  .footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+  @page { margin: 12mm; }
+  @media print {
+    body { background: #fff; font-size: 13px; }
+    .sheet { max-width: none; padding: 0; background: #fff; }
+    a { color: inherit; text-decoration: none; }
+    .cover { padding: 8px 0 18px; }
+    .cover h1 { font-size: 28px; }
+    .summary, .lead { margin-top: 10px; }
+    .original { font-size: 15.5px; line-height: 1.7; }
+    .translation { font-size: 12.5px; line-height: 1.7; }
+    .para { padding: 9px 0; break-inside: auto; }
+    .para-head { break-inside: avoid; page-break-inside: avoid; }
+    .para-words { break-inside: auto; }
+    .word-card { padding: 8px 10px; margin-bottom: 2px; }
+    .word-lemma { font-size: 16px; }
+    .note { margin-top: 8px; padding: 8px 10px; }
+    h2 { margin-top: 20px; break-after: avoid; }
+    .word-card, .sentence-card, .note, .exercise li, .derivation-tree {
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .original, .translation, .note p, .preface p { orphans: 3; widows: 3; }
+  }
+  
+  :root { --ink: #1b1a17; --muted: #4d4a44; --line: rgba(27,26,23,.15); --paper: #ffffff; --card: #ffffff; --rust: #1b1a17; --ochre: #6b5f51; --indigo: #3c4a55; }
+  body { background: #fff; font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", sans-serif; line-height: 1.7; }
+  .sheet { max-width: 960px; padding: 44px 48px 64px; background: #fff; }
+  .cover { text-align: left; padding: 0 0 18px; border-bottom: 1px solid var(--ink); }
+  .kicker { color: var(--muted); font-family: "SF Mono", monospace; font-size: 10px; letter-spacing: .08em; }
+  .cover h1 { font-size: 32px; line-height: 1.25; margin: 10px 0 6px; }
+  .title-zh { color: var(--muted); font-size: 15px; }
+  .title-note { color: var(--muted); font-size: 12px; margin-top: 7px; }
+  .lead { max-width: none; margin: 14px 0 0; padding-top: 12px; border-top: 1px solid var(--line); font-size: 15px; }
+  h2 { font-size: 20px; margin: 30px 0 10px; padding: 10px 0 0; border-top: 1px solid var(--line); border-bottom: 0; }
+  .preface { margin-top: 14px; }
+  .preface h3 { color: var(--muted); }
+  .preface p { font-size: 13px; }
+  .para { grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 18px 0; }
+  .para-no { font-size: 10px; }
+  .original { font-size: 16.5px; line-height: 1.8; }
+  .translation { color: var(--muted); font-size: 13px; line-height: 1.75; border-left: 1px solid var(--line); padding-left: 14px; }
+  .note { margin-top: 12px; padding: 2px 0 2px 14px; border-left: 1px solid var(--line); background: none; }
+  .note p { font-size: 12px; line-height: 1.65; }
+  .note-role { color: var(--muted); }
+  blockquote { border-left: 1px solid var(--line); }
+  .para-words { margin-top: 8px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 24px; align-items: start; }
+  .word-card { padding: 10px 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+  .para-words > .word-card:only-child { display: grid; grid-template-columns: minmax(140px, 200px) minmax(0, 1fr); column-gap: 24px; align-items: start; }
+  .para-words > .word-card:only-child > *:not(.word-head) { grid-column: 2; }
+  .para-words > .word-card:only-child > .word-head { grid-column: 1; grid-row: 1 / span 3; align-self: start; }
+  .vocab-grid { display: block; columns: 2; column-gap: 24px; }
+  .vocab-grid .word-card { break-inside: avoid; }
+  .word-lemma { font-size: 17px; }
+  .word-tag { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 1px; color: var(--muted); }
+  .chips span { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 0 1px; background: none; color: var(--muted); }
+  .derivation-tree { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+  .tree-node { border-radius: 2px; background: none; }
+  .tree-node.tree-center { background: none; border-color: var(--ink); }
+  .sentence-card { padding: 12px 0; margin: 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+  .quote { border-left: 1px solid var(--line); }
+  .exercise { margin-top: 18px; }
+  .footer { border-top: 1px solid var(--line); }
+  @media print { body, .sheet { background: #fff !important; } }
+
+  
+</style>
+</head>
+<body class="">
+<main class="sheet">
+  <header class="cover export-block" data-export-block="1" data-block-id="cover" data-block-label="封面与导语" data-block-kind="cover">
+    <div class="kicker">INTENSIVE READING · 602 词 · 精读约 21 分钟</div>
+    <h1>The Quiet Cost of Cheap Attention</h1>
+    
+    
+    
+  </header>
+  
+  <section class="preface export-block" data-export-block="1" data-block-id="guide" data-block-label="精读导读" data-block-kind="section"><h2>精读导读</h2><p>早上醒来第一件事，你是不是也摸过手机？还没跟任何人说话，注意力已经先交给了一家你永远不会见面的公司。这笔交易看起来免费，其实不免费。今天我们就借一段关于“注意力经济”的文字，学10个能用在写作和口语里的表达，顺便想清楚一个问题：我们的注意力，到底被谁拿走了。</p>
+<h3>本篇表达线索</h3>
+<p><strong>局势与对象</strong></p>
+<ul>
+<li><strong>commodity</strong> — 商品；有价值的资源</li>
+<li><strong>compulsion</strong> — 强迫感；难以抗拒的冲动</li>
+<li><strong>fragmentation</strong> — 碎片化；分裂</li>
+<li><strong>autonomy</strong> — 自主权；自主性</li>
+<li><strong>incentive</strong> — 激励；动机</li>
+</ul>
+<p><strong>评价与程度</strong></p>
+<ul>
+<li><strong>perishable</strong> — 易腐烂的；易消逝的</li>
+</ul>
+<p><strong>动作与影响</strong></p>
+<ul>
+<li><strong>undermine</strong> — 逐渐削弱；暗中破坏</li>
+<li><strong>sustain</strong> — 维持；持续</li>
+</ul>
+<h3>阅读提示</h3>
+<p>先通读一遍，注意每段的 role 和关键句；遇到细节再回到段落笔记和词卡。</p>
+</section>
+  <section class="export-block export-heading" data-export-block="1" data-block-id="reading-heading" data-block-label="逐段精读" data-block-kind="heading"><h2>逐段精读</h2></section>
+  <section class="para export-block" id="p-01" data-export-block="1" data-block-id="para-01" data-block-label="第 01 段" data-block-kind="paragraph">
+        <div class="para-no">01</div>
+        <div class="para-body">
+          <div class="para-head">
+            <p class="original">Every morning, millions of people wake up and reach for a small rectangle of glass. Before they have spoken to another person, they have already given a piece of their attention to a company they will never meet. The exchange feels free. It is not.</p>
+            <p class="translation">每天早晨，数百万人醒来后伸手去拿一块小长方形玻璃。在他们与另一个人交谈之前，他们已经将一部分注意力给了一家他们永远不会见面的公司。这种交换感觉是免费的。但事实并非如此。</p>
+            
+          </div>
+          
+        </div>
+      </section><section class="para export-block" id="p-02" data-export-block="1" data-block-id="para-02" data-block-label="第 02 段" data-block-kind="paragraph">
+        <div class="para-no">02</div>
+        <div class="para-body">
+          <div class="para-head">
+            <p class="original">Attention has become one of the defining commodities of the modern economy. Unlike oil or wheat, it cannot be stored, shipped, or saved for later. It is scarce, personal, and perishable. The platforms that capture it rarely sell it directly; they sell access to the people whose attention they have collected. Advertisers pay for the chance to interrupt a moment that might otherwise have belonged to the reader.</p>
+            <p class="translation">注意力已成为现代经济中具有定义性的大宗商品之一。与石油或小麦不同，它不能被储存、运输或留待以后使用。它是稀缺的、个人的、易逝的。获取注意力的平台很少直接出售它；它们出售的是接触那些注意力被收集的人的机会。广告商付费购买打断某个时刻的机会，而这个时刻原本可能属于读者。</p>
+            
+          </div>
+          <div class="para-words"><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">commodity</span>
+        
+        <span class="word-tag">noun</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">商品；有价值的资源</p>
+      <p class="word-def">a raw material or product that can be traded, especially one that is widely used</p>
+      <div class="chips"><span>a valuable commodity</span><span>a scarce commodity</span><span>commodity prices</span></div>
+      <ul class="examples"><li>Attention has become one of the defining commodities of the modern economy.</li><li>Clean water is becoming a scarce commodity in many regions.</li><li>In the digital age, personal data is a valuable commodity.</li></ul>
+      <p class="rel"><b>近义</b> resource、asset</p><p class="rel"><b>易混</b> commodity vs. goods: commodity is often raw or traded in bulk; goods are finished products.</p><p class="rel"><b>词族</b> commodify (verb)、commodification (noun)</p>
+      <p class="formation">词根 commod（方便、合适）；后缀 -ity（名词后缀，表示性质）</p>
+      <p class="memory">com（共同）+ mod（方式）→ 大家共同使用的东西 → 商品</p>
+      <p class="memory">常用于经济或抽象资源语境，注意不要与“goods”混淆。</p>
+      
+    </article><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">perishable</span>
+        
+        <span class="word-tag">adjective</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">易腐烂的；易消逝的</p>
+      <p class="word-def">easily spoiled or destroyed, especially food or resources that cannot last long</p>
+      <div class="chips"><span>perishable goods</span><span>highly perishable</span><span>perishable food</span></div>
+      <ul class="examples"><li>It is scarce, personal, and perishable.</li><li>Fresh fruit is perishable and must be kept refrigerated.</li><li>Attention is perishable; once lost, it cannot be recovered.</li></ul>
+      <p class="rel"><b>近义</b> decaying、short-lived</p><p class="rel"><b>反义</b> durable、lasting</p><p class="rel"><b>易混</b> perishable vs. vulnerable: perishable means easily spoiled; vulnerable means easily harmed.</p><p class="rel"><b>词族</b> perish (verb)、perishability (noun)</p>
+      <p class="formation">词根 perish（死亡、毁灭）；后缀 -able（能…的）</p>
+      <p class="memory">perish（毁灭）+ able（能）→ 容易毁灭的 → 易腐烂的</p>
+      <p class="memory">常与食物或抽象资源搭配，强调短暂性。</p>
+      
+    </article></div>
+        </div>
+      </section><section class="para export-block" id="p-03" data-export-block="1" data-block-id="para-03" data-block-label="第 03 段" data-block-kind="paragraph">
+        <div class="para-no">03</div>
+        <div class="para-body">
+          <div class="para-head">
+            <p class="original">The economics are simple; the consequences are not. When a resource is abundant, companies compete on quality. When attention is scarce, they compete on capture. The result is a landscape designed to produce compulsion rather than satisfaction: endless feeds, autoplay, notifications, streaks, and small rewards delivered at unpredictable intervals. Each feature is rational for the platform. Together, they can undermine a person&apos;s ability to sustain deliberate thought.</p>
+            <p class="translation">经济学很简单；后果却不简单。当资源丰富时，公司竞争质量。当注意力稀缺时，他们竞争捕获。结果是一个旨在产生强迫而非满足的景观：无尽的信息流、自动播放、通知、连续记录以及以不可预测的间隔提供的小奖励。每个功能对平台来说都是理性的。它们合在一起，会削弱一个人维持深思熟虑的能力。</p>
+            
+          </div>
+          <div class="para-words"><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">compulsion</span>
+        <span class="word-ipa">/kəmˈpʌl.ʃən/</span>
+        <span class="word-tag">noun</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">强迫感；难以抗拒的冲动</p>
+      <p class="word-def">a strong feeling that you must do something, often something you cannot control</p>
+      <div class="chips"><span>a strong compulsion</span><span>feel a compulsion to do something</span><span>under compulsion</span></div>
+      <ul class="examples"><li>The result is a landscape designed to produce compulsion rather than satisfaction: endless feeds, autoplay, notifications, streaks, and small rewards delivered at unpredictable intervals.</li><li>He felt a compulsion to check his phone every few minutes.</li><li>The game is designed to create compulsion, not enjoyment.</li><li>During the basketball game, I had a sudden compulsion to have a smoke.</li></ul>
+      <p class="rel"><b>近义</b> urge、obsession</p><p class="rel"><b>反义</b> aversion、satisfaction</p><p class="rel"><b>易混</b> compulsion vs. compunction: compulsion is a strong urge; compunction is a feeling of guilt.</p><p class="rel"><b>词族</b> compulsive (adjective)、compulsively (adverb)、compel (verb)</p>
+      <p class="formation">词根 puls（驱动、推）；前缀 com-（共同、加强）；后缀 -ion（名词后缀）</p>
+      <p class="memory">com（加强）+ puls（推）→ 内心被推着走 → 强迫感</p>
+      <p class="memory">常与“feel”或“create”搭配，注意与“compunction”（内疚）区分。</p>
+      
+    </article><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">undermine</span>
+        
+        <span class="word-tag">verb</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">逐渐削弱；暗中破坏</p>
+      <p class="word-def">to make something less effective or strong, often in a gradual or hidden way</p>
+      <div class="chips"><span>undermine confidence</span><span>undermine efforts</span><span>seriously undermine</span></div>
+      <ul class="examples"><li>Together, they can undermine a person&apos;s ability to sustain deliberate thought.</li><li>Constant criticism can undermine a child&apos;s self-esteem.</li><li>The scandal undermined public trust in the government.</li></ul>
+      <p class="rel"><b>近义</b> weaken、erode</p><p class="rel"><b>反义</b> strengthen、support</p><p class="rel"><b>易混</b> undermine vs. underestimate: undermine means weaken; underestimate means guess too low.</p><p class="rel"><b>词族</b> undermining (adjective)、underminer (noun)</p>
+      <p class="formation">词根 mine（挖掘）；前缀 under-（在下面、低于）</p>
+      <p class="memory">under（下面）+ mine（挖）→ 在下面挖墙脚 → 暗中破坏</p>
+      <p class="memory">常用于抽象事物，如信心、能力、努力等。</p>
+      
+    </article><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">sustain</span>
+        <span class="word-ipa">/səˈsteɪn/</span>
+        <span class="word-tag">verb</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">维持；持续</p>
+      <p class="word-def">to make something continue for a long time</p>
+      <div class="chips"><span>sustain attention</span><span>sustain growth</span><span>sustain interest</span></div>
+      <ul class="examples"><li>Together, they can undermine a person&apos;s ability to sustain deliberate thought.</li><li>It is difficult to sustain concentration for more than an hour.</li><li>The economy cannot sustain such high levels of debt.</li></ul>
+      <p class="rel"><b>近义</b> maintain、prolong</p><p class="rel"><b>反义</b> discontinue、undermine</p><p class="rel"><b>易混</b> sustain vs. maintain: sustain often implies keeping something going despite difficulty; maintain is more about keeping in good condition.</p><p class="rel"><b>词族</b> sustainable (adjective)、sustainability (noun)、sustained (adjective)</p>
+      <p class="formation">词根 tain（保持、握住）；前缀 sus-（在下面、向上）</p>
+      <p class="memory">sus（下面）+ tain（握住）→ 从下面托住 → 维持</p>
+      <p class="memory">常用于抽象事物，如注意力、增长、兴趣等。</p>
+      
+    </article></div>
+        </div>
+      </section><section class="para export-block" id="p-04" data-export-block="1" data-block-id="para-04" data-block-label="第 04 段" data-block-kind="paragraph">
+        <div class="para-no">04</div>
+        <div class="para-body">
+          <div class="para-head">
+            <p class="original">Fragmentation is the hidden tax. A task that once required an hour of quiet now arrives in a dozen pieces, each one separated by a notification, a headline, or a short video. The mind adapts to the rhythm of interruption, and the adaptation is almost invisible. People do not notice that they have stopped reading long sentences; they simply begin to avoid them. The loss is not only time. It is the capacity to follow an argument from beginning to end.</p>
+            <p class="translation">碎片化是隐藏的税。曾经需要一小时安静完成的任务现在分成十几块，每一块都被通知、标题或短视频隔开。思维适应了中断的节奏，而这种适应几乎看不见。人们没有注意到他们已经停止阅读长句子；他们只是开始避免它们。损失不仅是时间。而是从头到尾跟随一个论点的能力。</p>
+            
+          </div>
+          <div class="para-words"><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">fragmentation</span>
+        
+        <span class="word-tag">noun</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">碎片化；分裂</p>
+      <p class="word-def">the state of being divided into smaller, disconnected parts</p>
+      <div class="chips"><span>fragmentation of society</span><span>information fragmentation</span><span>social fragmentation</span></div>
+      <ul class="examples"><li>Fragmentation is the hidden tax.</li><li>The fragmentation of the market makes it hard for small companies to compete.</li><li>Digital media often leads to the fragmentation of attention.</li></ul>
+      <p class="rel"><b>近义</b> division、disintegration、fragmentization</p><p class="rel"><b>反义</b> integration、unity、defragmentation</p><p class="rel"><b>易混</b> fragmentation vs. fraction: fragmentation is the process; a fraction is a small part.</p><p class="rel"><b>词族</b> fragment (noun/verb)、fragmented (adjective)</p>
+      <p class="formation">词根 frag（破碎）；后缀 -ation（名词后缀，表示过程）</p>
+      <p class="memory">frag（破碎）+ ment + ation → 碎成一片片 → 碎片化</p>
+      <p class="memory">常用于描述信息、社会或注意力被分割的状态。</p>
+      
+    </article></div>
+        </div>
+      </section><section class="para export-block" id="p-05" data-export-block="1" data-block-id="para-05" data-block-label="第 05 段" data-block-kind="paragraph">
+        <div class="para-no">05</div>
+        <div class="para-body">
+          <div class="para-head">
+            <p class="original">The word &quot;friction&quot; has become a villain in product design. A little friction, however, is what turns an impulse into a decision. Making it slightly harder to open an app, or slightly easier to close it, can restore a measure of autonomy. Some companies have begun to sell subscription products precisely because they do not need to interrupt their users. Their incentive is to make the experience durable rather than addictive.</p>
+            <p class="translation">“摩擦”一词在产品设计中已成为反派。然而，一点摩擦正是将冲动转化为决策的关键。让打开应用稍微难一点，或让关闭它稍微容易一点，可以恢复一定程度的自主权。一些公司开始销售订阅产品，正是因为他们不需要打断用户。他们的动机是让体验持久而非上瘾。</p>
+            
+          </div>
+          <div class="para-words"><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">autonomy</span>
+        <span class="word-ipa">/ɑˈtɑnəmi/</span>
+        <span class="word-tag">noun</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">自主权；自主性</p>
+      <p class="word-def">the freedom or right to govern yourself or make your own choices</p>
+      <div class="chips"><span>personal autonomy</span><span>a sense of autonomy</span><span>restore autonomy</span></div>
+      <ul class="examples"><li>Making it slightly harder to open an app, or slightly easier to close it, can restore a measure of autonomy.</li><li>Teenagers need a certain amount of autonomy to develop independence.</li><li>The new policy gives teachers more autonomy in the classroom.</li></ul>
+      <p class="rel"><b>近义</b> independence、self-determination、sovereignty</p><p class="rel"><b>反义</b> dependence、control、heteronomy、incapacity、dependency、inoperability、nonautonomy</p><p class="rel"><b>易混</b> autonomy vs. independence: autonomy often refers to self-governance; independence is broader freedom from control.</p><p class="rel"><b>词族</b> autonomous (adjective)、autonomously (adverb)</p>
+      <p class="formation">词根 auto（自己）；词根 nom（法则、管理）；后缀 -y（名词后缀）</p>
+      <p class="memory">auto（自己）+ nom（法则）→ 自己制定法则 → 自主权</p>
+      <p class="memory">常用于个人或机构的自主决策权。</p>
+      
+    </article><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">incentive</span>
+        <span class="word-ipa">/ɪnˈsɛntɪv/</span>
+        <span class="word-tag">noun</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">激励；动机</p>
+      <p class="word-def">a reward or reason that makes you want to do something</p>
+      <div class="chips"><span>financial incentive</span><span>provide an incentive</span><span>incentive to do something</span></div>
+      <ul class="examples"><li>Their incentive is to make the experience durable rather than addictive.</li><li>Tax breaks provide an incentive for companies to invest.</li><li>The incentive to study hard is often the hope of a better future.</li><li>I have no incentive to do housework right now.</li></ul>
+      <p class="rel"><b>近义</b> motivation、inducement</p><p class="rel"><b>反义</b> deterrent、disincentive</p><p class="rel"><b>易混</b> incentive vs. motivation: incentive is often external (a reward); motivation can be internal.</p><p class="rel"><b>词族</b> incentivize (verb)、disincentive (noun)</p>
+      <p class="formation">词根 cent（唱、激励）；前缀 in-（进入、加强）</p>
+      <p class="memory">in（进入）+ cent（唱）→ 用歌声鼓舞 → 激励</p>
+      <p class="memory">常与“provide”或“create”搭配，注意与“motivation”区分。</p>
+      
+    </article></div>
+        </div>
+      </section><section class="para export-block" id="p-06" data-export-block="1" data-block-id="para-06" data-block-label="第 06 段" data-block-kind="paragraph">
+        <div class="para-no">06</div>
+        <div class="para-body">
+          <div class="para-head">
+            <p class="original">Critics of this view sometimes argue that people should simply pay attention better. But attention is not a muscle that grows through scolding. It is a skill shaped by the environment. Children who grow up in a room full of interruptions learn a different relationship to silence than children who do not. Adults who spend eight hours a day responding to alerts become good at responding and worse at staying. The damage is gradual, which is why it is easy to dismiss.</p>
+            <p class="translation">这种观点的批评者有时认为，人们应该更好地集中注意力。但注意力不是通过责骂就能增长的肌肉。它是一种由环境塑造的技能。在充满干扰的房间里长大的孩子，与没有这种经历的孩子相比，对沉默的关系不同。每天花八小时回应警报的成年人变得善于回应，却更不善于停留。损害是渐进的，这就是为什么它容易被忽视。</p>
+            
+          </div>
+          
+        </div>
+      </section><section class="para export-block" id="p-07" data-export-block="1" data-block-id="para-07" data-block-label="第 07 段" data-block-kind="paragraph">
+        <div class="para-no">07</div>
+        <div class="para-body">
+          <div class="para-head">
+            <p class="original">This is not an argument that attention is a zero-sum game. A well-made documentary, a difficult novel, or a thoughtful conversation can leave a person more alert than before. The question is who gets to choose the direction of that alertness. When every available surface is optimized for extraction, the burden of curation falls on the individual. That is a heavy job, and most people are already tired.</p>
+            <p class="translation">这并不是说注意力是零和游戏。一部制作精良的纪录片、一本难懂的小说或一次深思熟虑的对话可以让人比之前更警觉。问题是，谁来选择这种警觉的方向。当每一个可用的表面都被优化用于提取时，策展的负担就落在了个人身上。这是一项繁重的工作，而大多数人已经累了。</p>
+            
+          </div>
+          <div class="para-words"><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">curation</span>
+        <span class="word-ipa">/kjəˈɹeɪʃən/</span>
+        <span class="word-tag">noun</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">筛选与整理；策展</p>
+      <p class="word-def">the act of choosing and arranging items, especially information or art, for others to see</p>
+      <div class="chips"><span>content curation</span><span>curation of information</span><span>digital curation</span></div>
+      <ul class="examples"><li>When every available surface is optimized for extraction, the burden of curation falls on the individual.</li><li>Good content curation helps users find relevant information quickly.</li><li>The museum&apos;s curation of the exhibition was highly praised.</li></ul>
+      <p class="rel"><b>近义</b> selection、organization</p><p class="rel"><b>反义</b> neglect、disorganization</p><p class="rel"><b>易混</b> curation vs. creation: curation is selecting and organizing; creation is making something new.</p><p class="rel"><b>词族</b> curate (verb)、curator (noun)</p>
+      <p class="formation">词根 cur（关心、照料）；后缀 -ation（名词后缀，表示过程）</p>
+      <p class="memory">cur（关心）+ ation → 用心挑选整理 → 策展</p>
+      <p class="memory">常用于数字内容或艺术展览的语境。</p>
+      
+    </article><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">individual</span>
+        <span class="word-ipa">/ˌɘndɘˈvɘd͡ʒɘl/</span>
+        <span class="word-tag">noun</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">个人（与群体相对）</p>
+      <p class="word-def">a single person, especially when considered separately from a larger group</p>
+      <div class="chips"><span>the individual</span><span>private individual</span><span>individual rights</span><span>individual needs</span><span>on the individual</span></div>
+      <ul class="examples"><li>When every available surface is optimized for extraction, the burden of curation falls on the individual.</li><li>The new policy aims to protect the privacy of the individual.</li><li>In a fast-paced society, the individual often feels powerless.</li><li>Each individual has a role to play in reducing waste.</li></ul>
+      <p class="rel"><b>近义</b> person、human being、citizen、personal、single、selfstanding</p><p class="rel"><b>反义</b> group、collective、society、joint、shared</p><p class="rel"><b>易混</b> person、personality、individualism</p><p class="rel"><b>词族</b> individual、individualism、individualist、individualistic、individuality、individually</p>
+      <p class="formation">前缀 in-（不）；后缀 -al（……的）</p>
+      <p class="memory">in（不）+ divid（分）+ ual → 不可再分的最小单位 → 个人</p>
+      <p class="memory">individual 作名词时强调“单个的人”，常与 the 连用表示“个人”这一抽象概念，如 the individual vs. society。注意不要与形容词 individual（个别的）混淆。</p>
+      
+    </article></div>
+        </div>
+      </section><section class="para export-block" id="p-08" data-export-block="1" data-block-id="para-08" data-block-label="第 08 段" data-block-kind="paragraph">
+        <div class="para-no">08</div>
+        <div class="para-body">
+          <div class="para-head">
+            <p class="original">The most promising response may be neither abstinence nor willpower but design. Tools that protect a block of time, screens that stay quiet until asked, and products that charge for use instead of attention all point in the same direction. They treat attention as something to be spent wisely, not something to be harvested.</p>
+            <p class="translation">最有希望的回应可能既不是禁欲也不是意志力，而是设计。保护一段时间块的工具、直到被要求才保持安静的屏幕，以及按使用而非注意力收费的产品，都指向同一个方向。它们将注意力视为应该明智花费的东西，而不是被收割的东西。</p>
+            
+          </div>
+          <div class="para-words"><article class="word-card">
+      <div class="word-head">
+        <span class="word-lemma">abstinence</span>
+        <span class="word-ipa">/ˈæb.stɪ.nəns/</span>
+        <span class="word-tag">noun</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">节制；戒除</p>
+      <p class="word-def">the act of choosing not to do something, often something pleasurable or addictive</p>
+      <div class="chips"><span>abstinence from alcohol</span><span>total abstinence</span><span>practice abstinence</span></div>
+      <ul class="examples"><li>The most promising response may be neither abstinence nor willpower but design.</li><li>The doctor recommended abstinence from caffeine for a week.</li><li>Abstinence alone is not enough to overcome addiction.</li></ul>
+      <p class="rel"><b>近义</b> restraint、self-denial</p><p class="rel"><b>反义</b> indulgence、excess</p><p class="rel"><b>易混</b> abstinence vs. absence: abstinence is voluntarily avoiding something; absence is being away.</p><p class="rel"><b>词族</b> abstain (verb)、abstinent (adjective)</p>
+      <p class="formation">词根 tin（保持、握住）；前缀 abs-（离开）；后缀 -ence（名词后缀）</p>
+      <p class="memory">abs（离开）+ tin（握住）+ ence → 远离不放纵 → 节制</p>
+      <p class="memory">常用于戒酒、节欲等语境，注意与“absence”区分。</p>
+      
+    </article></div>
+        </div>
+      </section><section class="para export-block" id="p-09" data-export-block="1" data-block-id="para-09" data-block-label="第 09 段" data-block-kind="paragraph">
+        <div class="para-no">09</div>
+        <div class="para-body">
+          <div class="para-head">
+            <p class="original">The cost of cheap attention is not always visible on a bill. It appears in the book you did not finish, the conversation you did not hear, and the idea that never had room to develop. Reclaiming that space is not a matter of discipline alone. It is a matter of choosing, again and again, what deserves to be noticed.</p>
+            <p class="translation">廉价注意力的成本并不总是体现在账单上。它出现在你没有读完的书、你没有听到的对话，以及从未有空间发展的想法中。重新夺回那个空间不仅仅是纪律的问题。这是一个一次又一次选择什么值得被注意的问题。</p>
+            
+          </div>
+          
+        </div>
+      </section>
+  
+  
+  <section class="export-block export-heading" data-export-block="1" data-block-id="words-heading" data-block-label="补充词汇" data-block-kind="heading"><h2>补充词汇</h2></section><article class="word-card export-block" data-export-block="1" data-block-id="word-1" data-block-label="补充词：resilience" data-block-kind="word">
+      <div class="word-head">
+        <span class="word-lemma">resilience</span>
+        <span class="word-ipa">/ɹə.zɪl.ɪ.əns/</span>
+        <span class="word-tag">noun</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">韧性；恢复力；适应力</p>
+      <p class="word-def">the ability to become strong, happy, or successful again after a difficult situation or event</p>
+      <div class="chips"><span>build resilience</span><span>emotional resilience</span><span>resilience against</span><span>show resilience</span></div>
+      <ul class="examples"><li>The community showed great resilience after the flood.</li><li>Children need resilience to cope with setbacks.</li><li>She has the resilience to bounce back from failure.</li></ul>
+      <p class="rel"><b>近义</b> toughness、adaptability、grit</p><p class="rel"><b>反义</b> fragility、vulnerability</p><p class="rel"><b>易混</b> resistance、resiliency</p><p class="rel"><b>词族</b> resilient、resiliently</p>
+      <p class="formation">词根 salire（跳）；前缀 re-（回，再次）；后缀 -ence（名词后缀，表示状态）</p>
+      <p class="memory">re（回）+ sil（跳）+ ence（名词）→ 跳回来 → 恢复力</p>
+      <p class="memory">注意与 resistance（抵抗）区分：resilience 强调恢复和适应，而非对抗。中文“韧性”有时被误用于形容物体弹性，但英语中 resilience 更常用于人或系统。</p>
+      
+    </article><article class="word-card export-block" data-export-block="1" data-block-id="word-2" data-block-label="补充词：fall on" data-block-kind="word">
+      <div class="word-head">
+        <span class="word-lemma">fall on</span>
+        
+        <span class="word-tag">phrasal verb</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">由某人承担（责任、任务等）</p>
+      <p class="word-def">If a duty or responsibility falls on someone, they are the one who has to deal with it.</p>
+      <div class="chips"><span>fall on someone&apos;s shoulders</span><span>fall on deaf ears</span><span>fall on hard times</span><span>fall on someone to do something</span></div>
+      <ul class="examples"><li>Here is an example sentence using fall on.</li><li>The responsibility for organizing the event fell on the youngest member of the team.</li><li>When the manager left, the task of training new staff fell on me.</li><li>In many families, the burden of caring for elderly parents falls on the eldest child.</li></ul>
+      <p class="rel"><b>近义</b> be assigned to、be the responsibility of、rest with</p><p class="rel"><b>反义</b> be relieved of、be exempt from</p><p class="rel"><b>易混</b> fall into、fall under、fall upon</p><p class="rel"><b>词族</b> fall、fell、fallen</p>
+      <p class="formation">词根 fall（落下）</p>
+      <p class="memory">责任像树叶一样“落”到某人身上——fall on someone。</p>
+      <p class="memory">fall on 常与 burden, responsibility, duty, task 等词搭配，表示责任由某人承担。注意与 fall on deaf ears（不被理睬）区分。中文里常说“落到某人头上”，与英文结构相似，但英文中主语通常是责任、任务等，而不是人。</p>
+      
+    </article><article class="word-card export-block" data-export-block="1" data-block-id="word-3" data-block-label="补充词：be relieved of" data-block-kind="word">
+      <div class="word-head">
+        <span class="word-lemma">be relieved of</span>
+        
+        <span class="word-tag">phrase</span>
+        <span class="word-tag">B2</span>
+      </div>
+      <p class="word-zh">被免除（责任、负担、职务等）；得以卸下</p>
+      <p class="word-def">to no longer have to carry a duty, task, or worry, because someone else takes it or it is removed</p>
+      <div class="chips"><span>be relieved of a duty</span><span>be relieved of responsibility</span><span>be relieved of a burden</span><span>be relieved of one&apos;s post</span><span>be relieved of command</span></div>
+      <ul class="examples"><li>Here is an example sentence using be relieved of.</li><li>She was relieved of her duties while the investigation continued.</li><li>New software has relieved teachers of much of the paperwork.</li><li>He felt relieved of a heavy burden after the decision was made.</li></ul>
+      <p class="rel"><b>近义</b> be freed from、be excused from、be spared、be let off</p><p class="rel"><b>反义</b> be burdened with、be assigned、be loaded with、take on</p><p class="rel"><b>易混</b> be relieved to do sth（感到宽慰，去做某事）、be relieved of sth（被免除某事）、relieve（减轻，缓解）、release（释放，发布）</p><p class="rel"><b>词族</b> relieve、relieved、relief、relieving</p>
+      <p class="formation">前缀 re-（再；回；向后）；后缀 -ed（形容词/被动分词后缀）</p>
+      <p class="memory">re（再）+ lieve（轻，同 relieve 的“减轻”）——负担被“再减轻一次”，就是被免除了。</p>
+      <p class="memory">注意区分 be relieved of（被免除某事）和 be relieved to do（松了一口气去做某事），两者意思差别很大。be relieved of 常用被动，后面多接 duty、responsibility、post 等抽象名词，语气偏正式，常见于新闻和职场语境。中文里“被免职”可以说 be relieved of one&apos;s post，但不要直译成“被放松”。</p>
+      
+    </article>
+  <section class="exercise export-block" data-export-block="1" data-block-id="exercise-cloze" data-block-label="完形填空" data-block-kind="exercise"><h2>完形填空</h2><ol><li><p>Attention has become one of the defining ______ of the modern economy.</p><p class="answer"><b>答案：</b>commodities — valuable resources that can be bought and sold</p></li><li><p>It is scarce, personal, and ______.</p><p class="answer"><b>答案：</b>perishable — likely to decay or go bad quickly</p></li><li><p>The result is a landscape designed to produce ______ rather than satisfaction: endless feeds, autoplay, notifications, streaks, and small rewards delivered at unpredictable intervals.</p><p class="answer"><b>答案：</b>compulsion — a strong, often irresistible urge to do something</p></li><li><p>Together, they can ______ a person&apos;s ability to sustain deliberate thought.</p><p class="answer"><b>答案：</b>undermine — to weaken or damage something gradually</p></li><li><p>______ is the hidden tax.</p><p class="answer"><b>答案：</b>Fragmentation — the process of breaking into small pieces or parts</p></li><li><p>Making it slightly harder to open an app, or slightly easier to close it, can restore a measure of ______.</p><p class="answer"><b>答案：</b>autonomy — the ability to make your own decisions</p></li><li><p>Their ______ is to make the experience durable rather than addictive.</p><p class="answer"><b>答案：</b>incentive — something that motivates or encourages someone to do something</p></li><li><p>When every available surface is optimized for extraction, the burden of ______ falls on the individual.</p><p class="answer"><b>答案：</b>curation — the process of carefully selecting and organizing content</p></li><li><p>The most promising response may be neither ______ nor willpower but design.</p><p class="answer"><b>答案：</b>abstinence — the practice of not doing something you enjoy, especially drinking alcohol</p></li></ol></section>
+  <section class="exercise export-block" data-export-block="1" data-block-id="exercise-comprehension" data-block-label="阅读理解" data-block-kind="exercise"><h2>阅读理解</h2><ol><li><p>Why does the author say that attention is unlike oil or wheat?</p><p class="answer"><b>答案：</b>The author says attention cannot be stored, shipped, or saved for later; it is scarce, personal, and perishable.</p></li><li><p>According to the text, what do platforms actually sell to advertisers?</p><p class="answer"><b>答案：</b>Platforms sell access to the people whose attention they have collected, not attention itself.</p></li><li><p>What is the &apos;hidden tax&apos; mentioned in the text, and what does it cost people?</p><p class="answer"><b>答案：</b>Fragmentation is the hidden tax; it costs people not only time but also the capacity to follow an argument from beginning to end.</p></li><li><p>How does the author suggest that a little friction can be beneficial?</p><p class="answer"><b>答案：</b>A little friction turns an impulse into a decision and can restore a measure of autonomy, for example by making it slightly harder to open an app or easier to close it.</p></li><li><p>What counterargument do critics of this view make, and how does the author respond?</p><p class="answer"><b>答案：</b>Critics argue that people should simply pay attention better; the author responds that attention is not a muscle that grows through scolding but a skill shaped by the environment.</p></li><li><p>What does the author propose as the most promising response to the problem of cheap attention?</p><p class="answer"><b>答案：</b>The author proposes design—tools that protect a block of time, screens that stay quiet until asked, and products that charge for use instead of attention—rather than abstinence or willpower.</p></li></ol></section>
+  <section class="exercise export-block" data-export-block="1" data-block-id="exercise-discussion" data-block-label="讨论 / 输出" data-block-kind="exercise"><h2>讨论 / 输出</h2><ol><li><p>Do you agree that attention is a commodity? Why or why not?</p><p class="answer"><b>答案：</b>I agree because attention is scarce and valuable, and companies pay to capture it. However, unlike traditional commodities, attention is deeply personal and cannot be transferred like a product.</p></li><li><p>Have you experienced fragmentation in your own daily life? Give an example.</p><p class="answer"><b>答案：</b>Yes, I often find myself switching between tasks because of notifications. For instance, while reading, I check my phone every few minutes, which breaks my concentration.</p></li><li><p>What small design changes could help you protect your attention?</p><p class="answer"><b>答案：</b>Turning off non-essential notifications and using apps that limit screen time could help. Also, keeping my phone in another room while working would reduce interruptions.</p></li><li><p>Is abstinence from technology a realistic solution? Why or why not?</p><p class="answer"><b>答案：</b>Complete abstinence is unrealistic for most people because technology is integrated into work and social life. Instead, moderation and intentional use are more practical.</p></li><li><p>Who should be responsible for curating attention—individuals, platforms, or governments?</p><p class="answer"><b>答案：</b>All three share responsibility: individuals must make conscious choices, platforms should design ethically, and governments can regulate addictive practices. A combined effort is needed.</p></li></ol></section>
+  <div class="footer export-block" data-export-block="1" data-block-id="footer" data-block-label="页脚" data-block-kind="footer">由 CloseRead 导出 · /Users/weijia/Desktop/english-learning-compiler/samples/sample-article.md · 2026-10-27T13:26:14.255Z</div>
+</main>
+</body>
+</html>

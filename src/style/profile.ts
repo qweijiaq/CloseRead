@@ -166,7 +166,7 @@ export function stylePromptBlock(style?: StyleProfile): string {
 }
 
 export function buildTemplateEditorial(
-  title: string,
+  _title: string,
   source: string,
   summary: string,
   items: Array<{

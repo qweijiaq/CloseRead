@@ -22,6 +22,25 @@ const ARTICLE_HTML = `<!doctype html>
 </body>
 </html>`
 
+const NOISY_ARTICLE_HTML = `<!doctype html>
+<html>
+<head><title>Noisy Article</title></head>
+<body>
+  <article>
+    <div class="share-tools"><a href="https://facebook.com/dialog/share?app_id=1">Share</a></div>
+    <p><a href="https://www.facebook.com/dialog/share?app_id=350309542584520&amp;display=popup&amp;href=https%3A%2F%2Fexample.com%2Fstory"></a><a href="https://twitter.com/intent/tweet?text=Story&amp;url=https%3A%2F%2Fexample.com%2Fstory"></a></p>
+    <p>Add us as a preferred source</p>
+    <figure><img src="mandela.jpg"><figcaption>Nelson Mandela against a curtain | Per-Anders Pettersson/GettyImages</figcaption></figure>
+    <p>Nelson Mandela was the president of South Africa from 1994 to 1999. He is best known for helping to end the nation's segregated apartheid system and fostering a peaceful transition to democracy.</p>
+    <p>Prior to his election, he spent 27 years in prison for opposing the apartheid system. While there, he managed to pen a draft of his autobiography in secret, with the help of fellow prisoners.</p>
+    <p>Mandela was sentenced to life in prison in 1964 for his work in the armed faction of the African National Congress. The manuscript was later smuggled out of prison and became the basis of a book.</p>
+    <p>Nelson Mandela celebrating World Reconciliation Day in Melbourne | Hamish Blair/GettyImages</p>
+    <p>Read More:</p>
+    <p>Home/HISTORY</p>
+  </article>
+</body>
+</html>`
+
 describe('article extraction', () => {
   it('prefers the article container and removes page furniture', () => {
     const article = extractArticle(ARTICLE_HTML, 'example.com')
@@ -32,6 +51,21 @@ describe('article extraction', () => {
     assert.ok(!article.text.includes('NAVIGATION'))
     assert.ok(!article.text.includes('COOKIE BANNER'))
     assert.ok(!article.text.includes('FOOTER'))
+  })
+
+  it('drops share widgets, image captions and site prompts from an article', () => {
+    const article = extractArticle(NOISY_ARTICLE_HTML, 'example.com')
+    assert.equal(article.selector, 'article')
+    assert.ok(article.text.includes('Nelson Mandela was the president'))
+    assert.ok(article.text.includes('Prior to his election'))
+    assert.ok(!article.text.includes('facebook.com'))
+    assert.ok(!article.text.includes('twitter.com'))
+    assert.ok(!article.text.includes('preferred source'))
+    assert.ok(!article.text.includes('GettyImages'))
+    assert.ok(!article.text.includes('Read More'))
+    assert.ok(!article.text.includes('Home/HISTORY'))
+    assert.ok(!article.text.includes('Share'))
+    assert.equal(article.text.split(/\n{2,}/).filter(Boolean).length, 3)
   })
 
   it('detects a bot or paywall page only as a hint', () => {
@@ -76,6 +110,14 @@ describe('url fetching', () => {
           response.writeHead(200, { 'content-type': 'application/pdf' })
           response.end('%PDF-1.4\nfake pdf body')
           break
+        case '/feed':
+          response.writeHead(200, { 'content-type': 'application/rss+xml; charset=utf-8' })
+          response.end('<?xml version="1.0"?><rss><channel><title>Feed</title></channel></rss>')
+          break
+        case '/feed-html':
+          response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+          response.end('<?xml version="1.0"?><feed><title>Feed</title></feed>')
+          break
         case '/binary':
           response.writeHead(200, { 'content-type': 'application/octet-stream' })
           response.end('binary')
@@ -106,6 +148,16 @@ describe('url fetching', () => {
     const pdf = await fetchUrl(`${base}/pdf`)
     assert.ok(pdf.pdf && pdf.pdf.byteLength > 0)
     assert.equal(pdf.html, undefined)
+  })
+
+  it('detects RSS/Atom by content type and by XML body', async () => {
+    const feed = await fetchUrl(`${base}/feed`)
+    assert.ok(feed.xml?.includes('<rss>'))
+    assert.equal(feed.html, undefined)
+
+    const disguised = await fetchUrl(`${base}/feed-html`)
+    assert.ok(disguised.xml?.includes('<feed>'))
+    assert.equal(disguised.html, undefined)
   })
 
   it('rejects unsupported content types with a clear message', async () => {

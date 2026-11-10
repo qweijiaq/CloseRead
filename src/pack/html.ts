@@ -2,7 +2,9 @@ import { marked } from 'marked'
 
 import { detectBodyLead } from '../analyze/reading-frontmatter.js'
 import { sentences } from '../analyze/tokenize.js'
-import type { LearningItem, LearningPack, PackAudio, ParagraphNote, SentenceCardData, SentenceRewrite } from '../types.js'
+import { i18nScript } from '../i18n.js'
+import { themeBootScript } from '../theme.js'
+import type { LearningItem, LearningPack, PackAudio, ParagraphNote, SentenceRewrite } from '../types.js'
 import { collectGames } from './games.js'
 import { packReadingMinutes } from './reading-time.js'
 import { readingGuideMarkdown } from './reading-guide.js'
@@ -341,7 +343,7 @@ function renderReading(pack: LearningPack, audio: PackAudio): string {
       const label = String(index + 1).padStart(2, '0')
       return `
         <article class="paragraph" id="p-${label}" data-para-index="${index}">
-          <div class="para-label"><button class="para-marker" data-para-read="${index}" data-label="${label}" type="button" aria-label="标记第 ${index + 1} 段已读">${label}</button></div>
+          <div class="para-label"><button class="para-marker" data-para-read="${index}" data-label="${label}" type="button" aria-label="标记第 ${index + 1} 段已读">${label}</button>${typeof paragraph.page === 'number' ? `<span class="para-page">P.${paragraph.page}</span>` : ''}</div>
           <div class="para-body">
             <div class="para-text">
               <div class="original">${highlightParagraph(paragraph.original, items)}</div>
@@ -500,6 +502,22 @@ export function renderHtml(
   const exportMode = options.exportMode === true
   const readingGuide = readingGuideMarkdown(pack)
   const editorialLeadHtml = readingGuide ? (marked.parse(readingGuide, { async: false }) as string) : ''
+  const buildNotes = (pack.build?.warnings ?? []).filter(
+    (note): note is string => typeof note === 'string' && note.trim().length > 0,
+  )
+  const buildProblems = buildNotes.filter((note) =>
+    /failed|error|fallback|empty|timeout|missing|truncated|first part|失败|错误|回退|降级|缺失|无法|超时|未生成/i.test(note),
+  )
+  const degradedMode =
+    pack.mode === 'llm' &&
+    buildProblems.some((note) => /reading failed|reading generation|empty response|回退|fallback|缺失译文|missing translation/i.test(note))
+  const buildWarningHtml = buildProblems.length
+    ? `<section class="build-warning" id="build-warning" role="status">
+        <div class="build-warning-head"><strong>生成提醒</strong><span>这份学习包存在降级或缺失，建议补齐后再精读。</span></div>
+        <ul>${buildProblems.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}</ul>
+        <p>可以点下方的“补齐导读与笔记”补回缺失内容，或 <a href="/?tab=packs">回到学习包列表</a> 重新生成。</p>
+      </section>`
+    : ''
   const readingHtml = renderReading(pack, audio)
   const sentenceItems = pack.items.filter((item) => item.type === 'sentence' && item.sentence)
   const sentenceHtml = sentenceItems.length
@@ -600,6 +618,7 @@ export function renderHtml(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(pack.title)} · Learning Pack</title>
+${exportMode ? '' : themeBootScript()}
 <style>
   :root {
     color-scheme: light;
@@ -619,6 +638,23 @@ export function renderHtml(
     --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
     --radius: 10px;
     --max: 960px;
+    --reader-size: 17px;
+    --reader-leading: 1.85;
+    --reader-width: 960px;
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --paper: #141619;
+    --paper-2: #1c1f23;
+    --card: #22262b;
+    --ink: #e9e4d9;
+    --ink-70: rgba(233, 228, 217, .72);
+    --ink-45: rgba(233, 228, 217, .45);
+    --line: rgba(233, 228, 217, .13);
+    --line-strong: rgba(233, 228, 217, .24);
+    --cinnabar: #e07a6e;
+    --indigo: #8db1d6;
+    --ochre: #d3a35f;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
@@ -646,6 +682,11 @@ export function renderHtml(
   }
   .brand { font-family: var(--serif); font-size: 16px; font-weight: 600; letter-spacing: .02em; color: inherit; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .chapter-nav { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .chapter-nav a { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-70); border-bottom: 1px solid var(--line); font-size: 10.5px; text-decoration: none; }
+  .chapter-nav a:hover { color: var(--ink); border-color: var(--ink); }
+  .chapter-nav span { color: var(--ink-45); font-family: var(--mono); font-size: 9px; white-space: nowrap; }
+  @media (max-width: 760px) { .chapter-nav { display: none; } }
   .topbar-right { display: flex; align-items: center; gap: 12px; }
   .export-wrap { position: relative; }
   .export-menu {
@@ -660,6 +701,7 @@ export function renderHtml(
   }
   .export-menu > button:hover { background: var(--paper-2); }
   .export-label { padding: 8px 9px 3px; color: var(--ink-45); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; }
+  .export-hint { max-width: 220px; padding: 7px 9px 9px; border-top: 1px solid var(--line); color: var(--ink-45); font-size: 10px; line-height: 1.55; }
   .cselect { position: relative; }
   .cselect-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border: 1px solid var(--line); background: #fffdf8; color: var(--ink); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 12px; cursor: pointer; }
   .cselect-trigger:hover, .cselect-trigger[aria-expanded="true"] { border-color: var(--cinnabar); }
@@ -681,6 +723,18 @@ export function renderHtml(
   }
   @keyframes export-spin { to { transform: rotate(360deg); } }
   .scroll-progress { position: fixed; top: 0; left: 0; height: 3px; width: 0; background: var(--cinnabar); z-index: 70; transition: width .1s linear; }
+  .reader-settings { position: fixed; top: 58px; right: 24px; z-index: 96; width: min(360px, calc(100vw - 24px)); padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: 0 18px 50px rgba(28,26,22,.18); }
+  .reader-settings[hidden] { display: none; }
+  .reader-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+  .reader-settings-head strong { font-family: var(--serif); font-size: 16px; }
+  .reader-settings-close { border: 0; background: none; color: var(--ink-45); font: inherit; font-size: 11.5px; cursor: pointer; }
+  .reader-setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 9px 0; color: var(--ink-45); font-size: 12px; }
+  .reader-choice { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+  .reader-choice button { border: 1px solid var(--line); background: var(--card); color: var(--ink-70); border-radius: 999px; padding: 4px 9px; font: inherit; font-size: 11px; cursor: pointer; }
+  .reader-choice button.is-active { border-color: var(--cinnabar); color: var(--cinnabar); background: rgba(176,58,46,.08); }
+  @media (max-width: 620px) {
+    .reader-settings { top: 52px; left: 12px; right: 12px; width: auto; }
+  }
   .topbar .meta { display: flex; gap: 12px; color: var(--ink-45); font-size: 12px; }
   .topbar-action {
     border: 1px solid var(--line);
@@ -695,7 +749,7 @@ export function renderHtml(
     cursor: pointer;
   }
   .topbar-action:hover { border-color: var(--indigo); color: var(--indigo); }
-  .page { max-width: var(--max); margin: 0 auto; padding: 48px 28px 80px; }
+  .page { max-width: var(--reader-width); margin: 0 auto; padding: 48px 28px 80px; }
   .hero { padding-bottom: 28px; border-bottom: 1px solid var(--line); }
   .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--cinnabar); }
   h1 {
@@ -709,6 +763,7 @@ export function renderHtml(
   .summary { font-size: 15px; color: var(--ink-70); max-width: 70ch; margin: 0 0 18px; }
   .meta-row { display: flex; flex-wrap: wrap; gap: 8px; }
   .pill { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--ink-45); }
+  .pill.legacy { color: var(--ochre); border-color: rgba(168, 115, 47, .35); }
   .hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
   .reading-status { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; color: var(--ink-45); font-size: 12px; }
   .reading-track { width: 220px; max-width: 50vw; height: 6px; border-radius: 999px; background: var(--paper-2); overflow: hidden; }
@@ -725,6 +780,13 @@ export function renderHtml(
   .para-marker.read { background: rgba(176, 58, 46, .08); border-color: rgba(176, 58, 46, .35); color: var(--cinnabar); }
   .paragraph.is-read .original { opacity: .86; }
   .selection-note { margin-top: 14px; color: var(--ink-45); font-size: 12px; line-height: 1.7; }
+  .build-warning { margin: 18px 0 0; padding: 14px 16px; border: 1px solid rgba(176,58,46,.35); border-radius: 10px; background: rgba(176,58,46,.06); color: var(--ink); font-size: 12.5px; line-height: 1.7; }
+  .build-warning-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-bottom: 6px; }
+  .build-warning-head strong { color: var(--cinnabar); }
+  .build-warning-head span { color: var(--ink-45); font-size: 11.5px; }
+  .build-warning ul { margin: 0; padding-left: 18px; color: var(--ink-70); }
+  .build-warning li { margin: 2px 0; }
+  .build-warning p { margin: 8px 0 0; color: var(--ink-45); font-size: 11.5px; }
   .selection-note strong { color: var(--ink); }
   .tag.bonus { color: var(--cinnabar); border-color: rgba(176, 58, 46, .3); background: rgba(176, 58, 46, .06); }
   .tag.known { color: var(--indigo); border-color: rgba(63, 95, 127, .3); background: rgba(63, 95, 127, .06); }
@@ -742,9 +804,6 @@ export function renderHtml(
   .adopt:disabled { opacity: .6; cursor: default; }
   body.core-only .bonus-item { display: none !important; }
   body.hide-translation .translation { display: none !important; }
-  body.font-large .para-text .original { font-size: 18px; line-height: 1.9; }
-  body.font-large .para-text .translation { font-size: 15px; }
-  body.font-large .summary { font-size: 16px; }
   .hero audio { margin-top: 16px; width: 100%; max-width: 480px; height: 34px; }
   .section-head {
     display: flex;
@@ -768,8 +827,10 @@ export function renderHtml(
     transition: background .2s ease;
   }
   .paragraph:hover { background: rgba(255, 253, 248, .55); }
+  .para-page { display: block; margin-top: 6px; color: var(--ink-45); font-family: var(--mono); font-size: 9px; letter-spacing: .04em; }
   .para-label { font-family: var(--mono); font-size: 11px; color: var(--ink-45); padding-top: 5px; }
   .para-text { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 28px; }
+  .original, .translation, .sentence-original { overflow-wrap: anywhere; }
   .reader .paragraph:first-of-type .original::first-letter {
     float: left; font-family: var(--serif); font-size: 3.2em; line-height: .82;
     padding: 4px 7px 0 0; color: var(--cinnabar); font-weight: 600;
@@ -850,9 +911,9 @@ export function renderHtml(
   .export-mode .footer-actions, .export-mode .scroll-progress, .export-mode .select-pop,
   .export-mode .word-modal, .export-mode .focus-mode, .export-mode .front-actions { display: none !important; }
   .export-mode .note-answer-btn { display: none !important; }
-  .original { font-family: var(--serif); font-size: 17px; line-height: 1.85; }
+  .original { font-family: var(--serif); font-size: var(--reader-size); line-height: var(--reader-leading); }
   .original mark { background: linear-gradient(180deg, transparent 58%, rgba(201, 162, 39, .32) 58%); color: inherit; padding: 0 1px; }
-  .translation { color: var(--ink-70); font-size: 14px; line-height: 1.85; border-left: 2px solid var(--line-strong); padding-left: 18px; }
+  .translation { color: var(--ink-70); font-size: calc(var(--reader-size) - 3px); line-height: var(--reader-leading); border-left: 2px solid var(--line-strong); padding-left: 18px; }
   .para-items { display: grid; gap: 8px; margin-top: 16px; }
   .para-items-wrap { margin-top: 14px; }
   .para-items-wrap summary { cursor: pointer; color: var(--indigo); font-size: 12px; }
@@ -1175,9 +1236,9 @@ export function renderHtml(
     .topbar { padding: 10px 16px; }
     .topbar .meta { display: none; }
     .page { padding: 32px 16px 60px; }
-    .paragraph { grid-template-columns: 1fr; gap: 8px; }
+    .paragraph { grid-template-columns: minmax(0, 1fr); gap: 8px; }
     .para-label { display: block; padding-top: 0; }
-    .para-text { grid-template-columns: 1fr; gap: 12px; }
+    .para-text { grid-template-columns: minmax(0, 1fr); gap: 12px; }
     .translation { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; padding-top: 10px; }
     .reading-intro { padding: 14px 16px; }
     .front-matter { padding: 16px; }
@@ -1186,6 +1247,28 @@ export function renderHtml(
     .note-summary { font-size: 13px; }
     .vocab-table { font-size: 12px; }
   }
+  html[data-theme="dark"] body { background: var(--paper); color: var(--ink); }
+  html[data-theme="dark"] .topbar { background: rgba(20,22,25,.94); }
+  html[data-theme="dark"] .topbar-action { background: var(--card); }
+  html[data-theme="dark"] .reading-intro { background: linear-gradient(135deg, var(--card), var(--paper-2)); }
+  html[data-theme="dark"] .front-matter,
+  html[data-theme="dark"] .study-points,
+  html[data-theme="dark"] .map-chip,
+  html[data-theme="dark"] .note-question,
+  html[data-theme="dark"] .word-modal-chip,
+  html[data-theme="dark"] .derivation-tree,
+  html[data-theme="dark"] .front-summary { background: var(--card); }
+  html[data-theme="dark"] .sentence-item { background: linear-gradient(135deg, var(--card), var(--paper-2)); }
+  html[data-theme="dark"] .cselect-trigger,
+  html[data-theme="dark"] .output-practice textarea,
+  html[data-theme="dark"] .edit-modal-card textarea,
+  html[data-theme="dark"] .split-modal-card textarea,
+  html[data-theme="dark"] .note-form input,
+  html[data-theme="dark"] .note-form textarea,
+  html[data-theme="dark"] .add-word input { background: var(--card); color: var(--ink); }
+  html[data-theme="dark"] .paragraph:hover { background: rgba(255,255,255,.025); }
+  html[data-theme="dark"] .word-modal { background: rgba(0,0,0,.62); }
+  html[data-theme="dark"] .reader-choice button.is-active { background: rgba(224,122,110,.14); }
   @media print {
     body { background: #fff; }
     .topbar, .star, .para-marker, audio, details > summary { display: none !important; }
@@ -1272,7 +1355,7 @@ export function renderHtml(
   .paragraph:hover { background: transparent; }
   .para-text { gap: 30px; }
   .reader .paragraph:first-of-type .original::first-letter { float: none; font-size: inherit; line-height: inherit; padding: 0; color: inherit; font-weight: inherit; }
-  .original { font-size: 17px; line-height: 1.85; }
+  .original { font-size: var(--reader-size); line-height: var(--reader-leading); }
   .original mark { background: transparent; border-bottom: 1px solid var(--line-strong); color: inherit; padding: 0; }
   .translation { border-left: 1px solid var(--line); padding-left: 16px; color: var(--ink-45); }
   .para-note { margin-top: 16px; padding: 2px 0 2px 16px; border: 0; border-left: 1px solid var(--line-strong); border-radius: 0; background: none; }
@@ -1501,7 +1584,7 @@ export function renderHtml(
   .para-items > .item:only-child > .item-head,
   .front-items > .item:only-child > .item-head { grid-column: 1; grid-row: 1 / span 3; align-self: start; }
   @media (max-width: 680px) {
-    .para-text, .para-items { grid-template-columns: 1fr; gap: 10px; }
+    .para-text, .para-items { grid-template-columns: minmax(0, 1fr); gap: 10px; }
     .translation { border-left: 0; padding-left: 0; }
     .para-items > .item:only-child,
     .front-items > .item:only-child { display: block; }
@@ -1509,13 +1592,82 @@ export function renderHtml(
     .front-items > .item:only-child > * { grid-column: auto; }
   }
 
+
+  /* CloseRead 2026 tools skin: align the advanced pack page with the app shell. */
+  :root {
+    --paper: #f3f5f1;
+    --paper-2: #e9ede7;
+    --card: #ffffff;
+    --ink: #151916;
+    --ink-70: #4f5851;
+    --ink-45: #7c857e;
+    --line: #e1e6df;
+    --line-strong: #c9d1c8;
+    --cinnabar: #1e6b4e;
+    --indigo: #1e6b4e;
+    --ochre: #8a6a2f;
+    --radius: 12px;
+    --max: 1080px;
+    --ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --read: 'Iowan Old Style', Charter, 'Songti SC', 'Noto Serif SC', serif;
+  }
+  html[data-theme="dark"] {
+    --paper: #0c100d;
+    --paper-2: #131813;
+    --card: #161c17;
+    --ink: #edf2ec;
+    --ink-70: #b7c0b8;
+    --ink-45: #98a39a;
+    --line: #29322b;
+    --line-strong: #3b473e;
+    --cinnabar: #79d4a8;
+    --indigo: #79d4a8;
+    --ochre: #d3a35f;
+  }
+  body { background: var(--paper); color: var(--ink); font-family: var(--ui); }
+  .topbar { padding: 12px 28px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 90%, transparent); backdrop-filter: blur(14px); }
+  .topbar-action { border-radius: 9px; border-color: var(--line-strong); color: var(--muted, var(--ink-70)); background: var(--card); font-size: 11px; padding: 6px 10px; }
+  .topbar-action:hover { border-color: var(--cinnabar); color: var(--cinnabar); background: var(--card); }
+  .hero .front-title, .front-title, .section-head h2, .reading-intro h2 { font-family: var(--ui); font-weight: 760; letter-spacing: -.04em; }
+  .front-kicker, .eyebrow, .reading-intro-kicker { color: var(--cinnabar); font-family: var(--ui); font-weight: 700; letter-spacing: .12em; }
+  .reading-intro { margin: 14px 0 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); }
+  .front-matter { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 20px 22px; }
+  .study-points { border: 1px solid var(--line); border-radius: 16px; background: var(--card); padding: 16px 20px; }
+  .reading-preface, .editorial, .add-panel {
+    max-width: 100%; margin-left: auto; margin-right: auto;
+    padding: 20px 22px; border: 1px solid var(--line); border-radius: 16px; background: var(--card);
+  }
+  .reading-preface .section-head, .add-panel .section-head { flex-wrap: wrap; gap: 8px; }
+  .add-word { flex-wrap: wrap; }
+  .add-word input { min-width: 0; }
+  .preface-excerpt, .editorial-body { overflow-wrap: anywhere; }
+  .preface-excerpt pre, .preface-excerpt table, .editorial-body pre, .editorial-body table { max-width: 100%; overflow-x: auto; }
+  @media (max-width: 620px) {
+    .reading-preface, .editorial, .add-panel { padding: 15px 16px; }
+  }
+  .paragraph { border-bottom: 1px solid var(--line); }
+  .paragraph:hover { background: var(--paper-2); }
+  .para-marker { border-radius: 8px; }
+  .focus-tool, .expand, .adopt, .reading-finish, .word-modal-close { border-radius: 9px; }
+  .word-modal-card, .game-card, .reader-settings { border-radius: 18px; background: var(--card); }
+  .word-modal { background: rgba(12, 16, 13, .55); }
+  textarea, input, select, .cselect-trigger { border-radius: 10px; background: var(--card); color: var(--ink); }
+  .original { font-family: var(--read); }
+  .translation { color: var(--ink-45); }
+  .footer-actions .btn, .focus-tool, .reading-finish { font-family: var(--ui); }
+  @media (max-width: 620px) {
+    .topbar { padding: 10px 14px; }
+    .reading-intro, .front-matter, .study-points { padding: 14px 16px; border-radius: 14px; }
+  }
 </style>
 </head>
 <body${exportMode ? ' class="export-mode"' : ''}>
 <header class="topbar">
   <div class="topbar-left">
+    <a class="topbar-action" href="/read/${encodeURIComponent(pack.id)}" aria-label="返回精读模式">精读模式</a>
     <a class="topbar-action" id="back-review" data-home href="/" aria-label="返回今日">← 今日</a>
     <a class="brand" data-home href="/">Learning Pack</a>
+    <nav class="chapter-nav" id="chapter-nav" hidden></nav>
   </div>
   <div class="topbar-right">
     <div class="meta">
@@ -1524,6 +1676,7 @@ export function renderHtml(
       <span>${pack.stats.itemCount} 项</span>
       <span>精读约 ${readingMinutes} 分钟</span>
     </div>
+    <button class="topbar-action" id="lang-toggle" type="button">EN</button>
     <button class="topbar-action" id="jump-add">添加单词</button>
     ${pack.reading?.length ? '<button class="topbar-action" id="top-focus" type="button">单句精读</button>' : ''}
     <div class="export-wrap">
@@ -1554,6 +1707,7 @@ export function renderHtml(
         <button type="button" data-export="png" data-png-width="900" data-png-scale="2">高清 2× · 1800</button>
         <button type="button" data-export="png-pages">PNG 分图 · AI 智能分页</button>
         <button type="button" data-export="mobi">MOBI（需 Calibre）</button>
+        <div class="export-hint">导出前会自动补齐缺失的派生、参考答案和练习译文；需要模型时会调用。</div>
       </div>
     </div>
   </div>
@@ -1561,7 +1715,7 @@ export function renderHtml(
 <div class="scroll-progress" id="scroll-progress"></div>
 <main class="page">
   <section class="hero">
-    <div class="eyebrow">${heroSection ? `${escapeHtml(heroSection)} · ` : ''}${escapeHtml(pack.mode)} mode · ${escapeHtml(pack.styleName ?? 'house style')}</div>
+    <div class="eyebrow">${heroSection ? `${escapeHtml(heroSection)} · ` : ''}${escapeHtml(pack.mode)} mode${degradedMode ? ' · 部分降级' : ''} · ${escapeHtml(pack.styleName ?? 'house style')}</div>
     <h1 class="front-title original" data-source="front">${escapeHtml(heroTitle)}</h1>
     ${heroTitleZh ? `<div class="front-title-zh">${escapeHtml(heroTitleZh)}</div>` : ''}
     ${heroTitleNote ? `<p class="front-note">${escapeHtml(heroTitleNote)}</p>` : ''}
@@ -1579,13 +1733,14 @@ export function renderHtml(
       <span class="pill">${pack.stats.wordCount} 词</span>
       <span class="pill">${pack.stats.itemCount} 个学习项</span>
       <span class="pill">精读约 ${readingMinutes} 分钟</span>
+      ${pack.build ? '' : '<span class="pill legacy" title="旧版学习包：缺少生成指纹，结构已兼容；重新生成可获得最新字段。">旧版</span>'}
     </div>
     ${selectionNote}
     <div class="hero-actions">
       <a class="topbar-action" data-review-pack href="/?tab=review&pack=${encodeURIComponent(pack.id)}">复习这篇</a>
       ${pack.parentResourceId ? '<a class="topbar-action" data-article-list href="#">返回文章列表</a>' : ''}
       ${hasBonus ? '<button class="topbar-action" id="toggle-bonus" type="button">只看核心词</button>' : ''}
-      ${pack.reading?.length ? '<button class="topbar-action" id="focus-mode-open" type="button">单句精读</button><button class="topbar-action" id="audio-open" type="button">音频跟读</button><button class="topbar-action" id="theater-open" type="button">AI 小剧场</button><button class="topbar-action" id="toggle-translation" type="button">隐藏译文</button><button class="topbar-action" id="toggle-font" type="button">大字</button>' : ''}
+      ${pack.reading?.length ? '<button class="topbar-action" id="focus-mode-open" type="button">单句精读</button><button class="topbar-action" id="audio-open" type="button">音频跟读</button><button class="topbar-action" id="theater-open" type="button">AI 小剧场</button><button class="topbar-action" id="toggle-translation" type="button">隐藏译文</button><button class="topbar-action" id="reader-settings-open" type="button" aria-label="阅读设置">Aa</button>' : ''}
       ${hasGames ? '<button class="topbar-action" id="game-open" type="button">60 秒挑战</button>' : ''}
       ${microEligible ? '<button class="topbar-action" id="micro-story-open" type="button">微故事</button>' : ''}
       <button class="topbar-action" data-feedback="less" type="button">词太多</button>
@@ -1604,6 +1759,8 @@ export function renderHtml(
         : ''
     }
   </section>
+
+  ${buildWarningHtml}
 
   <section class="add-panel" id="add-panel">
     <div class="eyebrow">ADD WORDS</div>
@@ -1938,6 +2095,30 @@ export function renderHtml(
   </div>
 </div>
 <div class="select-pop" id="select-pop" hidden></div>
+${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
+    <div class="reader-settings-head"><strong>阅读设置</strong><button class="reader-settings-close" id="reader-settings-close" type="button">关闭</button></div>
+    <div class="reader-setting-row"><span>主题</span><div class="reader-choice">
+      <button type="button" data-reader-theme="light">纸色</button>
+      <button type="button" data-reader-theme="dark">夜间</button>
+      <button type="button" data-reader-theme="auto">跟随系统</button>
+    </div></div>
+    <div class="reader-setting-row"><span>字号</span><div class="reader-choice">
+      <button type="button" data-reader-size="15">小</button>
+      <button type="button" data-reader-size="17">标准</button>
+      <button type="button" data-reader-size="19">大</button>
+      <button type="button" data-reader-size="21">特大</button>
+    </div></div>
+    <div class="reader-setting-row"><span>行高</span><div class="reader-choice">
+      <button type="button" data-reader-leading="1.65">紧凑</button>
+      <button type="button" data-reader-leading="1.85">标准</button>
+      <button type="button" data-reader-leading="2.05">宽松</button>
+    </div></div>
+    <div class="reader-setting-row"><span>版心</span><div class="reader-choice">
+      <button type="button" data-reader-width="760">窄</button>
+      <button type="button" data-reader-width="960">标准</button>
+      <button type="button" data-reader-width="1120">宽</button>
+    </div></div>
+  </div>`}
 <div class="toast" id="toast"></div>
 <div class="export-progress" id="export-progress" role="status" aria-live="polite" hidden><span class="export-spinner"></span><span id="export-progress-text"></span></div>
 <script>
@@ -1951,6 +2132,25 @@ export function renderHtml(
     var PARENT_RESOURCE = ${JSON.stringify(pack.parentResourceId ?? null)};
     var ARTICLE_INDEX = ${JSON.stringify(pack.articleIndex ?? null)};
     var editable = location.protocol !== 'file:';
+    (function () {
+      var nav = document.getElementById('chapter-nav');
+      if (!nav || !editable) return;
+      function esc(value) {
+        return String(value == null ? '' : value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+      fetch('/api/packs/' + encodeURIComponent(PACK_ID) + '/neighbors').then(function (response) {
+        return response.ok ? response.json() : null;
+      }).then(function (data) {
+        var chapter = data && data.chapter;
+        if (!chapter) return;
+        var parts = [];
+        if (chapter.previous) parts.push('<a href="' + esc(chapter.previous.url) + '">← ' + esc(chapter.previous.title) + '</a>');
+        parts.push('<span>' + esc(chapter.index || '?') + ' / ' + esc(chapter.total) + '</span>');
+        if (chapter.next) parts.push('<a href="' + esc(chapter.next.url) + '">' + esc(chapter.next.title) + ' →</a>');
+        nav.innerHTML = parts.join('');
+        nav.hidden = false;
+      }).catch(function () {});
+    })();
     var READING_TOTAL = ${pack.reading?.length ?? 0};
     var FOCUS_PARAGRAPHS = ${jsonForScript(focusData)};
     var READING_AUDIO = ${jsonForScript(audio.reading ?? '')};
@@ -2003,13 +2203,103 @@ export function renderHtml(
         toggleTranslation.textContent = hidden ? '显示译文' : '隐藏译文';
       });
     }
-    var toggleFont = document.getElementById('toggle-font');
-    if (toggleFont) {
-      toggleFont.addEventListener('click', function () {
-        var large = document.body.classList.toggle('font-large');
-        toggleFont.textContent = large ? '标准字号' : '大字';
+    var READER_INTERACTIVE = ${exportMode ? 'false' : 'true'};
+    var THEME_KEY = 'closeread-theme';
+    var READER_KEY = 'closeread-reader-settings';
+    var readerSettings = { size: 17, leading: 1.85, width: 960 };
+    try {
+      var storedReader = JSON.parse(localStorage.getItem(READER_KEY) || '{}');
+      if ([15, 17, 19, 21].indexOf(Number(storedReader.size)) !== -1) readerSettings.size = Number(storedReader.size);
+      if ([1.65, 1.85, 2.05].indexOf(Number(storedReader.leading)) !== -1) readerSettings.leading = Number(storedReader.leading);
+      if ([760, 960, 1120].indexOf(Number(storedReader.width)) !== -1) readerSettings.width = Number(storedReader.width);
+    } catch (error) {}
+
+    function themeChoice() {
+      try { return localStorage.getItem(THEME_KEY) || 'auto'; } catch (error) { return 'auto'; }
+    }
+    function prefersDark() {
+      return Boolean(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    }
+    function applyTheme(choice) {
+      var dark = choice === 'dark' || (choice === 'auto' && prefersDark());
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme-choice', choice);
+      document.querySelectorAll('[data-reader-theme]').forEach(function (button) {
+        button.classList.toggle('is-active', button.getAttribute('data-reader-theme') === choice);
       });
     }
+    function markReaderSetting(name, value) {
+      document.querySelectorAll('[data-reader-' + name + ']').forEach(function (button) {
+        button.classList.toggle('is-active', button.getAttribute('data-reader-' + name) === String(value));
+      });
+    }
+    function applyReaderSettings() {
+      document.documentElement.style.setProperty('--reader-size', readerSettings.size + 'px');
+      document.documentElement.style.setProperty('--reader-leading', String(readerSettings.leading));
+      document.documentElement.style.setProperty('--reader-width', readerSettings.width + 'px');
+      markReaderSetting('size', readerSettings.size);
+      markReaderSetting('leading', readerSettings.leading);
+      markReaderSetting('width', readerSettings.width);
+      applyTheme(themeChoice());
+    }
+    function saveReaderSettings() {
+      try { localStorage.setItem(READER_KEY, JSON.stringify(readerSettings)); } catch (error) {}
+    }
+    function setThemeChoice(choice) {
+      try { localStorage.setItem(THEME_KEY, choice); } catch (error) {}
+      applyTheme(choice);
+    }
+
+    var settingsPanel = document.getElementById('reader-settings');
+    var settingsOpen = document.getElementById('reader-settings-open');
+    if (settingsOpen && settingsPanel) {
+      settingsOpen.addEventListener('click', function () {
+        settingsPanel.hidden = !settingsPanel.hidden;
+      });
+    }
+    var settingsClose = document.getElementById('reader-settings-close');
+    if (settingsClose && settingsPanel) {
+      settingsClose.addEventListener('click', function () { settingsPanel.hidden = true; });
+    }
+    document.querySelectorAll('[data-reader-theme]').forEach(function (button) {
+      button.addEventListener('click', function () { setThemeChoice(button.getAttribute('data-reader-theme')); });
+    });
+    document.querySelectorAll('[data-reader-size]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        readerSettings.size = Number(button.getAttribute('data-reader-size'));
+        saveReaderSettings();
+        if (READER_INTERACTIVE) applyReaderSettings();
+      });
+    });
+    document.querySelectorAll('[data-reader-leading]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        readerSettings.leading = Number(button.getAttribute('data-reader-leading'));
+        saveReaderSettings();
+        applyReaderSettings();
+      });
+    });
+    document.querySelectorAll('[data-reader-width]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        readerSettings.width = Number(button.getAttribute('data-reader-width'));
+        saveReaderSettings();
+        applyReaderSettings();
+      });
+    });
+    document.addEventListener('click', function (event) {
+      if (settingsPanel && !settingsPanel.hidden && settingsOpen && !settingsPanel.contains(event.target) && !settingsOpen.contains(event.target)) {
+        settingsPanel.hidden = true;
+      }
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && settingsPanel && !settingsPanel.hidden) settingsPanel.hidden = true;
+    });
+    if (window.matchMedia) {
+      var themeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+      var onThemeChange = function () { if (READER_INTERACTIVE && themeChoice() === 'auto') applyTheme('auto'); };
+      if (themeMedia.addEventListener) themeMedia.addEventListener('change', onThemeChange);
+      else if (themeMedia.addListener) themeMedia.addListener(onThemeChange);
+    }
+    applyReaderSettings();
 
     function paintReading() {
       var percent = readingState.finished
@@ -5598,6 +5888,7 @@ export function renderHtml(
     }
   })();
 </script>
+${exportMode ? '' : i18nScript('pack')}
 </body>
 </html>`
 }

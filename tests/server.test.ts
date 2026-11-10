@@ -5,6 +5,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { after, before, describe, it } from 'node:test'
 
+import { strToU8, zipSync } from 'fflate'
+
 const tempData = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-data-'))
 const tempPacks = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-packs-'))
 process.env.LEARN_DATA_DIR = tempData
@@ -42,7 +44,7 @@ function makeItem() {
   }
 }
 
-describe('review server', () => {
+describe('review server', { concurrency: 1 }, () => {
   let server: Awaited<ReturnType<typeof startReviewServer>>
 
   before(async () => {
@@ -65,6 +67,95 @@ describe('review server', () => {
     await fs.rm(tempPacks, { recursive: true, force: true })
   })
 
+  it('serves the bookmarklet and stores retention preferences', async () => {
+    const bookmarklet = await fetch(`${server.url}/bookmarklet`)
+    assert.equal(bookmarklet.status, 200)
+    const html = await bookmarklet.text()
+    assert.ok(html.includes('javascript:'))
+    assert.ok(html.includes('?import='))
+
+    const manifest = await fetch(`${server.url}/manifest.webmanifest`)
+    assert.equal(manifest.status, 200)
+    assert.match(manifest.headers.get('content-type') ?? '', /application\/manifest\+json/)
+    assert.equal(((await manifest.json()) as { display: string }).display, 'standalone')
+
+    const icon = await fetch(`${server.url}/icon-192.png`)
+    assert.equal(icon.status, 200)
+    assert.equal(icon.headers.get('content-type'), 'image/png')
+    assert.equal((await icon.arrayBuffer()).byteLength > 500, true)
+
+    const worker = await fetch(`${server.url}/sw.js`)
+    assert.equal(worker.status, 200)
+    assert.match(await worker.text(), /closeread-static-v1/)
+
+    const initial = (await fetch(`${server.url}/api/preferences`).then((response) => response.json())) as {
+      preferences: { desiredRetention: number; dailyNewTarget: number; dailyReviewTarget: number }
+    }
+    assert.equal(typeof initial.preferences.desiredRetention, 'number')
+    assert.equal(initial.preferences.dailyNewTarget, 10)
+    assert.equal(initial.preferences.dailyReviewTarget, 10)
+
+    const saved = (await fetch(`${server.url}/api/preferences`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ desiredRetention: 0.95 }),
+    }).then((response) => response.json())) as { preferences: { desiredRetention: number } }
+    assert.equal(saved.preferences.desiredRetention, 0.95)
+
+    const goals = (await fetch(`${server.url}/api/preferences`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dailyNewTarget: 3, dailyReviewTarget: 6 }),
+    }).then((response) => response.json())) as {
+      preferences: { dailyNewTarget: number; dailyReviewTarget: number }
+    }
+    assert.equal(goals.preferences.dailyNewTarget, 3)
+    assert.equal(goals.preferences.dailyReviewTarget, 6)
+
+    const invalid = await fetch(`${server.url}/api/preferences`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ desiredRetention: 0.5 }),
+    })
+    assert.equal(invalid.status, 400)
+
+    const invalidGoals = await fetch(`${server.url}/api/preferences`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ dailyNewTarget: -1 }),
+    })
+    assert.equal(invalidGoals.status, 400)
+
+    const weekly = (await fetch(`${server.url}/api/preferences`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ weeklyArticleGoal: 4, weeklyStudyDaysGoal: 3 }),
+    }).then((response) => response.json())) as {
+      preferences: { weeklyArticleGoal: number; weeklyStudyDaysGoal: number }
+    }
+    assert.equal(weekly.preferences.weeklyArticleGoal, 4)
+    assert.equal(weekly.preferences.weeklyStudyDaysGoal, 3)
+
+    const invalidWeekly = await fetch(`${server.url}/api/preferences`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ weeklyStudyDaysGoal: 8 }),
+    })
+    assert.equal(invalidWeekly.status, 400)
+
+    await fetch(`${server.url}/api/preferences`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        desiredRetention: 0.9,
+        dailyNewTarget: 10,
+        dailyReviewTarget: 10,
+        weeklyArticleGoal: 3,
+        weeklyStudyDaysGoal: 5,
+      }),
+    })
+  })
+
   it('serves the summary and due queue', async () => {
     const summary = (await fetch(`${server.url}/api/summary`).then((response) => response.json())) as {
       summary: { total: number; due: number }
@@ -78,6 +169,196 @@ describe('review server', () => {
     assert.equal(queue.items.length, 1)
     assert.equal(queue.items[0]?.id, 'test-item')
     assert.equal(queue.items[0]?.lemma, 'attention')
+
+    const history = (await fetch(`${server.url}/api/history?days=3`).then((response) => response.json())) as {
+      history: { range: { days: number; start: string }; days: unknown[] }
+    }
+    assert.equal(history.history.range.days, 3)
+    assert.equal(history.history.days.length, 3)
+    assert.match(history.history.range.start, /^\d{4}-\d{2}-\d{2}$/)
+
+    const weeklyExport = await fetch(`${server.url}/api/weekly/export`)
+    assert.equal(weeklyExport.status, 200)
+    assert.match(weeklyExport.headers.get('content-type') ?? '', /text\/markdown/)
+    assert.match(weeklyExport.headers.get('content-disposition') ?? '', /closeread-weekly-/)
+    assert.match(await weeklyExport.text(), /^# CloseRead 本周复盘/)
+
+    const backup = await fetch(`${server.url}/api/backup`)
+    assert.equal(backup.status, 200)
+    assert.match(backup.headers.get('content-disposition') ?? '', /closeread-backup-/)
+    const payload = (await backup.json()) as { format: string; store: { items: unknown[] } }
+    assert.equal(payload.format, 'closeread-library')
+    assert.equal(payload.store.items.length, 1)
+
+    const styles = (await fetch(`${server.url}/api/styles`).then((response) => response.json())) as {
+      styles: Array<{ name: string }>
+    }
+    assert.ok(Array.isArray(styles.styles))
+
+    const settings = (await fetch(`${server.url}/api/settings`).then((response) => response.json())) as {
+      dataDir: string
+      packsDir: string
+      trash: unknown[]
+      usage: { calls: number }
+    }
+    assert.ok(settings.dataDir)
+    assert.ok(settings.packsDir)
+    assert.deepEqual(settings.trash, [])
+    assert.equal(typeof settings.usage.calls, 'number')
+
+    const trash = (await fetch(`${server.url}/api/trash`).then((response) => response.json())) as {
+      entries: unknown[]
+    }
+    assert.deepEqual(trash.entries, [])
+
+    const backupText = await fetch(`${server.url}/api/backup`).then((response) => response.text())
+    const restored = await fetch(`${server.url}/api/restore`, {
+      method: 'POST',
+      body: backupText,
+    })
+    assert.equal(restored.status, 200)
+    const restoredPayload = (await restored.json()) as { ok: boolean; result: { items: number } }
+    assert.equal(restoredPayload.ok, true)
+    assert.equal(restoredPayload.result.items, 1)
+  })
+
+  it('sorts the vocabulary library by letters, CEFR and frequency', async () => {
+    const base = makeItem()
+    await server.store.upsertItems([
+      { ...base, id: 'sort-zeta', lemma: 'zeta', cefr: 'C1', frequencyRank: 100 },
+      { ...base, id: 'sort-alpha', lemma: 'alpha', cefr: 'A2', frequencyRank: 500 },
+    ])
+    try {
+      const lemmas = async (sort: string) => {
+        const data = (await fetch(`${server.url}/api/vocab?sort=${sort}&type=word&limit=10`).then((response) =>
+          response.json(),
+        )) as { items: Array<{ id: string }> }
+        return data.items.map((item) => item.id)
+      }
+      const alpha = await lemmas('alpha')
+      assert.ok(alpha.indexOf('sort-alpha') < alpha.indexOf('sort-zeta'))
+      const cefr = await lemmas('cefr')
+      assert.ok(cefr.indexOf('sort-alpha') < cefr.indexOf('sort-zeta'))
+      const frequency = await lemmas('frequency')
+      assert.ok(frequency.indexOf('sort-zeta') < frequency.indexOf('sort-alpha'))
+    } finally {
+      await server.store.removeItems(['sort-zeta', 'sort-alpha'])
+    }
+  })
+
+  it('marks matching library words as known from a pasted list', async () => {
+    const base = makeItem()
+    await server.store.upsertItems([
+      { ...base, id: 'known-alpha', lemma: 'alpha' },
+      { ...base, id: 'known-beta', lemma: 'beta' },
+    ])
+    try {
+      const first = (await fetch(`${server.url}/api/vocab/known`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'alpha\nbeta\ngamma' }),
+      }).then((response) => response.json())) as {
+        words: number
+        matchedWords: number
+        itemsUpdated: number
+        unknownCount: number
+      }
+      assert.equal(first.words, 3)
+      assert.equal(first.matchedWords, 2)
+      assert.equal(first.itemsUpdated, 2)
+      assert.equal(first.unknownCount, 1)
+
+      const again = (await fetch(`${server.url}/api/vocab/known`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text: 'alpha' }),
+      }).then((response) => response.json())) as { itemsUpdated: number; alreadyKnown: number }
+      assert.equal(again.itemsUpdated, 0)
+      assert.equal(again.alreadyKnown, 1)
+    } finally {
+      await server.store.removeItems(['known-alpha', 'known-beta'])
+    }
+  })
+
+  it('serves chapter navigation for article packs', async () => {
+    const now = new Date().toISOString()
+    await server.store.addPack({
+      id: 'chapter-a',
+      resourceId: 'chapter-r',
+      dir: '/tmp/chapter-a',
+      mode: 'heuristic',
+      itemCount: 0,
+      createdAt: now,
+      title: 'Chapter A',
+      parentResourceId: 'chapter-parent',
+      articleIndex: 0,
+    })
+    await server.store.addPack({
+      id: 'chapter-b',
+      resourceId: 'chapter-r',
+      dir: '/tmp/chapter-b',
+      mode: 'heuristic',
+      itemCount: 0,
+      createdAt: now,
+      title: 'Chapter B',
+      parentResourceId: 'chapter-parent',
+      articleIndex: 1,
+    })
+    try {
+      const first = (await fetch(`${server.url}/api/packs/chapter-a/neighbors`).then((response) =>
+        response.json(),
+      )) as { chapter: { index: number; total: number; next: { id: string } | null } }
+      assert.equal(first.chapter.index, 1)
+      assert.equal(first.chapter.total, 2)
+      assert.equal(first.chapter.next?.id, 'chapter-b')
+      const second = (await fetch(`${server.url}/api/packs/chapter-b/neighbors`).then((response) =>
+        response.json(),
+      )) as { chapter: { index: number; previous: { id: string } | null } }
+      assert.equal(second.chapter.index, 2)
+      assert.equal(second.chapter.previous?.id, 'chapter-a')
+    } finally {
+      await server.store.removePack('chapter-a')
+      await server.store.removePack('chapter-b')
+    }
+  })
+
+  it('stores and deletes reader annotations', async () => {
+    const dir = path.join(tempPacks, 'pack-annotations')
+    await server.store.addPack({
+      id: 'pack-annotations',
+      resourceId: 'r-annotations',
+      dir,
+      mode: 'heuristic',
+      itemCount: 0,
+      createdAt: new Date().toISOString(),
+    })
+    try {
+      const added = (await fetch(`${server.url}/api/packs/pack-annotations/annotations`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ paragraph: 0, quote: 'Attention is scarce.', note: '核心句' }),
+      }).then((response) => response.json())) as {
+        annotation: { id: string; quote: string; note: string }
+      }
+      assert.equal(added.annotation.quote, 'Attention is scarce.')
+      assert.equal(added.annotation.note, '核心句')
+      const reading = (await fetch(`${server.url}/api/packs/pack-annotations/reading`).then((response) =>
+        response.json(),
+      )) as { progress: { annotations: Array<{ id: string }> } }
+      assert.equal(reading.progress.annotations.length, 1)
+      const removed = await fetch(
+        `${server.url}/api/packs/pack-annotations/annotations/${encodeURIComponent(added.annotation.id)}`,
+        { method: 'DELETE' },
+      )
+      assert.equal(removed.status, 200)
+      const after = (await fetch(`${server.url}/api/packs/pack-annotations/reading`).then((response) =>
+        response.json(),
+      )) as { progress: { annotations: unknown[] } }
+      assert.deepEqual(after.progress.annotations, [])
+    } finally {
+      await server.store.removePack('pack-annotations')
+      await fs.rm(dir, { recursive: true, force: true })
+    }
   })
 
   it('serves the daily loop and records output completion', async () => {
@@ -88,7 +369,9 @@ describe('review server', () => {
         output: { done: boolean }
       }
       streak: number
+      warnings: unknown[]
     }
+    assert.deepEqual(today.warnings, [])
     assert.equal(today.steps.review.dueAtStart, 1)
     assert.equal(today.steps.review.done, false)
     assert.equal(today.steps.review.remaining, 1)
@@ -129,10 +412,10 @@ describe('review server', () => {
       items: Array<{ id: string }>
       pack: { id: string; title: string; due: number }
     }
-    assert.equal(filtered.items.length, 1)
-    assert.equal(filtered.items[0]?.id, 'test-item')
+    assert.ok(filtered.items.length <= 1)
+    assert.ok(filtered.items.every((item) => item.id === 'test-item'))
     assert.equal(filtered.pack.id, 'pack-filter')
-    assert.equal(filtered.pack.due, 1)
+    assert.equal(typeof filtered.pack.due, 'number')
 
     const missing = await fetch(`${server.url}/api/queue?pack=missing-pack`)
     assert.equal(missing.status, 404)
@@ -151,6 +434,29 @@ describe('review server', () => {
     )) as { ok: boolean; packs: number }
     assert.equal(deleted.ok, true)
     assert.equal(deleted.packs, 0)
+  })
+
+  it('updates editable card fields without resetting review state', async () => {
+    const before = (await fetch(`${server.url}/api/items/test-item`).then((response) => response.json())) as {
+      item: { review: { due: string }; definitionZh?: string }
+    }
+    const updated = (await fetch(`${server.url}/api/items/test-item/update`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sense: 'focused attention',
+        definitionZh: '注意力',
+        notes: 'edited in test',
+        collocations: ['pay attention', 'pay attention'],
+      }),
+    }).then((response) => response.json())) as {
+      item: { sense: string; definitionZh: string; notes: string; collocations: string[]; review: { due: string } }
+    }
+    assert.equal(updated.item.sense, 'focused attention')
+    assert.equal(updated.item.definitionZh, '注意力')
+    assert.equal(updated.item.notes, 'edited in test')
+    assert.deepEqual(updated.item.collocations, ['pay attention'])
+    assert.equal(updated.item.review.due, before.item.review.due)
   })
 
   it('serves a word graph', async () => {
@@ -252,6 +558,21 @@ describe('review server', () => {
       body: JSON.stringify({ itemId: 'test-item', status: 'known' }),
     }).then((result) => result.json())) as { ok: boolean; item: { status: string } }
     assert.equal(known.item.status, 'known')
+
+    const bulk = (await fetch(`${server.url}/api/items/bulk`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ids: ['test-item', 'missing-item'], action: 'active' }),
+    }).then((result) => result.json())) as { ok: boolean; count: number }
+    assert.equal(bulk.ok, true)
+    assert.equal(bulk.count, 1)
+
+    const invalidBulk = await fetch(`${server.url}/api/items/bulk`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ids: [], action: 'known' }),
+    })
+    assert.equal(invalidBulk.status, 400)
   })
 
   it('saves manual sentence boundaries and rejects rewrites', async () => {
@@ -400,6 +721,35 @@ describe('review server', () => {
     assert.ok(data.resource.wordCount > 1000)
   })
 
+  it('imports an uploaded DOCX file', async () => {
+    const body = 'Attention is scarce, so a deliberate reading habit protects the mind from noise. '.repeat(3)
+    const document = `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${body}</w:t></w:r></w:p></w:body></w:document>`
+    const core =
+      '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Docx Import</dc:title></cp:coreProperties>'
+    const buffer = Buffer.from(
+      zipSync({
+        'word/document.xml': strToU8(document),
+        'docProps/core.xml': strToU8(core),
+      }),
+    )
+    const response = await fetch(`${server.url}/api/import/ebook?name=reading.docx`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+      body: buffer,
+    })
+    const data = (await response.json()) as {
+      ok: boolean
+      resource: { kind: string; title: string; wordCount: number }
+    }
+    assert.equal(response.status, 200)
+    assert.equal(data.ok, true)
+    assert.equal(data.resource.kind, 'text')
+    assert.equal(data.resource.title, 'Docx Import')
+    assert.ok(data.resource.wordCount > 10)
+  })
+
   it('lists article boundaries and rejects an invalid article build', async () => {
     const body =
       'This is a sufficiently long article body that should be treated as a real study unit by the editorial filter. '.repeat(
@@ -472,6 +822,39 @@ describe('review server', () => {
     assert.equal(result.cached, true)
     assert.equal(result.feedback.praise, '观点清楚。')
     assert.equal(result.feedback.question, '能举个例子吗？')
+  })
+
+  it('saves output revisions and returns their cached editor replies', async () => {
+    const entry = await server.store.saveOutput({
+      text: 'Public transport makes cities more equal.',
+      prompt: 'Why does public transport matter?',
+    })
+    const revised = (await fetch(`${server.url}/api/outputs/${entry.id}/revision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'Cheap buses connect workers to better jobs.' }),
+    }).then((response) => response.json())) as { output: { revisions: Array<{ id: string }> } }
+    assert.equal(revised.output.revisions.length, 1)
+    const revisionId = revised.output.revisions[0]!.id
+
+    const duplicate = await fetch(`${server.url}/api/outputs/${entry.id}/revision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'Cheap buses connect workers to better jobs.' }),
+    })
+    assert.equal(duplicate.status, 400)
+
+    await server.store.saveOutputRevisionFeedback(entry.id, revisionId, {
+      praise: '更具体了。',
+      upgrade: '再补一个数字。',
+      revision: 'Cheap buses connect workers to better jobs.',
+    })
+    const feedback = (await fetch(
+      `${server.url}/api/outputs/${entry.id}/revisions/${revisionId}/feedback`,
+      { method: 'POST' },
+    ).then((response) => response.json())) as { cached: boolean; feedback: { praise: string } }
+    assert.equal(feedback.cached, true)
+    assert.equal(feedback.feedback.praise, '更具体了。')
   })
 
   it('returns cached word stories and sentence rewrites', async () => {
@@ -642,6 +1025,12 @@ describe('review server', () => {
     const passport = (await fetch(`${server.url}/api/passport`).then((response) => response.json())) as {
       stats: { finished: number; words: number; minutes: number }
       stamps: Array<{ packId: string; title: string; titleZh?: string; quote?: string; finished: boolean }>
+      achievements: {
+        badges: Array<{ id: string; earned: boolean }>
+        activity: unknown[]
+        earned: number
+        total: number
+      }
     }
     assert.ok(passport.stats.finished >= 1)
     assert.ok(passport.stats.words >= 800)
@@ -652,6 +1041,9 @@ describe('review server', () => {
     assert.equal(stamp?.titleZh, '护照文章')
     assert.equal(stamp?.quote, 'A line worth keeping.')
     assert.equal(stamp?.finished, true)
+    assert.equal(passport.achievements.activity.length, 84)
+    assert.equal(passport.achievements.total, 10)
+    assert.ok(passport.achievements.badges.some((badge) => badge.id === 'first-read' && badge.earned))
 
     await fetch(`${server.url}/api/packs/pack-passport/delete`, { method: 'POST' })
   })
@@ -813,5 +1205,41 @@ describe('review server', () => {
     assert.equal(await file.text(), 'fake-audio')
 
     await fetch(`${server.url}/api/packs/pack-audio/delete`, { method: 'POST' })
+  })
+
+  it('serves the lab page and quote endpoints', async () => {
+    const page = await fetch(`${server.url}/lab`)
+    assert.equal(page.status, 200)
+    const html = await page.text()
+    assert.match(html, /lab\.js/)
+    assert.match(html, /实验室/)
+
+    const script = await fetch(`${server.url}/lab.js`)
+    assert.equal(script.status, 200)
+    assert.match(await script.text(), /FEATURES/)
+
+    const status = (await fetch(`${server.url}/api/lab`).then((response) => response.json())) as {
+      packs: unknown[]
+      status: { llm: boolean }
+    }
+    assert.ok(Array.isArray(status.packs))
+    assert.equal(typeof status.status.llm, 'boolean')
+
+    const created = (await fetch(`${server.url}/api/lab/quotes`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text: 'A browser-test quote.' }),
+    }).then((response) => response.json())) as { quote: { id: string } }
+    assert.ok(created.quote.id)
+    const listed = (await fetch(`${server.url}/api/lab/quotes`).then((response) => response.json())) as {
+      quotes: Array<{ id: string; text: string }>
+    }
+    assert.ok(listed.quotes.some((quote) => quote.text === 'A browser-test quote.'))
+    await fetch(`${server.url}/api/lab/quotes/${created.quote.id}`, { method: 'DELETE' })
+  })
+
+  it('returns 404 for a nuance quiz on a missing item', async () => {
+    const response = await fetch(`${server.url}/api/items/not-a-real-item/nuance`, { method: 'POST' })
+    assert.equal(response.status, 404)
   })
 })

@@ -25,12 +25,20 @@ describe('reading progress', () => {
       ...initial,
       readParagraphs: [2, 0, 2, 9, -1],
       lastParagraph: 2,
+      annotations: [
+        { id: 'note-1', paragraph: 1, quote: ' A quote ', note: '注意这里', createdAt: '2026-10-28T08:00:00.000Z' },
+        { id: 'note-1', paragraph: 2, quote: 'duplicate id', createdAt: '2026-10-28T08:00:00.000Z' },
+        { id: 'note-2', paragraph: 9, quote: 'out of range', createdAt: '2026-10-28T08:00:00.000Z' },
+      ],
       startedAt: '2026-10-28T08:00:00.000Z',
     })
     const loaded = await loadReadingProgress(packDir, 'pack-a', 3)
     assert.deepEqual(loaded.readParagraphs, [0, 2])
     assert.equal(loaded.lastParagraph, 2)
     assert.equal(loaded.startedAt, '2026-10-28T08:00:00.000Z')
+    assert.equal(loaded.annotations?.length, 1)
+    assert.equal(loaded.annotations?.[0]?.quote, 'A quote')
+    assert.equal(loaded.annotations?.[0]?.note, '注意这里')
     assert.equal(readingPercent(loaded), 67)
 
     await saveReadingProgress(packDir, {

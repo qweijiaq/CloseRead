@@ -32,5 +32,11 @@ export function resourceWarnings(resource: Resource): string[] {
   if (resource.kind === 'web' && resource.metadata.extraction === 'body') {
     warnings.push('没有识别到正文容器，已提取整页，导航或页脚文字可能混入。')
   }
+  if (resource.metadata.aiCleanSkipped === 1) {
+    warnings.push('AI 清理幅度过大，已保留原文；可以手动删掉多余段落再生成。')
+  }
+  if (resource.metadata.aiCleanError === 1) {
+    warnings.push('AI 清理失败，已保留原文；检查模型配置或重试导入。')
+  }
   return warnings
 }

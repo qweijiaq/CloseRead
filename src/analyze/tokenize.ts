@@ -191,7 +191,7 @@ export function extractCandidates(text: string, limit: number): Candidate[] {
     .slice(0, MAX_UNIQUE_TO_SCAN)
 
   const merged = new Map<string, Candidate>()
-  for (const [surfaceLower, entry] of ranked) {
+  for (const [, entry] of ranked) {
     const lemma = lemmaOf(entry.surface)
     if (STOPWORDS.has(lemma) || COMMON_WORDS.has(lemma)) continue
     const pos = posOf(entry.surface) ?? posOf(lemma)

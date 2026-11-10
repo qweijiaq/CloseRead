@@ -2,13 +2,17 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 
 import { config } from '../config.js'
+import { contentHash } from '../ingest/index.js'
 import type { AnalyzeOutcome } from '../analyze/index.js'
 import type { LearningPack, PackAudio, PackRecord, Resource } from '../types.js'
 import { generatePackAudio } from '../audio/tts.js'
 import { renderAnkiCsv } from './anki.js'
 import { intensiveReadingMinutes } from './reading-time.js'
+import { packSchema } from './schema.js'
 import { renderHtml } from './html.js'
 import { renderMarkdown } from './markdown.js'
+
+const PROMPT_VERSION = '2026-11-01'
 
 export interface BuildOptions {
   includeSource?: boolean
@@ -57,12 +61,30 @@ export async function writePack(
     styleName: outcome.styleName,
     editorial: outcome.analysis.editorial,
     selection: outcome.selection,
+    build: {
+      inputHash: String(resource.metadata.hash ?? contentHash(resource.text)),
+      mode: outcome.mode,
+      provider: outcome.mode === 'llm' ? config.llm.provider : 'heuristic',
+      model: outcome.mode === 'llm' ? config.llm.model : 'dictionary',
+      promptVersion: PROMPT_VERSION,
+      generatedAt: new Date().toISOString(),
+      warnings: outcome.notes.slice(0, 20),
+    },
     ...(typeof resource.metadata.parentResourceId === 'string'
       ? { parentResourceId: resource.metadata.parentResourceId }
       : {}),
     ...(typeof resource.metadata.articleIndex === 'number'
       ? { articleIndex: resource.metadata.articleIndex }
       : {}),
+  }
+
+  const validated = packSchema.safeParse(pack)
+  if (!validated.success) {
+    const issues = validated.error.issues
+      .slice(0, 5)
+      .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+      .join('; ')
+    throw new Error(`Refusing to write an invalid pack at ${dir}: ${issues}`)
   }
 
   const files: string[] = []
@@ -85,6 +107,7 @@ export async function writePack(
   pack.audio = audio
 
   await write('pack.json', JSON.stringify(pack, null, 2))
+  await write('meta.json', JSON.stringify(pack.build, null, 2))
   await write('pack.md', renderMarkdown(pack))
   await write('anki.csv', renderAnkiCsv(pack))
   await write('index.html', renderHtml(pack, audio))

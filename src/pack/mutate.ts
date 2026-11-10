@@ -9,11 +9,13 @@ import { itemId } from '../analyze/item-id.js'
 import { rawItemSchema, normalizeWordFormation } from '../analyze/item-schema.js'
 import { findContextSentence } from '../analyze/tokenize.js'
 import { hasLlm } from '../config.js'
+import { generateWordCard } from '../analyze/word-card.js'
 import { loadStyleProfile, stylePromptBlock } from '../style/profile.js'
 import type { LearningItem, LearningPack } from '../types.js'
 import { renderAnkiCsv } from './anki.js'
 import { renderHtml } from './html.js'
 import { renderMarkdown } from './markdown.js'
+import { packSchema } from './schema.js'
 
 const addItemSchema = z.object({
   item: rawItemSchema,
@@ -27,12 +29,37 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+function validationMessage(file: string, error: { issues: Array<{ path: Array<string | number>; message: string }> }): string {
+  const issues = error.issues
+    .slice(0, 5)
+    .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+    .join('; ')
+  return `Invalid pack.json at ${file}: ${issues}`
+}
+
 export async function loadPack(dir: string): Promise<LearningPack> {
-  return JSON.parse(await fs.readFile(path.join(dir, 'pack.json'), 'utf8')) as LearningPack
+  const file = path.join(dir, 'pack.json')
+  let raw: string
+  try {
+    raw = await fs.readFile(file, 'utf8')
+  } catch (error) {
+    throw new Error(`Cannot read pack.json at ${file}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  let data: unknown
+  try {
+    data = JSON.parse(raw)
+  } catch (error) {
+    throw new Error(`pack.json is not valid JSON at ${file}: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  const parsed = packSchema.safeParse(data)
+  if (!parsed.success) throw new Error(validationMessage(file, parsed.error))
+  return parsed.data as unknown as LearningPack
 }
 
 /** Re-render all pack files after an item is added or removed. */
 export async function savePackFiles(pack: LearningPack, dir: string): Promise<void> {
+  const parsed = packSchema.safeParse(pack)
+  if (!parsed.success) throw new Error(validationMessage(path.join(dir, 'pack.json'), parsed.error))
   const audio = pack.audio ?? { items: {} }
   const files: Array<[string, string]> = [
     ['pack.json', JSON.stringify(pack, null, 2)],
@@ -161,7 +188,34 @@ export function removeItemFromPack(pack: LearningPack, itemIdToRemove: string): 
 /** Generate one new learning item in the pack's style, grounded in its source. */
 export async function generatePackItem(pack: LearningPack, word: string): Promise<LearningItem> {
   if (!hasLlm()) {
-    throw new Error('Adding a word needs an LLM. Configure LEARN_API_KEY or LEARN_ENV_FILE first.')
+    const item = await generateWordCard(word)
+    const paragraph = pack.reading?.find((entry) =>
+      entry.original.toLowerCase().includes(word.trim().toLowerCase()),
+    )
+    const sentence = paragraph
+      ? findContextSentence(paragraph.original, word.trim()) || paragraph.original
+      : item.contexts[0]?.sentence ?? `A useful word: ${word.trim()}.`
+    const now = new Date().toISOString()
+    return {
+      ...item,
+      contexts: [
+        {
+          resourceId: pack.resourceId,
+          resourceTitle: pack.title,
+          segmentIndex: paragraph?.index ?? 0,
+          sentence,
+          ...(paragraph?.translation ? { translation: paragraph.translation } : {}),
+        },
+      ],
+      examples: [
+        { text: sentence, origin: paragraph ? ('source' as const) : ('generated' as const) },
+        ...item.examples.filter((example) => example.text !== sentence),
+      ],
+      sourceRef: `${pack.title} · 手动添加`,
+      tags: unique([...item.tags, 'manual']),
+      createdAt: item.createdAt || now,
+      updatedAt: now,
+    }
   }
 
   const style = pack.styleName ? await loadStyleProfile(pack.styleName).catch(() => undefined) : undefined

@@ -107,15 +107,22 @@ function readingText(pack: LearningPack): string {
     .trim() || (pack.sourceText ?? '').trim()
 }
 
+export { readingText }
+
 /** Identify the currently configured speech engine for cache invalidation. */
-export async function speechFingerprint(): Promise<string> {
-  if (config.tts.provider === 'edge') return `edge:${config.tts.voice}`
-  if (hasNeuralTts()) {
+export async function speechFingerprint(text?: string): Promise<string> {
+  let base: string
+  if (config.tts.provider === 'edge') base = `edge:${config.tts.voice}`
+  else if (hasNeuralTts()) {
     const tone = createHash('sha1').update(config.tts.instructions).digest('hex').slice(0, 8)
-    return `neural:${config.tts.baseUrl}:${config.tts.model}:${config.tts.voice}:${tone}`
+    base = `neural:${config.tts.baseUrl}:${config.tts.model}:${config.tts.voice}:${tone}`
+  } else {
+    const voice = await getTtsVoice()
+    base = `say:${voice ?? 'system'}`
   }
-  const voice = await getTtsVoice()
-  return `say:${voice ?? 'system'}`
+  if (!text) return base
+  const content = createHash('sha1').update(text.replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 12)
+  return `${base}:${content}`
 }
 
 export interface SpeechFile {
@@ -128,14 +135,15 @@ export async function generateSpeechFile(
   text: string,
   dir: string,
   baseName: string,
+  fingerprint?: string,
 ): Promise<SpeechFile> {
   const trimmed = plainText(text)
   if (!trimmed) throw new Error('没有可朗读的文本。')
-  const fingerprint = await speechFingerprint()
+  const resolvedFingerprint = fingerprint ?? await speechFingerprint()
   if (hasNeuralTts()) {
     const relative = `${baseName}.${config.tts.provider === 'edge' ? 'mp3' : 'wav'}`
     await generateNeuralSpeech(trimmed, path.join(dir, relative))
-    return { path: relative, fingerprint }
+    return { path: relative, fingerprint: resolvedFingerprint }
   }
   if (!(await isSayAvailable())) {
     throw new Error('当前系统没有本地语音，也没有配置神经语音。')
@@ -143,7 +151,7 @@ export async function generateSpeechFile(
   const voice = await getTtsVoice()
   const relative = `${baseName}.m4a`
   await synthesize(trimmed, path.join(dir, relative), voice)
-  return { path: relative, fingerprint }
+  return { path: relative, fingerprint: resolvedFingerprint }
 }
 
 /** Read the whole article aloud into one cached file. */
@@ -153,7 +161,7 @@ export async function generateReadingAudio(
 ): Promise<SpeechFile | undefined> {
   const text = readingText(pack)
   if (!text) return undefined
-  return generateSpeechFile(text, dir, 'audio/reading')
+  return generateSpeechFile(text, dir, 'audio/reading', await speechFingerprint(text))
 }
 
 /** Generate and cache one sentence for the shadowing player. */
@@ -182,19 +190,31 @@ export async function generatePackAudio(pack: LearningPack, dir: string): Promis
   const neural = hasNeuralTts()
   const say = await isSayAvailable()
   if (!neural && !say) return result
-  const audioDir = path.join(dir, 'audio')
 
-  if (say) {
-    const voice = await getTtsVoice()
-    if (voice) result.voice = voice
-    await synthesize(`${pack.title}. ${pack.summary}`, path.join(audioDir, 'summary.m4a'), voice)
-    result.summary = 'audio/summary.m4a'
+  const summaryText = `${pack.title}. ${pack.summary}`.trim()
+  if (summaryText) {
+    try {
+      const speech = await generateSpeechFile(
+        summaryText,
+        dir,
+        'audio/summary',
+        await speechFingerprint(summaryText),
+      )
+      result.summary = speech.path
+    } catch {
+      // A failed summary should not block the article audio.
+    }
   }
 
   const article = readingText(pack)
   if (article) {
     try {
-      const speech = await generateSpeechFile(article, dir, 'audio/reading')
+      const speech = await generateSpeechFile(
+        article,
+        dir,
+        'audio/reading',
+        await speechFingerprint(article),
+      )
       result.reading = speech.path
       result.voice = speech.fingerprint
     } catch {
@@ -202,24 +222,35 @@ export async function generatePackAudio(pack: LearningPack, dir: string): Promis
     }
   }
 
-  if (!say) return result
-
   const wordLines = pack.items
     .slice(0, 30)
     .map((item) => `${item.lemma}. ${item.definition}.`)
     .join(' ')
   if (wordLines) {
-    await synthesize(wordLines, path.join(audioDir, 'words.m4a'))
-    result.words = 'audio/words.m4a'
+    try {
+      const speech = await generateSpeechFile(
+        wordLines,
+        dir,
+        'audio/words',
+        await speechFingerprint(wordLines),
+      )
+      result.words = speech.path
+    } catch {
+      // Word-list audio is optional.
+    }
   }
 
   for (const item of pack.items.slice(0, 12)) {
     const example = item.examples.find((entry) => entry.origin !== 'source')?.text ?? item.contexts[0]?.sentence ?? ''
     const text = `${item.lemma}. ${item.definition}. ${example}`.trim()
-    const file = path.join(audioDir, `item-${item.id}.m4a`)
     try {
-      await synthesize(text, file)
-      result.items[item.id] = `audio/item-${item.id}.m4a`
+      const speech = await generateSpeechFile(
+        text,
+        dir,
+        `audio/item-${item.id}`,
+        await speechFingerprint(text),
+      )
+      result.items[item.id] = speech.path
     } catch {
       // A single failed pronunciation should not fail the whole pack.
     }

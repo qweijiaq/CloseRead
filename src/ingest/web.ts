@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import * as cheerio from 'cheerio'
 import TurndownService from 'turndown'
+import { looksLikeFeed } from './feed.js'
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
@@ -23,6 +24,9 @@ const BOILERPLATE_SELECTORS = [
   'header',
   'footer',
   'aside',
+  'button',
+  'figure',
+  'figcaption',
   '[role="banner"]',
   '[role="complementary"]',
   '[class*="cookie"]',
@@ -32,7 +36,84 @@ const BOILERPLATE_SELECTORS = [
   '[class*="subscribe"]',
   '[class*="advert"]',
   '[class*="ad-slot"]',
+  '[class*="share"]',
+  '[id*="share"]',
+  '[class*="social-share"]',
+  '[class*="social-links"]',
+  '[class*="related"]',
+  '[class*="recommend"]',
+  '[class*="promo"]',
+  '[class*="preferred"]',
+  '[class*="caption"]',
+  '[class*="credit"]',
 ].join(', ')
+
+/** Short labels that stay in the article container but are page furniture, not prose. */
+const NOISE_BLOCK_PATTERNS = [
+  /^(?:add|make) us (?:as )?(?:a )?(?:preferred|favourite|favorite) source\.?$/i,
+  /^#{0,6}\s*(?:read|see) more\b/i,
+  /^related(?:\s+articles?|\s+reading)?\s*:?$/i,
+  /^more from\b/i,
+  /^sign up\b/i,
+  /^subscribe\b/i,
+  /^follow us\b/i,
+  /^share (?:this|on)\b/i,
+  /^listen to this article\b/i,
+  /^advertisement\b/i,
+  /^comments?\b/i,
+  /^most popular\b/i,
+  /^home\s*\/\s*[a-z]/i,
+  /^(?:image|photo|credit|illustration|caption)\s*:/i,
+]
+
+const IMAGE_CREDIT_PATTERN =
+  /\|\s*[^|]{2,80}\/(?:Getty|Reuters|AP|AFP|Shutterstock|Alamy|Bloomberg|Corbis)/i
+const AGENCY_CREDIT_PATTERN = /\/(?:Getty|Reuters|AP|AFP|Shutterstock|Alamy|Bloomberg|Corbis)/i
+
+function wordCount(value: string): number {
+  return value.trim().split(/\s+/).filter(Boolean).length
+}
+
+/** True for image captions, credit lines, share buttons and other non-prose blocks. */
+function isNoiseBlock(block: string): boolean {
+  const text = block.replace(/\s+/g, ' ').trim()
+  if (!text) return true
+
+  // A block that is only URLs, percent-encoding or punctuation has no prose.
+  const letters = text.replace(/[^A-Za-z]/g, '').length
+  if (letters < 2) return true
+
+  // Empty Markdown links are always leftovers from share/bookmark widgets.
+  if (/\[\s*\]\(/.test(text) && letters < 40) return true
+
+  // Share widgets often arrive as a run of links with almost no prose around them.
+  if (/https?:\/\//i.test(text)) {
+    const outsideUrls = text.replace(/https?:\/\/\S+/gi, '').replace(/\[\s*\]\([^)]*\)/g, '')
+    if (outsideUrls.replace(/[^A-Za-z]/g, '').length < 12) return true
+  }
+
+  const count = wordCount(text)
+  if (count <= 12 && NOISE_BLOCK_PATTERNS.some((pattern) => pattern.test(text))) return true
+  if (count <= 18 && IMAGE_CREDIT_PATTERN.test(text)) return true
+  if (count <= 12 && AGENCY_CREDIT_PATTERN.test(text)) return true
+  return false
+}
+
+function normalizeBlocks(markdown: string): string {
+  const seen = new Set<string>()
+  return markdown
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter((block) => {
+      if (!block || isNoiseBlock(block)) return false
+      const key = block.toLowerCase().replace(/\s+/g, ' ')
+      if (key.length >= 80 && seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .join('\n\n')
+    .trim()
+}
 
 const CONTENT_CANDIDATES = ['.article-body', '.post-content', '.entry-content', '.content', 'article', 'main', '[role="main"]']
 
@@ -51,16 +132,21 @@ export interface FetchedUrl {
   contentType: string
   html?: string
   text?: string
+  xml?: string
   pdf?: Uint8Array
 }
 
 function cleanMarkdown(markdown: string): string {
-  return markdown
+  const withoutLinks = markdown
+    // Images first: a site often leaves the image's empty link wrapper behind.
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    // `[](url)` is a share/bookmark wrapper, not prose.
+    .replace(/\[\s*\]\([^)]*\)/g, '')
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/<https?:\/\/[^>\s]+>/g, '')
+    .replace(/^\s*(?:https?:\/\/|www\.)\S+\s*$/gim, '')
     .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
+  return normalizeBlocks(withoutLinks)
 }
 
 function pickTitle($: cheerio.CheerioAPI, fallbackTitle: string): string {
@@ -156,15 +242,26 @@ export async function fetchUrl(url: string): Promise<FetchedUrl> {
   if (contentType.includes('application/pdf')) {
     return { finalUrl, contentType, pdf: new Uint8Array(await response.arrayBuffer()) }
   }
+  if (
+    contentType.includes('application/rss+xml') ||
+    contentType.includes('application/atom+xml') ||
+    contentType.includes('application/rdf+xml') ||
+    contentType.includes('application/xml') ||
+    contentType.includes('text/xml')
+  ) {
+    return { finalUrl, contentType, xml: await response.text() }
+  }
   if (!contentType || contentType.includes('text/html') || contentType.includes('application/xhtml+xml')) {
-    return { finalUrl, contentType, html: await response.text() }
+    const body = await response.text()
+    // Some feeds are served as text/html; the XML declaration is the reliable signal.
+    return looksLikeFeed(body) ? { finalUrl, contentType, xml: body } : { finalUrl, contentType, html: body }
   }
   if (contentType.startsWith('text/plain')) {
     return { finalUrl, contentType, text: await response.text() }
   }
 
   throw new Error(
-    `Unsupported content type "${contentType.split(';')[0]}" at ${finalUrl}. Supported: HTML articles, plain text, and PDF.`,
+    `Unsupported content type "${contentType.split(';')[0]}" at ${finalUrl}. Supported: HTML articles, RSS/Atom feeds, plain text, and PDF.`,
   )
 }
 

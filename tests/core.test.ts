@@ -101,6 +101,25 @@ describe('FSRS scheduling', () => {
     assert.ok(new Date(result.review.due).getTime() > now.getTime())
     assert.equal(result.review.reps, 1)
   })
+
+  it('uses the desired retention for the next interval', () => {
+    const now = new Date('2026-01-01T00:00:00Z')
+    const mature = {
+      due: now.toISOString(),
+      stability: 10,
+      difficulty: 5,
+      elapsedDays: 10,
+      scheduledDays: 10,
+      learningSteps: 0,
+      reps: 5,
+      lapses: 0,
+      fsrsState: 2,
+      lastReview: new Date(now.getTime() - 10 * 86_400_000).toISOString(),
+    }
+    const relaxed = rateReview(mature, 3, now, 0.8)
+    const strict = rateReview(mature, 3, now, 0.95)
+    assert.ok(relaxed.review.scheduledDays > strict.review.scheduledDays)
+  })
 })
 
 describe('Anki export', () => {

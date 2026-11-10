@@ -651,9 +651,13 @@ export async function analyzeWithLlm(
     if (paragraphs.length > 0) {
       reading = paragraphs.map((paragraph, index) => {
         const original = groundParagraph(resource, paragraph.original, index)
+        const sourceSegment =
+          resource.segments.find((segment) => segment.text.includes(original)) ?? resource.segments[index]
         return {
           index,
           original,
+          ...(typeof sourceSegment?.page === 'number' ? { page: sourceSegment.page } : {}),
+          ...(sourceSegment?.timestamp ? { timestamp: sourceSegment.timestamp } : {}),
           translation: paragraph.translation,
           itemIds: (paragraph.itemIndices ?? [])
             .map((itemIndex) => items[itemIndex]?.id)

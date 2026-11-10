@@ -40,6 +40,49 @@ describe('pack html', () => {
     assert.ok(!html.includes('split(/s+/)'))
   })
 
+  it('marks packs built before build metadata as legacy', () => {
+    const legacy = renderHtml(makePack(), { items: {} })
+    assert.ok(legacy.includes('pill legacy'))
+    assert.ok(legacy.includes('旧版'))
+    const pack = makePack()
+    pack.build = {
+      inputHash: 'hash',
+      mode: 'heuristic',
+      provider: 'dictionary',
+      model: 'dictionary',
+      promptVersion: '2026-11-01',
+      generatedAt: new Date().toISOString(),
+      warnings: [],
+    }
+    const current = renderHtml(pack, { items: {} })
+    assert.ok(!current.includes('pill legacy'))
+  })
+
+  it('offers reader theme and typography controls', () => {
+    const html = renderHtml(makePack(), { items: {} })
+    assert.ok(html.includes('id="reader-settings"'))
+    assert.ok(html.includes('data-reader-theme="dark"'))
+    assert.ok(html.includes('data-reader-size="17"'))
+    assert.ok(html.includes('data-reader-leading="1.85"'))
+    assert.ok(html.includes('data-reader-width="960"'))
+    assert.ok(html.includes('id="reader-settings-open"'))
+    assert.ok(html.includes('html[data-theme="dark"]'))
+    assert.ok(!html.includes('id="toggle-font"'))
+  })
+
+  it('keeps exported packs light and script-free of reader controls', () => {
+    const html = renderHtml(makePack(), { items: {} }, { exportMode: true })
+    assert.ok(!html.includes('id="reader-settings"'))
+    assert.ok(html.includes('var READER_INTERACTIVE = false;'))
+  })
+
+  it('keeps the mobile reading grid shrinkable and long tokens wrappable', () => {
+    const html = renderHtml(makePack(), { items: {} })
+    assert.ok(html.includes('grid-template-columns: minmax(0, 1fr)'))
+    assert.ok(html.includes('overflow-wrap: anywhere'))
+    assert.ok(!html.includes('grid-template-columns: 1fr; gap: 8px'))
+  })
+
   it('emits syntactically valid inline scripts', () => {
     const html = renderHtml(makePack(), { items: {} })
     const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? '')
@@ -51,9 +94,53 @@ describe('pack html', () => {
     const html = renderHtml(makePack(), { items: {} })
     assert.ok(html.includes('id="back-review"'))
     assert.ok(html.includes('data-home'))
+    assert.ok(html.includes('id="chapter-nav"'))
     assert.ok(html.includes('返回今日'))
     assert.ok(html.includes('id="jump-top"'))
+    assert.ok(html.includes('id="lang-toggle"'))
+    assert.ok(html.includes('closeread-lang'))
     assert.ok(html.includes("'http://127.0.0.1:4317/'"))
+  })
+
+  it('surfaces degraded build warnings on the pack page', () => {
+    const pack = makePack()
+    pack.mode = 'llm'
+    pack.build = {
+      inputHash: 'hash',
+      mode: 'llm',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      promptVersion: '2026-11-01',
+      generatedAt: new Date().toISOString(),
+      warnings: [
+        'LLM extraction: deepseek-chat',
+        'Reading failed: LLM returned an empty response.',
+        '补充了 22 段缺失译文。',
+      ],
+    }
+    const html = renderHtml(pack, { items: {} })
+    const banner = /<section class="build-warning"[\s\S]*?<\/section>/.exec(html)?.[0] ?? ''
+    assert.ok(html.includes('id="build-warning"'))
+    assert.ok(banner.includes('生成提醒'))
+    assert.ok(banner.includes('Reading failed'))
+    assert.ok(html.includes('部分降级'))
+    assert.ok(!banner.includes('LLM extraction: deepseek-chat'))
+  })
+
+  it('does not warn for informational build notes', () => {
+    const pack = makePack()
+    pack.build = {
+      inputHash: 'hash',
+      mode: 'llm',
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+      promptVersion: '2026-11-01',
+      generatedAt: new Date().toISOString(),
+      warnings: ['LLM extraction: deepseek-chat', 'Reused 3 cached word cards.'],
+    }
+    const html = renderHtml(pack, { items: {} })
+    assert.ok(!html.includes('id="build-warning"'))
+    assert.ok(!html.includes('部分降级'))
   })
 
   it('shows the adaptive selection rationale and review link', () => {
@@ -119,8 +206,9 @@ describe('pack html', () => {
       background: '背景说明。',
       question: '作者为什么这样说？',
     }
+    pack.reading![0]!.page = 3
     const html = renderHtml(pack, { items: {} })
-    assert.ok(html.includes('para-note'))
+    assert.ok(html.includes('para-page'))
     assert.ok(html.includes('转折'))
     assert.ok(html.includes('note-key'))
     assert.ok(html.includes('作者为什么这样说'))
@@ -496,7 +584,35 @@ describe('review html', () => {
 
   it('includes the reading passport and its share card canvas', () => {
     const html = renderReviewApp()
+    assert.ok(html.includes('class="app-shell"'))
+    assert.ok(html.includes('id="page-title"'))
+    assert.ok(html.includes('class="source-tabs"'))
+    assert.ok(html.includes('class="mobile-nav"'))
+    assert.ok(html.includes('class="skip-link"'))
+    assert.ok(html.includes('id="main-content"'))
+    assert.ok(html.includes('id="store-warning"'))
     assert.ok(html.includes('data-tab="passport"'))
+    assert.ok(html.includes('data-go-tab="insights"'))
+    assert.ok(html.includes('id="view-insights"'))
+    assert.ok(html.includes('id="home-diagnosis"'))
+    assert.ok(html.includes('id="passport-weekly"'))
+    assert.ok(html.includes('id="passport-achievements"'))
+    assert.ok(html.includes('id="passport-activity"'))
+    assert.ok(html.includes('id="import-text-ai-clean"'))
+    assert.ok(html.includes('id="import-url-ai-clean"'))
+    assert.ok(html.includes('id="undo-review"'))
+    assert.ok(html.includes('id="review-forecast"'))
+    assert.ok(html.includes('id="lan-toggle"'))
+    assert.ok(html.includes('id="lan-panel"'))
+    assert.ok(html.includes('id="lan-body"'))
+    assert.ok(html.includes('id="theme-toggle"'))
+    assert.ok(html.includes('id="nuance-modal"'))
+    assert.ok(html.includes('id="nuance-close"'))
+    assert.ok(html.includes('html[data-theme="dark"]'))
+    assert.ok(html.includes('id="insight-weekly"'))
+    assert.ok(html.includes('id="insight-diagnosis"'))
+    assert.ok(html.includes('id="lang-toggle"'))
+    assert.ok(html.includes('closeread-lang'))
     assert.ok(html.includes('id="view-passport"'))
     assert.ok(html.includes('id="passport-stamps"'))
     assert.ok(html.includes('id="passport-modal"'))
@@ -508,16 +624,15 @@ describe('review html', () => {
 
   it('has a first-class import entry for text, URL and PDF', () => {
     const html = renderReviewApp()
-    assert.ok(html.includes('data-tab="import"'))
     assert.ok(html.includes('id="view-import"'))
     assert.ok(html.includes('id="import-text-form"'))
     assert.ok(html.includes('id="import-url-form"'))
-    assert.ok(html.includes('id="import-pdf-form"'))
     assert.ok(html.includes('id="import-ebook-form"'))
     assert.ok(html.includes('data-go-tab="import"'))
     assert.ok(html.includes('data-build-article'))
     assert.ok(html.includes('article-search'))
     assert.ok(html.includes('renderArticleList'))
+    assert.ok(html.includes('RSS/Atom'))
   })
 
   it('includes the daily loop, cloze practice and pronunciation controls', () => {
@@ -529,6 +644,8 @@ describe('review html', () => {
     assert.ok(html.includes('speechSynthesis'))
     assert.ok(html.includes('id="only-new"'))
     assert.ok(html.includes('id="selection-size"'))
+    assert.ok(html.includes('id="review-retention"'))
+    assert.ok(html.includes('id="first-accuracy"'))
     assert.ok(html.includes('data-value="5"'))
     assert.ok(html.includes('data-value="100"'))
     assert.ok(html.includes('id="llm-settings"'))
@@ -538,15 +655,14 @@ describe('review html', () => {
     assert.ok(html.includes('data-value="anthropic"'))
     assert.ok(html.includes('data-value="google"'))
     assert.ok(html.includes('id="llm-model-options"'))
-    assert.ok(!html.includes('<select'))
   })
 
-  it('opens on a reading-first home and keeps review as a separate tab', () => {
+  it('opens on a reading-first home and keeps review reachable from today', () => {
     const html = renderReviewApp()
     assert.ok(html.includes('id="view-home"'))
     assert.ok(html.includes('id="home-hero"'))
     assert.ok(html.includes('data-tab="home"'))
-    assert.ok(html.includes('data-tab="review"'))
+    assert.ok(html.includes('data-go-tab="review"'))
     assert.ok(html.includes('继续精读'))
     assert.ok(html.includes('最近精读'))
   })
@@ -567,6 +683,12 @@ describe('review html', () => {
     assert.ok(html.includes('句子卡 · 回译'))
   })
 
+  it('keeps empty chart bars away from the global empty-state padding', () => {
+    const html = renderReviewApp()
+    assert.ok(html.includes('.history-bar.is-empty'))
+    assert.ok(!html.includes('.history-bar.empty'))
+  })
+
   it('includes written output capture and history', () => {
     const html = renderReviewApp()
     assert.ok(html.includes('today-output-input'))
@@ -574,13 +696,37 @@ describe('review html', () => {
     assert.ok(html.includes('home-outputs'))
     assert.ok(html.includes('最近输出'))
     assert.ok(html.includes('/api/today/output'))
+    assert.ok(html.includes('output-revise'))
+    assert.ok(html.includes('data-output-revision-save'))
+    assert.ok(html.includes('data-output-revision-feedback'))
   })
 
-  it('filters the library by words and sentence cards', () => {
+  it('includes the vocabulary groups, detail drawer and study session', () => {
     const html = renderReviewApp()
-    assert.ok(html.includes('data-lib-filter="word"'))
-    assert.ok(html.includes('data-lib-filter="sentence"'))
-    assert.ok(html.includes('applyLibraryFilter'))
+    assert.ok(html.includes('data-vocab-group="new"'))
+    assert.ok(html.includes('data-vocab-group="due"'))
+    assert.ok(html.includes('data-vocab-group="leech"'))
+    assert.ok(html.includes('id="vocab-study"'))
+    assert.ok(html.includes('id="vocab-books-open"'))
+    assert.ok(html.includes('id="wordbooks-modal"'))
+    assert.ok(html.includes('id="quality-modal"'))
+    assert.ok(html.includes('data-vocab-group="missing"'))
+    assert.ok(html.includes('vocab-select-toggle'))
+    assert.ok(html.includes('vocab-select-review'))
+    assert.ok(html.includes('vocab-bulk-suspend'))
+    assert.ok(html.includes('vocab-bulk-known'))
+    assert.ok(html.includes('vocab-sort'))
+    assert.ok(html.includes('/api/items/bulk'))
+    assert.ok(html.includes('vocab-known-open'))
+    assert.ok(html.includes('/api/vocab/known'))
+    assert.ok(html.includes('selectedVocabIds'))
+    assert.ok(html.includes('function setBusy('))
+    assert.ok(!html.includes('<select'))
+    assert.ok(html.includes('/api/wordbooks'))
+    assert.ok(html.includes('id="vocab-detail"'))
+    assert.ok(html.includes('id="study-session"'))
+    assert.ok(html.includes('/api/vocab'))
+    assert.ok(html.includes('/api/queue'))
     assert.ok(html.includes('sentence-row'))
     assert.ok(html.includes('sentence-original'))
   })

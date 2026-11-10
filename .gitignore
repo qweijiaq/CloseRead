@@ -10,3 +10,7 @@ references/*
 docs/
 styles/
 *.log
+desktop-dist/
+*.dmg
+*.AppImage
+release/

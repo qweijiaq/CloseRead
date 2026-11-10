@@ -48,10 +48,14 @@ export function suggestSelection(
 ): SelectionMetadata {
   const wordCount = resource.wordCount || resource.text.split(/\s+/).filter(Boolean).length
   const difficulty = estimateDifficulty(resource.text)
-  const base = Math.max(5, Math.min(100, Math.round(wordCount / 20)))
+  // One intensive-reading session is built around 8–16 expressions, not a fixed
+  // fraction of the article. Longer texts get more, but the session stays bounded.
+  const base = Math.max(8, Math.min(16, Math.round(wordCount / 80)))
   const known = options.knownRatio ?? 0
   const bias = Math.max(-5, Math.min(5, Math.round(options.selectionBias ?? 0)))
   const biasAdjust = bias === 0 ? 0 : Math.max(-4, Math.min(5, bias))
+  // A known-word ratio is only meaningful when the learner has some known words.
+  const knownAdjust = known >= 0.75 ? 1 : known > 0 && known <= 0.25 ? -1 : 0
 
   if (typeof options.limit === 'number') {
     const recommended = Math.max(1, Math.min(100, Math.round(options.limit)))
@@ -66,8 +70,11 @@ export function suggestSelection(
     }
   }
 
-  const recommended = Math.max(5, Math.min(100, base + biasAdjust))
-  const knownNote = known > 0 ? `，已知词约占 ${Math.round(known * 100)}%` : ''
+  const recommended = Math.max(6, Math.min(16, base + biasAdjust + knownAdjust))
+  const knownNote =
+    known > 0
+      ? `，已知词约占 ${Math.round(known * 100)}%${knownAdjust === 0 ? '' : knownAdjust > 0 ? '，增加 1 项' : '，减少 1 项'}`
+      : ''
   const biasNote =
     bias === 0 ? '' : `，按你的反馈${bias > 0 ? '增加' : '减少'} ${Math.abs(biasAdjust)} 项`
   return {
@@ -77,14 +84,18 @@ export function suggestSelection(
     bonus: 0,
     wordCount,
     cefr: difficulty.cefr,
-    reason: `原文 ${wordCount} 词，按每 20 词选 1 个建议 ${recommended} 项${knownNote}${biasNote}。`,
+    reason: `原文 ${wordCount} 词，按精读节奏建议 ${recommended} 项（约 20–25 分钟）${knownNote}${biasNote}。`,
   }
 }
 
-function applyTiers(analysis: AnalysisResult, recommendation: SelectionMetadata): SelectionMetadata {
+/** Split the items the LLM actually returned into core and bonus tiers. */
+export function applySelectionTiers(
+  analysis: AnalysisResult,
+  recommendation: SelectionMetadata,
+): SelectionMetadata {
   const count = analysis.items.length
   if (count === 0) return { ...recommendation, core: 0, bonus: 0 }
-  const core = Math.max(1, Math.min(count, Math.round(recommendation.recommended * 0.7)))
+  const core = Math.max(1, Math.min(count, Math.round(count * 0.7)))
   analysis.items.forEach((item, index) => {
     item.tier = index < core ? 'core' : 'bonus'
   })
@@ -210,7 +221,7 @@ export async function analyzeResource(resource: Resource, options: AnalyzeOption
     }
   }
 
-  outcome.selection = applyTiers(outcome.analysis, {
+  outcome.selection = applySelectionTiers(outcome.analysis, {
     ...selection,
     ...(outcome.analysis.cachedCards ? { cachedCards: outcome.analysis.cachedCards } : {}),
   })

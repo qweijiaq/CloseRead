@@ -1,5 +1,14 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
+
+export interface ReadingAnnotation {
+  id: string
+  paragraph: number
+  quote: string
+  note?: string
+  createdAt: string
+}
 
 export interface ReadingProgress {
   packId: string
@@ -8,6 +17,8 @@ export interface ReadingProgress {
   lastParagraph: number
   /** Zero-based index into the flattened sentence list of the pack. */
   lastSentence?: number
+  /** Notes and highlights saved from the integrated reader. */
+  annotations?: ReadingAnnotation[]
   startedAt?: string
   updatedAt: string
   finishedAt?: string
@@ -23,6 +34,31 @@ function cleanIndices(values: unknown, total: number): number[] {
     .map((value) => Number(value))
     .filter((value) => Number.isInteger(value) && value >= 0 && (total <= 0 || value < total))
   return [...new Set(indices)].sort((a, b) => a - b)
+}
+
+function cleanAnnotations(values: unknown, total: number): ReadingAnnotation[] {
+  if (!Array.isArray(values)) return []
+  const seen = new Set<string>()
+  const annotations: ReadingAnnotation[] = []
+  for (const raw of values) {
+    if (!raw || typeof raw !== 'object') continue
+    const value = raw as Partial<ReadingAnnotation>
+    const id = typeof value.id === 'string' ? value.id.trim().slice(0, 80) : ''
+    const quote = typeof value.quote === 'string' ? value.quote.replace(/\s+/g, ' ').trim().slice(0, 500) : ''
+    const paragraph = Number(value.paragraph)
+    if (!id || !quote || seen.has(id) || !Number.isInteger(paragraph) || paragraph < 0) continue
+    if (total > 0 && paragraph >= total) continue
+    const note = typeof value.note === 'string' ? value.note.trim().slice(0, 1000) : ''
+    seen.add(id)
+    annotations.push({
+      id,
+      paragraph,
+      quote,
+      ...(note ? { note } : {}),
+      createdAt: typeof value.createdAt === 'string' ? value.createdAt : new Date().toISOString(),
+    })
+  }
+  return annotations
 }
 
 function emptyProgress(packId: string, totalParagraphs: number): ReadingProgress {
@@ -58,6 +94,7 @@ export async function loadReadingProgress(
       totalParagraphs: total,
       readParagraphs: cleanIndices(raw.readParagraphs, total),
       lastParagraph: last,
+      annotations: cleanAnnotations(raw.annotations, total),
       ...(typeof raw.lastSentence === 'number' && Number.isFinite(raw.lastSentence)
         ? { lastSentence: Math.max(0, Math.floor(raw.lastSentence)) }
         : {}),
@@ -70,27 +107,40 @@ export async function loadReadingProgress(
   }
 }
 
+const writeQueues = new Map<string, Promise<void>>()
+
 export async function saveReadingProgress(packDir: string, progress: ReadingProgress): Promise<void> {
-  await fs.mkdir(packDir, { recursive: true })
-  const temp = `${progressFile(packDir)}.tmp`
-  const payload: ReadingProgress = {
-    ...progress,
-    totalParagraphs: Math.max(0, progress.totalParagraphs),
-    readParagraphs: cleanIndices(progress.readParagraphs, progress.totalParagraphs),
-    lastParagraph: Math.max(
-      0,
-      Math.min(
-        Math.max(0, progress.totalParagraphs - 1),
-        Math.floor(progress.lastParagraph || 0),
+  const file = progressFile(packDir)
+  const previous = writeQueues.get(file) ?? Promise.resolve()
+  const next = previous.catch(() => {}).then(async () => {
+    await fs.mkdir(packDir, { recursive: true })
+    const temp = `${file}.${process.pid}.${randomUUID()}.tmp`
+    const payload: ReadingProgress = {
+      ...progress,
+      totalParagraphs: Math.max(0, progress.totalParagraphs),
+      readParagraphs: cleanIndices(progress.readParagraphs, progress.totalParagraphs),
+      annotations: cleanAnnotations(progress.annotations, progress.totalParagraphs),
+      lastParagraph: Math.max(
+        0,
+        Math.min(
+          Math.max(0, progress.totalParagraphs - 1),
+          Math.floor(progress.lastParagraph || 0),
+        ),
       ),
-    ),
-    ...(typeof progress.lastSentence === 'number' && Number.isFinite(progress.lastSentence)
-      ? { lastSentence: Math.max(0, Math.floor(progress.lastSentence)) }
-      : {}),
-    updatedAt: new Date().toISOString(),
+      ...(typeof progress.lastSentence === 'number' && Number.isFinite(progress.lastSentence)
+        ? { lastSentence: Math.max(0, Math.floor(progress.lastSentence)) }
+        : {}),
+      updatedAt: new Date().toISOString(),
+    }
+    await fs.writeFile(temp, JSON.stringify(payload, null, 2), 'utf8')
+    await fs.rename(temp, file)
+  })
+  writeQueues.set(file, next)
+  try {
+    await next
+  } finally {
+    if (writeQueues.get(file) === next) writeQueues.delete(file)
   }
-  await fs.writeFile(temp, JSON.stringify(payload, null, 2), 'utf8')
-  await fs.rename(temp, progressFile(packDir))
 }
 
 export function readingPercent(progress: ReadingProgress): number {
@@ -125,6 +175,7 @@ export function readingSummary(progress: ReadingProgress) {
     total: progress.totalParagraphs,
     lastParagraph: progress.lastParagraph,
     lastSentence: progress.lastSentence ?? 0,
+    annotations: progress.annotations ?? [],
     startedAt: progress.startedAt ?? null,
     finishedAt: progress.finishedAt ?? null,
     updatedAt: progress.updatedAt,

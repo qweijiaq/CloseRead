@@ -4,7 +4,10 @@ import http from 'node:http'
 import path from 'node:path'
 
 import { analyzeResource } from '../analyze/index.js'
-import { generateReadingAudio, generateSentenceAudio, getTtsVoice, isSayAvailable, listSystemVoices, speechFingerprint } from '../audio/tts.js'
+import { chatJson } from '../analyze/chat.js'
+import { usageSummary } from '../analyze/usage.js'
+import { z } from 'zod'
+import { generateReadingAudio, generateSentenceAudio, getTtsVoice, isSayAvailable, listSystemVoices, readingText, speechFingerprint } from '../audio/tts.js'
 import { seedCardCache } from '../analyze/card-cache.js'
 import { knownRatioInText } from '../analyze/known.js'
 import { generateDerivationGraph } from '../analyze/derivation.js'
@@ -26,8 +29,18 @@ import { translateSentence } from '../analyze/sentence-translation.js'
 import { generateWordCard, enrichWordRelations } from '../analyze/word-card.js'
 import { generateWordStory } from '../analyze/word-story.js'
 import { generateOutputFeedback } from '../analyze/output-feedback.js'
+import { generateNuanceQuiz } from '../analyze/nuance.js'
+import { addQuote, deleteQuote, listQuotes, setQuoteCommentary } from '../lab/quotes.js'
+import { labPacks, loadLabPack } from '../lab/context.js'
+import { labSpeech } from '../lab/audio.js'
+import { petState } from '../lab/pet.js'
+import { enrollWordbook, getWordbook, listWordbooks, wordbookView } from '../wordbooks/index.js'
+import { generateAdventureFeedback, generateArgumentMap, generateDictationHint, generateDubbing, generateDungeonFlavor, generateLifeExamples, generateNewsShort, generatePetLine, generatePodcast, generateQuoteInsight, generateRegisterRemix, generateSubtitleHunter } from '../lab/generators.js'
+import { renderLabApp } from './lab.js'
+import { renderReaderApp } from './reader.js'
 import { generateMicroStory } from '../analyze/micro-story.js'
-import { config, ensureDirs, hasLlm, llmProviderOptions, llmStatus, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
+import { config, ensureDirs, hasLlm, llmProviderOptions, llmStatus, projectRoot, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
+import { listProviderModels } from '../llm/models.js'
 import { buildWordGraph } from '../graph/build.js'
 import {
   articleSections,
@@ -37,12 +50,13 @@ import {
   scopedResourceForArticle,
 } from '../ingest/articles.js'
 import { readEpub } from '../ingest/epub.js'
-import { contentHash, ingestEpubBuffer, ingestMobiBuffer, ingestPdfBuffer, ingestSource, ingestText } from '../ingest/index.js'
+import { contentHash, ingestDocxBuffer, ingestEpubBuffer, ingestMobiBuffer, ingestPdfBuffer, ingestSource, ingestText } from '../ingest/index.js'
 import { readMobi } from '../ingest/mobi.js'
 import { readPdf } from '../ingest/pdf.js'
 import { previewText, resourceWarnings } from '../ingest/summary.js'
 import { writePack } from '../pack/build.js'
 import { renderHtml } from '../pack/html.js'
+import { selectRemovableItems } from '../pack/rebuild.js'
 import { addItemToPack, addSentenceToPack, generatePackItem, loadPack, removeItemFromPack, savePackFiles } from '../pack/mutate.js'
 import {
   normalizeSentenceBoundaries,
@@ -66,10 +80,22 @@ import { analyzeSelection } from '../pack/selection.js'
 import { loadReadingProgress, readingPercent, readingSummary, resetReadingProgress, saveReadingProgress } from '../reading/progress.js'
 import { Store } from '../store/store.js'
 import type { DailyProgress } from '../store/store.js'
-import { resolveDefaultStyle } from '../style/profile.js'
+import { restoreLibraryBackup, writeLibraryBackup } from '../store/backup.js'
+import { listTrash, purgeTrash, restoreTrash, trashPack, trashResource } from '../store/trash.js'
+import { listStyleProfiles, loadStyleProfile, resolveDefaultStyle } from '../style/profile.js'
 import type { LearningPack, PackRecord, Resource, ResourceArticle, StoredItem } from '../types.js'
-import { isDue, isNew, stateLabel } from './scheduler.js'
+import { accessCookie, accessTokenMatches, isLocalHostName, isLoopbackAddress, issueAccessToken, phoneUrls, requestAccessToken, withoutAccessToken } from './lan.js'
+import { reviewHistory } from './history.js'
+import { parseKnownWords } from './known-import.js'
+import { appIconPng, pwaManifest } from './pwa.js'
+import { qrSvg } from './qr.js'
+import { recommendNext } from './recommend.js'
+import { isDue, isLeech, isNew, stateLabel } from './scheduler.js'
+import { weeklyMarkdown } from './weekly-report.js'
 import type { Grade } from './scheduler.js'
+import { achievementPayload } from './achievements.js'
+import { DIAGNOSIS_WORDS, computeDiagnosisLevel } from './diagnosis.js'
+import { weeklyPayload } from './weekly.js'
 import { renderReviewApp } from './web.js'
 
 function dueLabel(item: StoredItem, now: Date = new Date()): string {
@@ -82,11 +108,35 @@ function dueLabel(item: StoredItem, now: Date = new Date()): string {
   return `${days} 天后`
 }
 
+function hasRealExample(item: StoredItem): boolean {
+  return item.contexts.some((context) => context.sentence.trim().length >= 8) ||
+    item.examples.some((example) => example.text.trim().length >= 8)
+}
+
+/** Wordbook examples are stored as "English — 中文"; split them for review. */
+function splitExample(text: string): { sentence: string; translation: string } {
+  const value = text.trim()
+  const match = /^(.*?)\s+[—-]\s+(.+)$/s.exec(value)
+  if (!match) return { sentence: value, translation: '' }
+  return { sentence: match[1]!.trim(), translation: match[2]!.trim() }
+}
+
 function viewModel(item: StoredItem, store: Store, now: Date = new Date()) {
-  const context = item.contexts[0]
-  const sourcePackRecord = context
+  const contextRecord = item.contexts[0]
+  const example = item.contexts.length === 0
+    ? item.examples.find((entry) => entry.text.trim().length >= 8)
+    : undefined
+  const exampleContext = example ? splitExample(example.text) : undefined
+  const context = contextRecord?.sentence ?? exampleContext?.sentence ?? ''
+  const translation = contextRecord?.translation ?? exampleContext?.translation ?? ''
+  const contextKind: 'article' | 'example' | 'none' = contextRecord
+    ? 'article'
+    : exampleContext
+      ? 'example'
+      : 'none'
+  const sourcePackRecord = contextRecord
     ? store.packs().find(
-        (pack) => pack.resourceId === context.resourceId || pack.parentResourceId === context.resourceId,
+        (pack) => pack.resourceId === contextRecord.resourceId || pack.parentResourceId === contextRecord.resourceId,
       )
     : undefined
   const sourcePack = sourcePackRecord
@@ -110,8 +160,9 @@ function viewModel(item: StoredItem, store: Store, now: Date = new Date()) {
     definition: item.definition,
     definitionZh: item.definitionZh,
     sentence: item.sentence ?? null,
-    context: context?.sentence ?? '',
-    translation: context?.translation ?? '',
+    context,
+    translation,
+    contextKind,
     collocations: item.collocations,
     examples: item.examples.filter((example) => example.origin !== 'source').map((example) => example.text),
     relations: item.relations,
@@ -126,7 +177,12 @@ function viewModel(item: StoredItem, store: Store, now: Date = new Date()) {
     contexts: item.contexts.length,
     favorite: item.favorite,
     status: item.status,
+    staged: item.staged === true,
+    introducedAt: item.introducedAt,
+    hasExample: hasRealExample(item),
     isNew: isNew(item.review),
+    leech: isLeech(item.review),
+    lapses: item.review.lapses,
   }
 }
 
@@ -137,6 +193,13 @@ function sendJson(response: http.ServerResponse, status: number, data: unknown):
     'cache-control': 'no-store',
   })
   response.end(body)
+}
+
+/** Return a consistent Chinese message instead of leaking a low-level error. */
+function requireLlm(response: http.ServerResponse): boolean {
+  if (hasLlm()) return false
+  sendJson(response, 400, { error: '这个功能需要配置模型 API Key。请在导入页的“模型设置”里填写。' })
+  return true
 }
 
 async function readBody(request: http.IncomingMessage, maxBytes: number): Promise<Buffer> {
@@ -164,7 +227,7 @@ async function readJson(request: http.IncomingMessage, maxBytes = 5_000_000): Pr
 }
 
 function packUrl(packId: string): string {
-  return `/pack/${encodeURIComponent(packId)}/index.html`
+  return `/read/${encodeURIComponent(packId)}`
 }
 
 function isVisibleArticle(resource: Resource, article: ResourceArticle): boolean {
@@ -210,9 +273,46 @@ function packView(store: Store, pack: PackRecord) {
     itemCount: pack.itemCount,
     url: packUrl(pack.id),
     articleIndex: pack.articleIndex ?? null,
-    due: items.filter((item) => item.status === 'active' && isDue(item.review, now)).length,
+    due: items.filter((item) => item.status === 'active' && !isNew(item.review) && isDue(item.review, now)).length,
     mastered: items.filter((item) => item.status === 'known').length,
     learning: items.filter((item) => item.status === 'active').length,
+  }
+}
+
+export interface ChapterNav {
+  index: number | null
+  total: number
+  resourceTitle: string
+  previous: { id: string; title: string; url: string; index: number } | null
+  next: { id: string; title: string; url: string; index: number } | null
+}
+
+function chapterNav(store: Store, pack: PackRecord): ChapterNav | null {
+  if (typeof pack.articleIndex !== 'number') return null
+  const parent = pack.parentResourceId ?? pack.resourceId
+  const siblings = store
+    .packs()
+    .filter(
+      (entry) =>
+        (entry.parentResourceId ?? entry.resourceId) === parent &&
+        typeof entry.articleIndex === 'number',
+    )
+    .sort((a, b) => (a.articleIndex ?? 0) - (b.articleIndex ?? 0))
+  if (siblings.length < 2) return null
+  const position = siblings.findIndex((entry) => entry.id === pack.id)
+  if (position < 0) return null
+  const item = (entry: PackRecord) => ({
+    id: entry.id,
+    title: entry.title ?? store.getResource(entry.resourceId)?.title ?? entry.id,
+    url: packUrl(entry.id),
+    index: (entry.articleIndex ?? 0) + 1,
+  })
+  return {
+    index: position + 1,
+    total: siblings.length,
+    resourceTitle: store.getResource(parent)?.title ?? parent,
+    previous: position > 0 ? item(siblings[position - 1]!) : null,
+    next: position < siblings.length - 1 ? item(siblings[position + 1]!) : null,
   }
 }
 
@@ -236,6 +336,10 @@ function resourceView(resource: Resource, store: Store) {
       (warning) => articleCount <= 1 || !warning.includes('整本材料'),
     ),
     canResplit: typeof resource.metadata.uploadPath === 'string',
+    aiClean: resource.metadata.aiClean === 1,
+    aiRemoved: Number(resource.metadata.aiRemoved ?? 0),
+    aiCleanSkipped: resource.metadata.aiCleanSkipped === 1,
+    aiCleanError: resource.metadata.aiCleanError === 1,
     packs,
     pack: packs[0] ?? null,
   }
@@ -259,6 +363,7 @@ interface BuildRequestOptions {
   translate: boolean
   audio?: boolean
   onlyNew?: boolean
+  styleName?: string
   articleIndex?: number
 }
 
@@ -301,7 +406,8 @@ function startBuild(store: Store, resource: Resource, options: Partial<BuildRequ
 
   const limit = options.limit ?? 'auto'
   const libraryItems = store.listItems()
-  const knownLemmas = libraryItems.filter((item) => item.status === 'known').map((item) => item.lemma)
+  const existingLibraryIds = new Set(libraryItems.map((item) => item.id))
+  const knownLemmas = store.knownLemmas()
   const existingLemmas = libraryItems
     .filter((item) => item.status === 'active')
     .map((item) => item.lemma)
@@ -335,7 +441,9 @@ function startBuild(store: Store, resource: Resource, options: Partial<BuildRequ
         }
       }
 
-      const style = await resolveDefaultStyle()
+      const style = options.styleName
+        ? await loadStyleProfile(options.styleName).catch(() => resolveDefaultStyle())
+        : await resolveDefaultStyle()
       const outcome = await analyzeResource(target, {
         limit,
         knownRatio,
@@ -373,10 +481,15 @@ function startBuild(store: Store, resource: Resource, options: Partial<BuildRequ
       )
       await store.upsertItems(coreItems)
       const newCoreIds = new Set(coreItems.map((item) => item.id))
-      const removable = previousItemIds.filter((itemId) => {
-        if (newCoreIds.has(itemId)) return false
-        const item = store.getItem(itemId)
-        return Boolean(item && item.contexts.every((context) => context.resourceId === target.id))
+      // Rebuilding a pack must never silently delete a card that was already
+      // in the learner's library. Old cards that are no longer selected stay
+      // reviewable (the pack UI can still remove them explicitly).
+      const removable = selectRemovableItems({
+        previousItemIds,
+        keepIds: newCoreIds,
+        existingIds: existingLibraryIds,
+        resourceId: target.id,
+        contextsOf: (itemId) => store.getItem(itemId)?.contexts,
       })
       job.removedItems = await store.removeItems(removable)
       const record: PackRecord = {
@@ -699,7 +812,10 @@ async function passportPayload(store: Store) {
     })
     .sort((a, b) => (b.finishedAt ?? b.updatedAt).localeCompare(a.finishedAt ?? a.updatedAt))
 
+  const achievements = await achievementPayload(store)
+
   return {
+    achievements,
     stats: {
       streak: store.preferences().streak,
       finished,
@@ -764,17 +880,26 @@ async function todayPayload(store: Store, now: Date = new Date()) {
     date: daily.date || now.toISOString().slice(0, 10),
     streak: preferences.streak,
     selectionBias: preferences.selectionBias,
+    desiredRetention: preferences.desiredRetention,
+    diagnosis: preferences.diagnosis ?? null,
     completed: daily.completed,
+    warnings: store.warnings(),
     reading,
     outputs,
     steps: {
       review: {
         done: reviewDone,
+        dueTarget: Math.min(stats.reviewDue, preferences.dailyReviewTarget),
+        newTarget: Math.min(stats.newItems, preferences.dailyNewTarget),
+        newReviewed: stats.newReviewedToday,
         dueAtStart: daily.dueAtStart,
         reviewed: daily.reviewed,
         remaining: Math.max(0, daily.dueAtStart - daily.reviewed),
-        totalDue: stats.due,
-        sentenceDue: store.dueItems(now, Number.MAX_SAFE_INTEGER).filter((item) => item.type === 'sentence').length,
+        totalDue: stats.reviewDue,
+        backlog: stats.backlog,
+        newLimit: preferences.dailyNewTarget,
+        newAvailable: stats.newItems,
+        sentenceDue: store.dueItems(now, Number.MAX_SAFE_INTEGER).filter((item) => item.type === 'sentence' && !isNew(item.review)).length,
       },
       article: {
         done: daily.articleFinished,
@@ -793,13 +918,601 @@ async function todayPayload(store: Store, now: Date = new Date()) {
         articleTitle: latestOutput?.articleTitle ?? article?.title ?? null,
       },
     },
-    stats: { due: stats.due, reviewedToday: stats.reviewedToday, total: stats.total },
+    stats: {
+      due: stats.due,
+      reviewDue: stats.reviewDue,
+      dueToday: stats.dueToday,
+      newReviewedToday: stats.newReviewedToday,
+      backlog: stats.backlog,
+      reviewedToday: stats.reviewedToday,
+      total: stats.total,
+      firstReviewed: stats.firstReviewed,
+      firstCorrect: stats.firstCorrect,
+      firstAccuracy: stats.firstAccuracy,
+    },
   }
 }
 
-async function handle(request: http.IncomingMessage, response: http.ServerResponse, store: Store): Promise<void> {
+export interface LanStatus {
+  enabled: boolean
+  local: boolean
+  port: number | null
+  urls: string[]
+  qr: Array<{ url: string; svg: string }>
+}
+
+interface LanState {
+  enabled: boolean
+  token: string
+  port: number | null
+}
+
+interface LanController {
+  state: LanState
+  status: (local: boolean) => LanStatus
+  enable: () => Promise<LanStatus>
+  disable: () => Promise<LanStatus>
+}
+
+function sendAccessDenied(response: http.ServerResponse, api: boolean): void {
+  if (api) {
+    sendJson(response, 401, { error: '需要手机访问令牌。' })
+    return
+  }
+  response.writeHead(401, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+  response.end(`<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>需要访问令牌</title>
+<style>body{margin:0;background:#f6f2e8;color:#1c1a16;font:15px/1.7 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif}
+main{max-width:560px;margin:14vh auto;padding:0 24px}h1{font-family:Georgia,serif;font-size:30px;margin:0 0 12px}
+p{color:rgba(28,26,22,.62)}</style></head><body><main>
+<h1>需要访问令牌</h1>
+<p>请回到电脑上的 CloseRead，在“手机”面板复制带令牌的链接，再用手机打开。</p>
+<p>令牌只在本机生成；关闭手机访问后会立即失效。</p>
+</main></body></html>`)
+}
+
+function sendPhoneForbidden(response: http.ServerResponse, api: boolean): void {
+  if (api) {
+    sendJson(response, 403, { error: '手机访问只支持阅读、复习和练习；导入、删除和设置只能在电脑上操作。' })
+    return
+  }
+  response.writeHead(403, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+  response.end(`<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>仅支持阅读</title>
+<style>body{margin:0;background:#f6f2e8;color:#1c1a16;font:15px/1.7 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif}
+main{max-width:560px;margin:14vh auto;padding:0 24px}h1{font-family:Georgia,serif;font-size:30px;margin:0 0 12px}
+p{color:rgba(28,26,22,.62)}</style></head><body><main>
+<h1>手机端只支持阅读和复习</h1>
+<p>导入、删除、生成学习包和修改模型设置请回到电脑上的 CloseRead。</p>
+</main></body></html>`)
+}
+
+const PHONE_READ_EXACT = new Set([
+  '/api/summary',
+  '/api/styles',
+  '/api/today',
+  '/api/queue',
+  '/api/plan',
+  '/api/weekly',
+  '/api/weekly/export',
+  '/api/history',
+  '/api/forecast',
+  '/api/passport',
+  '/api/packs',
+  '/api/resources',
+  '/api/vocab',
+  '/api/items',
+  '/api/wordbooks',
+  '/api/graph',
+  '/api/lab',
+  '/api/lab/quotes',
+  '/api/preferences',
+  '/api/diagnosis',
+  '/api/llm',
+  '/api/tts',
+  '/api/lan',
+  '/api/outputs',
+  '/api/study/queue',
+])
+
+const PHONE_WRITE_EXACT = new Set([
+  '/api/review',
+  '/api/review/undo',
+  '/api/favorite',
+  '/api/status',
+  '/api/items/bulk',
+  '/api/vocab/known',
+  '/api/preferences',
+  '/api/diagnosis',
+  '/api/today/output',
+  '/api/lab/tts',
+  '/api/lab/generate',
+  '/api/graph/adopt',
+])
+
+const PHONE_WRITE_PATTERNS = [
+  /^\/api\/packs\/[^/]+\/reading(?:\/reset)?$/,
+  /^\/api\/packs\/[^/]+\/annotations$/,
+  /^\/api\/packs\/[^/]+\/adopt$/,
+  /^\/api\/pack\/[^/]+\/add$/,
+  /^\/api\/pack\/[^/]+\/remove$/,
+  /^\/api\/pack\/[^/]+\/sentence$/,
+  /^\/api\/pack\/[^/]+\/analyze-selection$/,
+  /^\/api\/pack\/[^/]+\/audio$/,
+  /^\/api\/pack\/[^/]+\/sentence-audio$/,
+  /^\/api\/pack\/[^/]+\/micro-story$/,
+  /^\/api\/pack\/[^/]+\/theater$/,
+  /^\/api\/pack\/[^/]+\/translate-sentence$/,
+  /^\/api\/pack\/[^/]+\/reading\/answer$/,
+  /^\/api\/pack\/[^/]+\/items\/[^/]+\/(?:derivation|story|rewrites|practice|expand)$/,
+  /^\/api\/items\/[^/]+\/(?:nuance|enrich|examples|update)$/,
+  /^\/api\/outputs\/[^/]+\/feedback$/,
+  /^\/api\/outputs\/[^/]+\/revision$/,
+  /^\/api\/outputs\/[^/]+\/revisions\/[^/]+\/feedback$/,
+]
+
+function isPhoneAllowed(method: string, pathname: string): boolean {
+  if (method === 'GET' || method === 'HEAD') {
+    if (
+      pathname === '/' ||
+      pathname === '/lab' ||
+      pathname === '/lab/' ||
+      pathname === '/bookmarklet' ||
+      pathname === '/reader.js' ||
+      pathname === '/reader.css' ||
+      pathname === '/lab.js' ||
+      pathname === '/lab.css' ||
+      pathname === '/manifest.webmanifest' ||
+      pathname === '/sw.js' ||
+      pathname === '/icon-192.png' ||
+      pathname === '/icon-512.png' ||
+      pathname === '/apple-touch-icon.png' ||
+      pathname.startsWith('/read/') ||
+      pathname.startsWith('/pack/') ||
+      pathname.startsWith('/lab/audio/')
+    ) {
+      return true
+    }
+    if (!pathname.startsWith('/api/')) return false
+    if (PHONE_READ_EXACT.has(pathname)) return true
+    return (
+      /^\/api\/items\/[^/]+$/.test(pathname) ||
+      /^\/api\/wordbooks\/[^/]+$/.test(pathname) ||
+      /^\/api\/packs\/[^/]+\/reading$/.test(pathname) ||
+      /^\/api\/packs\/[^/]+\/neighbors$/.test(pathname) ||
+      /^\/api\/packs\/[^/]+\/recommend$/.test(pathname) ||
+      /^\/api\/resources\/[^/]+\/articles$/.test(pathname) ||
+      /^\/api\/jobs\/[^/]+$/.test(pathname)
+    )
+  }
+  if (method !== 'POST') {
+    if (method === 'DELETE') return /^\/api\/packs\/[^/]+\/annotations\/[^/]+$/.test(pathname)
+    return false
+  }
+  if (PHONE_WRITE_EXACT.has(pathname)) return true
+  return PHONE_WRITE_PATTERNS.some((pattern) => pattern.test(pathname))
+}
+
+async function handle(
+  request: http.IncomingMessage,
+  response: http.ServerResponse,
+  store: Store,
+  lan: LanController,
+  requireToken: boolean,
+): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://localhost')
   const method = request.method ?? 'GET'
+  const remoteLoopback = isLoopbackAddress(request.socket.remoteAddress)
+
+  // The local server must not become reachable through DNS rebinding.
+  if (!requireToken && !isLocalHostName(request.headers.host)) {
+    sendJson(response, 403, { error: 'Unexpected Host header.' })
+    return
+  }
+
+  if (requireToken) {
+    const token = requestAccessToken(request, url)
+    if (!accessTokenMatches(token, lan.state.token)) {
+      sendAccessDenied(response, url.pathname.startsWith('/api/'))
+      return
+    }
+    if (!isPhoneAllowed(method, url.pathname)) {
+      sendPhoneForbidden(response, url.pathname.startsWith('/api/'))
+      return
+    }
+    if (
+      url.searchParams.has('token') &&
+      (method === 'GET' || method === 'HEAD') &&
+      !url.pathname.startsWith('/api/')
+    ) {
+      response.writeHead(302, {
+        location: withoutAccessToken(url),
+        'set-cookie': accessCookie(lan.state.token),
+        'cache-control': 'no-store',
+      })
+      response.end()
+      return
+    }
+  }
+
+  if (method !== 'GET' && method !== 'HEAD') {
+    const origin = request.headers.origin
+    if (origin && origin !== `http://${request.headers.host ?? ''}`) {
+      sendJson(response, 403, { error: 'Cross-origin request rejected.' })
+      return
+    }
+  }
+
+
+  if (method === 'GET' && (url.pathname === '/lab' || url.pathname === '/lab/')) {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+    response.end(renderLabApp())
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/manifest.webmanifest') {
+    response.writeHead(200, {
+      'content-type': 'application/manifest+json; charset=utf-8',
+      'cache-control': 'public, max-age=3600',
+    })
+    response.end(JSON.stringify(pwaManifest()))
+    return
+  }
+
+  const iconMatch = /^\/(icon-192\.png|icon-512\.png|apple-touch-icon\.png)$/.exec(url.pathname)
+  if (method === 'GET' && iconMatch) {
+    const size = iconMatch[1] === 'icon-192.png' ? 192 : iconMatch[1] === 'icon-512.png' ? 512 : 180
+    const icon = appIconPng(size)
+    response.writeHead(200, {
+      'content-type': 'image/png',
+      'cache-control': 'public, max-age=3600',
+      'content-length': icon.length,
+    })
+    response.end(icon)
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/sw.js') {
+    try {
+      const content = await fs.readFile(path.join(projectRoot, 'src', 'review', 'sw.js'), 'utf8')
+      response.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'cache-control': 'no-cache',
+      })
+      response.end(content)
+    } catch {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Service worker not found')
+    }
+    return
+  }
+
+  if (method === 'GET' && url.pathname.startsWith('/read/')) {
+    const packId = decodeURIComponent(url.pathname.slice('/read/'.length).split('/')[0] ?? '')
+    const pack = store.findPack(packId)
+    if (!pack) {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Pack not found')
+      return
+    }
+    try {
+      const contents = await loadPack(pack.dir)
+      const progress = await loadReadingProgress(pack.dir, pack.id, contents.reading?.length ?? 0)
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+      response.end(renderReaderApp(contents, progress, pack, chapterNav(store, pack)))
+    } catch (error) {
+      response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end(error instanceof Error ? error.message : String(error))
+    }
+    return
+  }
+
+  if (method === 'GET' && (url.pathname === '/reader.js' || url.pathname === '/reader.css')) {
+    const name = url.pathname.slice(1)
+    try {
+      const content = await fs.readFile(path.join(projectRoot, 'src', 'review', name), 'utf8')
+      response.writeHead(200, {
+        'content-type': name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8',
+        'cache-control': 'no-store',
+      })
+      response.end(content)
+    } catch {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Reader asset not found')
+    }
+    return
+  }
+
+  if (method === 'GET' && (url.pathname === '/lab.js' || url.pathname === '/lab.css')) {
+    const name = url.pathname.slice(1)
+    try {
+      const content = await fs.readFile(path.join(projectRoot, 'src', 'review', name), 'utf8')
+      response.writeHead(200, {
+        'content-type': name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8',
+        'cache-control': 'no-store',
+      })
+      response.end(content)
+    } catch {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Lab asset not found')
+    }
+    return
+  }
+
+  if (method === 'GET' && url.pathname.startsWith('/lab/audio/')) {
+    const root = path.join(config.dataDir, 'lab', 'audio')
+    const relative = decodeURIComponent(url.pathname.slice('/lab/audio/'.length))
+    const filePath = path.resolve(root, relative)
+    if (filePath !== root && !filePath.startsWith(root + path.sep)) {
+      response.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Forbidden')
+      return
+    }
+    try {
+      const stat = await fs.stat(filePath)
+      response.writeHead(200, {
+        'content-type': contentType(filePath),
+        'content-length': String(stat.size),
+        'accept-ranges': 'bytes',
+        'cache-control': 'no-store',
+      })
+      response.end(await fs.readFile(filePath))
+    } catch {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Audio not found')
+    }
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/lab') {
+    const requested = url.searchParams.get('scope') ?? url.searchParams.get('packId') ?? 'all'
+    const scopes = labPacks(store)
+    let source = null
+    try {
+      source = loadLabPack(store, requested)
+    } catch {
+      // An empty library is a valid first-run state.
+    }
+    const quotes = await listQuotes()
+    const ttsAvailable = ttsStatus().configured || (await isSayAvailable())
+    sendJson(response, 200, {
+      scopes: scopes.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        cefr: entry.cefr,
+        wordCount: entry.wordCount,
+        itemCount: entry.itemCount,
+        summary: entry.summary,
+        newCount: entry.newCount,
+        dueCount: entry.dueCount,
+        leechCount: entry.leechCount,
+      })),
+      packs: scopes.map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        cefr: entry.cefr,
+        wordCount: entry.wordCount,
+        itemCount: entry.itemCount,
+        summary: entry.summary,
+      })),
+      pack: source?.info ?? null,
+      source: source?.info ?? null,
+      words: source?.words.map((item) => viewModel(item, store)) ?? [],
+      quotes,
+      pet: petState(store),
+      status: { llm: hasLlm(), tts: ttsAvailable },
+    })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/lab/tts') {
+    try {
+      const body = await readJson(request)
+      const text = String(body.text ?? '').trim()
+      if (!text) {
+        sendJson(response, 400, { error: '没有可朗读的文本。' })
+        return
+      }
+      if (text.length > 12_000) {
+        sendJson(response, 400, { error: '这段文本太长，建议分成小段。' })
+        return
+      }
+      const speech = await labSpeech(text)
+      sendJson(response, 200, speech)
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/lab/quotes') {
+    sendJson(response, 200, { quotes: await listQuotes() })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/lab/quotes') {
+    try {
+      const body = await readJson(request)
+      const quote = await addQuote({
+        text: String(body.text ?? ''),
+        translation: typeof body.translation === 'string' ? body.translation : undefined,
+        packId: typeof body.packId === 'string' ? body.packId : undefined,
+        sourceTitle: typeof body.sourceTitle === 'string' ? body.sourceTitle : undefined,
+        commentary: typeof body.commentary === 'string' ? body.commentary : undefined,
+      })
+      sendJson(response, 200, { quote })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const quoteCommentaryMatch = /^\/api\/lab\/quotes\/([^/]+)\/commentary$/.exec(url.pathname)
+  if (method === 'POST' && quoteCommentaryMatch) {
+    const id = decodeURIComponent(quoteCommentaryMatch[1]!)
+    const quotes = await listQuotes()
+    const quote = quotes.find((entry) => entry.id === id)
+    if (!quote) {
+      sendJson(response, 404, { error: 'Quote not found' })
+      return
+    }
+    if (!hasLlm()) {
+      sendJson(response, 400, { error: 'AI 点评需要配置模型 API Key。' })
+      return
+    }
+    try {
+      const insight = await generateQuoteInsight(quote.text, quote.sourceTitle ?? '金句墙')
+      const updated = await setQuoteCommentary(id, insight.commentary, insight.translation)
+      sendJson(response, 200, { quote: updated, insight })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const quoteMatch = /^\/api\/lab\/quotes\/([^/]+)$/.exec(url.pathname)
+  if (method === 'DELETE' && quoteMatch) {
+    const removed = await deleteQuote(decodeURIComponent(quoteMatch[1]!))
+    sendJson(response, removed ? 200 : 404, removed ? { ok: true } : { error: 'Quote not found' })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/lab/generate') {
+    try {
+      if (!hasLlm()) {
+        sendJson(response, 400, { error: '这个功能需要配置模型 API Key。' })
+        return
+      }
+      const body = await readJson(request)
+      const feature = String(body.feature ?? '')
+      const requested = typeof body.scope === 'string' ? body.scope : typeof body.packId === 'string' ? body.packId : 'all'
+      const loadPackForLab = async () => loadLabPack(store, requested).pack
+
+      if (feature === 'register') {
+        const target = String(body.target ?? 'tweet')
+        if (target !== 'tweet' && target !== 'email' && target !== 'headline' && target !== 'poem') {
+          sendJson(response, 400, { error: '不支持的文体。' })
+          return
+        }
+        const pack = await loadPackForLab()
+        const paragraphIndex = Number(body.paragraphIndex ?? 0)
+        const text = typeof body.text === 'string' ? body.text.slice(0, 5000) : ''
+        const result = await generateRegisterRemix(pack, paragraphIndex, target, text)
+        sendJson(response, 200, { result })
+        return
+      }
+
+      if (feature === 'podcast') {
+        const mode = body.mode === 'duo' ? 'duo' : 'solo'
+        const podcast = await generatePodcast(await loadPackForLab(), mode)
+        sendJson(response, 200, { podcast })
+        return
+      }
+
+      if (feature === 'life-examples') {
+        const itemId = String(body.itemId ?? '')
+        const item = store.getItem(itemId)
+        if (!item) {
+          sendJson(response, 404, { error: 'Word not found' })
+          return
+        }
+        const context = String(body.context ?? '').slice(0, 80)
+        const result = await generateLifeExamples(item, context)
+        sendJson(response, 200, result)
+        return
+      }
+
+      if (feature === 'pet') {
+        const pet = petState(store)
+        const line = await generatePetLine(pet)
+        sendJson(response, 200, { line })
+        return
+      }
+
+      if (feature === 'argument-map') {
+        const argument = await generateArgumentMap(await loadPackForLab())
+        sendJson(response, 200, { argument })
+        return
+      }
+
+      if (feature === 'news-short') {
+        const news = await generateNewsShort(await loadPackForLab())
+        sendJson(response, 200, { news })
+        return
+      }
+
+      if (feature === 'subtitle-hunter') {
+        const subtitle = await generateSubtitleHunter(await loadPackForLab())
+        sendJson(response, 200, { subtitle })
+        return
+      }
+
+      if (feature === 'dubbing') {
+        const dubbing = await generateDubbing(await loadPackForLab())
+        sendJson(response, 200, { dubbing })
+        return
+      }
+
+      if (feature === 'dungeon') {
+        const words = Array.isArray(body.words)
+          ? body.words.map((word) => String(word)).filter(Boolean).slice(0, 8)
+          : []
+        const dungeon = await generateDungeonFlavor(words)
+        sendJson(response, 200, { dungeon })
+        return
+      }
+
+      if (feature === 'word-adventure') {
+        const words = Array.isArray(body.words)
+          ? body.words.map((word) => String(word)).filter(Boolean).slice(0, 8)
+          : []
+        const text = String(body.text ?? '').trim()
+        if (words.length < 3 || text.length < 10) {
+          sendJson(response, 400, { error: '至少 3 个目标词和一小段故事。' })
+          return
+        }
+        const result = await generateAdventureFeedback(words, text.slice(0, 3000))
+        sendJson(response, 200, { result })
+        return
+      }
+
+      if (feature === 'dictation-hint') {
+        const sentence = String(body.sentence ?? '').slice(0, 500)
+        const typed = String(body.typed ?? '').slice(0, 1000)
+        const hint = await generateDictationHint(sentence, typed)
+        sendJson(response, 200, hint)
+        return
+      }
+
+      sendJson(response, 400, { error: 'Unknown lab feature' })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  if (url.pathname === '/api/lan') {
+    if (method === 'GET') {
+      sendJson(response, 200, lan.status(!requireToken && remoteLoopback))
+      return
+    }
+    if (method === 'POST') {
+      if (requireToken || !remoteLoopback) {
+        sendJson(response, 403, { error: '只有电脑上的 CloseRead 可以开关手机访问。' })
+        return
+      }
+      try {
+        const body = await readJson(request)
+        const status = body.enabled === true ? await lan.enable() : await lan.disable()
+        sendJson(response, 200, { ...status, local: true })
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
+  }
 
   if (method === 'GET' && url.pathname === '/') {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
@@ -807,9 +1520,173 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     return
   }
 
-  if (method === 'GET' && url.pathname === '/api/summary') {
-    sendJson(response, 200, { summary: store.stats(), packs: store.packs() })
+  if (method === 'GET' && url.pathname === '/bookmarklet') {
+    const origin = `http://${request.headers.host ?? '127.0.0.1:4317'}`
+    const bookmarklet =
+      `javascript:(()=>{const u='${origin}/?import='+encodeURIComponent(location.href);window.open(u,'_blank','noopener')})()`
+    const html = `<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CloseRead 书签导入</title>
+<style>
+body{margin:0;background:#f6f2e8;color:#1c1a16;font:15px/1.7 -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif}
+main{max-width:680px;margin:12vh auto;padding:0 24px}
+h1{font-family:Georgia,serif;font-size:32px;margin:0 0 10px}
+p{color:rgba(28,26,22,.62)}
+.bookmark{display:inline-block;margin:18px 0;padding:12px 18px;border:1px solid #1c1a16;border-radius:999px;color:#1c1a16;text-decoration:none;font-weight:600;cursor:grab}
+code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.15);background:rgba(255,253,248,.7);font:11px/1.5 ui-monospace,Menlo,monospace;word-break:break-all;color:rgba(28,26,22,.7)}
+</style></head><body><main>
+<h1>把当前网页交给 CloseRead</h1>
+<p>把下面的按钮拖到浏览器书签栏。以后在任意文章页点一下，就会打开本地 CloseRead，并自动填入当前链接。</p>
+<a class="bookmark" href="${bookmarklet}">导入当前网页</a>
+<p>需要先启动 <code>pnpm dev review</code>。书签只调用本机 127.0.0.1，不会上传当前页面。</p>
+<code>${bookmarklet.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>
+</main></body></html>`
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+    response.end(html)
     return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/summary') {
+    sendJson(response, 200, { summary: store.stats(), packs: store.packs(), warnings: store.warnings() })
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/styles') {
+    sendJson(response, 200, {
+      styles: (await listStyleProfiles()).map((style) => ({
+        name: style.name,
+        title: style.title,
+        source: style.source ?? null,
+        model: style.model ?? null,
+        samples: style.samples ?? null,
+      })),
+    })
+    return
+  }
+
+  if (url.pathname === '/api/preferences') {
+    if (method === 'GET') {
+      const preferences = store.preferences()
+      sendJson(response, 200, {
+        preferences: {
+          desiredRetention: preferences.desiredRetention,
+          dailyNewTarget: preferences.dailyNewTarget,
+          dailyReviewTarget: preferences.dailyReviewTarget,
+          weeklyArticleGoal: preferences.weeklyArticleGoal,
+          weeklyStudyDaysGoal: preferences.weeklyStudyDaysGoal,
+        },
+      })
+      return
+    }
+    if (method === 'POST') {
+      try {
+        const body = await readJson(request)
+        const wantsTargets = body.dailyNewTarget !== undefined || body.dailyReviewTarget !== undefined
+        const wantsWeekly =
+          body.weeklyArticleGoal !== undefined || body.weeklyStudyDaysGoal !== undefined
+        let preferences = store.preferences()
+        let changed = false
+        if (wantsWeekly) {
+          const articles =
+            body.weeklyArticleGoal === undefined
+              ? preferences.weeklyArticleGoal
+              : Number(body.weeklyArticleGoal)
+          const studyDays =
+            body.weeklyStudyDaysGoal === undefined
+              ? preferences.weeklyStudyDaysGoal
+              : Number(body.weeklyStudyDaysGoal)
+          if (
+            !Number.isFinite(articles) ||
+            !Number.isFinite(studyDays) ||
+            articles < 0 ||
+            articles > 100 ||
+            studyDays < 0 ||
+            studyDays > 7
+          ) {
+            sendJson(response, 400, { error: '每周文章目标需在 0–100，学习天数需在 0–7 之间。' })
+            return
+          }
+          preferences = await store.setWeeklyGoals(articles, studyDays)
+          changed = true
+        }
+        if (wantsTargets) {
+          const newTarget = body.dailyNewTarget === undefined ? preferences.dailyNewTarget : Number(body.dailyNewTarget)
+          const reviewTarget =
+            body.dailyReviewTarget === undefined ? preferences.dailyReviewTarget : Number(body.dailyReviewTarget)
+          if (
+            !Number.isFinite(newTarget) ||
+            !Number.isFinite(reviewTarget) ||
+            newTarget < 0 ||
+            newTarget > 100 ||
+            reviewTarget < 0 ||
+            reviewTarget > 100
+          ) {
+            sendJson(response, 400, { error: '每日目标需要在 0 到 100 之间。' })
+            return
+          }
+          preferences = await store.setDailyTargets(newTarget, reviewTarget)
+          changed = true
+        }
+        if (body.desiredRetention !== undefined) {
+          const value = Number(body.desiredRetention)
+          if (!Number.isFinite(value) || value < 0.8 || value > 0.97) {
+            sendJson(response, 400, { error: '目标记忆率需要在 0.80 到 0.97 之间。' })
+            return
+          }
+          preferences = await store.setDesiredRetention(value)
+          changed = true
+        }
+        if (!changed) {
+          sendJson(response, 400, { error: '没有可更新的设置。' })
+          return
+        }
+        sendJson(response, 200, {
+          ok: true,
+          preferences: {
+            desiredRetention: preferences.desiredRetention,
+            dailyNewTarget: preferences.dailyNewTarget,
+            dailyReviewTarget: preferences.dailyReviewTarget,
+            weeklyArticleGoal: preferences.weeklyArticleGoal,
+            weeklyStudyDaysGoal: preferences.weeklyStudyDaysGoal,
+          },
+        })
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
+  }
+
+  if (url.pathname === '/api/diagnosis') {
+    if (method === 'GET') {
+      sendJson(response, 200, {
+        words: DIAGNOSIS_WORDS,
+        diagnosis: store.preferences().diagnosis ?? null,
+      })
+      return
+    }
+    if (method === 'POST') {
+      try {
+        const body = await readJson(request)
+        const valid = new Set(DIAGNOSIS_WORDS.map((word) => word.lemma))
+        const known = Array.isArray(body.known)
+          ? [
+              ...new Set(
+                body.known
+                  .map((lemma) => String(lemma).toLowerCase().trim())
+                  .filter((lemma) => valid.has(lemma)),
+              ),
+            ]
+          : []
+        const level = computeDiagnosisLevel(known)
+        const diagnosis = await store.saveDiagnosis(level, known, DIAGNOSIS_WORDS.length)
+        config.level = diagnosis.level
+        sendJson(response, 200, { diagnosis })
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
   }
 
   if (method === 'GET' && url.pathname === '/api/llm') {
@@ -824,6 +1701,20 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         models: provider.models,
       })),
     })
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/llm/models') {
+    if (!hasLlm()) {
+      sendJson(response, 400, { error: '还没有配置模型 API Key。' })
+      return
+    }
+    try {
+      const models = await listProviderModels()
+      sendJson(response, 200, { models, provider: llmStatus().label })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
     return
   }
 
@@ -974,7 +1865,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         return
       }
       const contents = await loadPack(pack.dir)
-      const fingerprint = await speechFingerprint()
+      const fingerprint = await speechFingerprint(readingText(contents))
       const cached = contents.audio?.reading
       if (!body.regenerate && cached && (!contents.audio?.voice || contents.audio.voice === fingerprint)) {
         try {
@@ -1014,6 +1905,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         sendJson(response, 200, { ok: true, story: contents.microStory, cached: true })
         return
       }
+      if (requireLlm(response)) return
       const story = await generateMicroStory(contents)
       contents.microStory = story
       await savePackFiles(contents, pack.dir)
@@ -1046,6 +1938,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         sendJson(response, 200, { ok: true, item, story: item.wordStory, cached: true })
         return
       }
+      if (requireLlm(response)) return
       const story = await generateWordStory(item)
       item.wordStory = story
       await savePackFiles(contents, pack.dir)
@@ -1080,6 +1973,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         sendJson(response, 200, { ok: true, item, rewrites: item.sentence.rewrites, cached: true })
         return
       }
+      if (requireLlm(response)) return
       const rewrites = await generateSentenceRewrites(item)
       item.sentence.rewrites = rewrites
       await savePackFiles(contents, pack.dir)
@@ -1093,6 +1987,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
 
   const practiceMatch = /^\/api\/pack\/([^/]+)\/items\/([^/]+)\/practice$/.exec(url.pathname)
   if (method === 'POST' && practiceMatch) {
+    if (requireLlm(response)) return
     try {
       const pack = store.findPack(decodeURIComponent(practiceMatch[1]!))
       if (!pack) {
@@ -1130,6 +2025,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
 
   const theaterMatch = /^\/api\/pack\/([^/]+)\/theater$/.exec(url.pathname)
   if (method === 'POST' && theaterMatch) {
+    if (requireLlm(response)) return
     try {
       const pack = store.findPack(decodeURIComponent(theaterMatch[1]!))
       if (!pack) {
@@ -1169,6 +2065,26 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       const contents = await loadPack(pack.dir)
       const { result, turn } = await generateTheaterTurn(contents, mode, messages)
       sendJson(response, 200, { ok: true, turn, ...result })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const nuanceMatch = /^\/api\/items\/([^/]+)\/nuance$/.exec(url.pathname)
+  if (method === 'POST' && nuanceMatch) {
+    const item = store.getItem(decodeURIComponent(nuanceMatch[1]!))
+    if (!item) {
+      sendJson(response, 404, { error: 'Item not found' })
+      return
+    }
+    if (!hasLlm()) {
+      sendJson(response, 400, { error: '语境侦探需要配置模型。配置 API Key 后即可生成三句用法辨析。' })
+      return
+    }
+    try {
+      const quiz = await generateNuanceQuiz(item)
+      sendJson(response, 200, { quiz })
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
     }
@@ -1246,8 +2162,108 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     return
   }
 
+  if (method === 'GET' && url.pathname === '/api/weekly') {
+    sendJson(response, 200, await weeklyPayload(store))
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/weekly/export') {
+    const payload = await weeklyPayload(store)
+    response.writeHead(200, {
+      'content-type': 'text/markdown; charset=utf-8',
+      'content-disposition': `attachment; filename="closeread-weekly-${payload.range.end}.md"`,
+      'cache-control': 'no-store',
+    })
+    response.end(weeklyMarkdown(payload))
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/history') {
+    const days = Math.max(1, Math.min(60, Number(url.searchParams.get('days') ?? 14)))
+    sendJson(response, 200, { history: reviewHistory(store, days) })
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/forecast') {
+    sendJson(response, 200, store.dueForecast(new Date()))
+    return
+  }
+
   if (method === 'GET' && url.pathname === '/api/today') {
     sendJson(response, 200, await todayPayload(store))
+    return
+  }
+
+  const annotationsMatch = /^\/api\/packs\/([^/]+)\/annotations$/.exec(url.pathname)
+  if (method === 'POST' && annotationsMatch) {
+    const pack = store.findPack(decodeURIComponent(annotationsMatch[1]!))
+    if (!pack) {
+      sendJson(response, 404, { error: 'Pack not found' })
+      return
+    }
+    try {
+      const body = await readJson(request)
+      const quote = typeof body.quote === 'string' ? body.quote.replace(/\s+/g, ' ').trim() : ''
+      const note = typeof body.note === 'string' ? body.note.trim() : ''
+      const paragraph = Number(body.paragraph)
+      if (!quote) {
+        sendJson(response, 400, { error: '批注内容不能为空。' })
+        return
+      }
+      let total = 0
+      try {
+        total = (await loadPack(pack.dir)).reading?.length ?? 0
+      } catch {
+        // Progress can still be loaded from the stored file.
+      }
+      const progress = await loadReadingProgress(pack.dir, pack.id, total)
+      if (!Number.isInteger(paragraph) || paragraph < 0 || (total > 0 && paragraph >= total)) {
+        sendJson(response, 400, { error: '段落位置不正确。' })
+        return
+      }
+      const annotation = {
+        id: randomUUID(),
+        paragraph,
+        quote: quote.slice(0, 500),
+        ...(note ? { note } : {}),
+        createdAt: new Date().toISOString(),
+      }
+      progress.annotations = [...(progress.annotations ?? []), annotation]
+      await saveReadingProgress(pack.dir, progress)
+      sendJson(response, 200, { ok: true, annotation, progress: readingSummary(progress) })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const annotationDeleteMatch = /^\/api\/packs\/([^/]+)\/annotations\/([^/]+)$/.exec(url.pathname)
+  if (method === 'DELETE' && annotationDeleteMatch) {
+    const pack = store.findPack(decodeURIComponent(annotationDeleteMatch[1]!))
+    if (!pack) {
+      sendJson(response, 404, { error: 'Pack not found' })
+      return
+    }
+    try {
+      let total = 0
+      try {
+        total = (await loadPack(pack.dir)).reading?.length ?? 0
+      } catch {
+        // Keep the stored count when the pack is unavailable.
+      }
+      const progress = await loadReadingProgress(pack.dir, pack.id, total)
+      const id = decodeURIComponent(annotationDeleteMatch[2]!)
+      const before = (progress.annotations ?? []).length
+      progress.annotations = (progress.annotations ?? []).filter((entry) => entry.id !== id)
+      if ((progress.annotations ?? []).length === before) {
+        sendJson(response, 404, { error: '批注不存在。' })
+        return
+      }
+      await saveReadingProgress(pack.dir, progress)
+      sendJson(response, 200, { ok: true, progress: readingSummary(progress) })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
     return
   }
 
@@ -1390,6 +2406,54 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     return
   }
 
+  const outputRevisionMatch = /^\/api\/outputs\/([^/]+)\/revision$/.exec(url.pathname)
+  if (method === 'POST' && outputRevisionMatch) {
+    try {
+      const body = await readJson(request)
+      const text = typeof body.text === 'string' ? body.text : ''
+      const output = await store.addOutputRevision(decodeURIComponent(outputRevisionMatch[1]!), text)
+      sendJson(response, 200, { ok: true, output })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const outputRevisionFeedbackMatch =
+    /^\/api\/outputs\/([^/]+)\/revisions\/([^/]+)\/feedback$/.exec(url.pathname)
+  if (method === 'POST' && outputRevisionFeedbackMatch) {
+    try {
+      const output = store.getOutput(decodeURIComponent(outputRevisionFeedbackMatch[1]!))
+      if (!output) {
+        sendJson(response, 404, { error: 'Output not found' })
+        return
+      }
+      const revision = output.revisions?.find(
+        (entry) => entry.id === decodeURIComponent(outputRevisionFeedbackMatch[2]!),
+      )
+      if (!revision) {
+        sendJson(response, 404, { error: 'Revision not found' })
+        return
+      }
+      if (revision.feedback) {
+        sendJson(response, 200, { ok: true, output, feedback: revision.feedback, cached: true })
+        return
+      }
+      if (requireLlm(response)) return
+      const feedback = await generateOutputFeedback(
+        revision.text,
+        output.prompt,
+        output.answer,
+        output.articleTitle,
+      )
+      const saved = await store.saveOutputRevisionFeedback(output.id, revision.id, feedback)
+      sendJson(response, 200, { ok: true, output: saved, feedback })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   const outputFeedbackMatch = /^\/api\/outputs\/([^/]+)\/feedback$/.exec(url.pathname)
   if (method === 'POST' && outputFeedbackMatch) {
     try {
@@ -1402,6 +2466,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         sendJson(response, 200, { ok: true, output, feedback: output.feedback, cached: true })
         return
       }
+      if (requireLlm(response)) return
       const feedback = await generateOutputFeedback(
         output.text,
         output.prompt,
@@ -1450,7 +2515,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     const now = new Date()
     const stats = store.stats(now)
     sendJson(response, 200, {
-      due: stats.due,
+      due: stats.reviewDue,
       reviewedToday: stats.reviewedToday,
       suggestion: nextArticleSuggestion(store),
     })
@@ -1458,7 +2523,12 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
   }
 
   if (method === 'GET' && url.pathname === '/api/queue') {
+    const queuePrefs = store.preferences()
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') ?? 30)))
+    const newLimit = Math.max(0, Math.min(50, Number(url.searchParams.get('newLimit') ?? queuePrefs.dailyNewTarget)))
+    const reviewLimit = Math.max(0, Math.min(100, Number(url.searchParams.get('reviewLimit') ?? queuePrefs.dailyReviewTarget)))
+    const scope = url.searchParams.get('scope') ?? 'all'
+    const book = url.searchParams.get('book') ?? ''
     const packId = url.searchParams.get('pack')
     const pack = packId ? store.findPack(packId) : undefined
     if (packId && !pack) {
@@ -1471,10 +2541,19 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       .filter(Boolean)
     const wordsLabel = url.searchParams.get('label') ?? '自定义词组'
     const now = new Date()
-    let items = store.dueItems(now, Number.MAX_SAFE_INTEGER)
+    const before = store.stats(now)
+    // Only the normal daily queue releases staged wordbook words. A direct
+    // word-card link or a custom pack/word filter should not consume the budget.
+    if (!words.length && !pack && (scope === 'all' || scope === 'new')) {
+      const releaseBudget = Math.max(0, newLimit - before.newReviewedToday)
+      if (releaseBudget > 0) await store.releaseStaged(releaseBudget, now, book ? `wordbook:${book}` : undefined)
+    }
+
+    let items = store.listItems().filter((item) => item.status === 'active' && (words.length > 0 || item.staged !== true))
     if (pack) {
       items = items.filter((item) => item.contexts.some((context) => context.resourceId === pack.resourceId))
     }
+    if (book) items = items.filter((item) => item.tags.includes(`wordbook:${book}`))
     if (words.length > 0) {
       const selected = new Set(words)
       items = items.filter((item) => selected.has(item.id))
@@ -1482,9 +2561,36 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     const typeFilter = url.searchParams.get('type')
     if (typeFilter === 'sentence') items = items.filter((item) => item.type === 'sentence')
     else if (typeFilter === 'word') items = items.filter((item) => item.type !== 'sentence')
+
+    const dueAll = items.filter((item) => !isNew(item.review) && isDue(item.review, now))
+    const freshAll = items.filter((item) => isNew(item.review))
+    const leechAll = items.filter((item) => isLeech(item.review))
+    dueAll.sort((a, b) => a.review.due.localeCompare(b.review.due))
+    freshAll.sort((a, b) => (b.introducedAt ?? '').localeCompare(a.introducedAt ?? '') || a.createdAt.localeCompare(b.createdAt))
+
+    const stats = store.stats(now)
+    const freshBudget = Math.max(0, newLimit - stats.newReviewedToday)
+    let selected: typeof items
+    if (words.length > 0) selected = items.slice(0, limit)
+    else if (scope === 'new') selected = freshAll.slice(0, freshBudget)
+    else if (scope === 'due') selected = dueAll.slice(0, reviewLimit)
+    else if (scope === 'leech') selected = leechAll.slice(0, reviewLimit)
+    else selected = [...dueAll.slice(0, reviewLimit), ...freshAll.slice(0, freshBudget)]
+    selected = selected.slice(0, limit)
+
     sendJson(response, 200, {
-      items: items.slice(0, limit).map((item) => viewModel(item, store, now)),
-      summary: store.stats(now),
+      items: selected.map((item) => viewModel(item, store, now)),
+      summary: stats,
+      budget: {
+        dueLimit: reviewLimit,
+        newLimit,
+        dueTotal: dueAll.length,
+        newTotal: freshAll.length,
+        dueShown: Math.min(dueAll.length, reviewLimit),
+        newShown: Math.min(freshAll.length, freshBudget),
+        backlog: stats.backlog,
+        reviewedToday: stats.reviewedToday,
+      },
       pack: pack
         ? {
             id: pack.id,
@@ -1507,6 +2613,300 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
               due: items.length,
             }
           : null,
+    })
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/wordbooks') {
+    sendJson(response, 200, { books: listWordbooks().map((book) => wordbookView(store, book)) })
+    return
+  }
+
+  const wordbookMatch = /^\/api\/wordbooks\/([^/]+)(?:\/(enroll))?$/.exec(url.pathname)
+  if (wordbookMatch) {
+    const book = getWordbook(decodeURIComponent(wordbookMatch[1]!))
+    if (!book) {
+      sendJson(response, 404, { error: 'Wordbook not found' })
+      return
+    }
+    if (method === 'GET' && !wordbookMatch[2]) {
+      sendJson(response, 200, { book: wordbookView(store, book) })
+      return
+    }
+    if (method === 'POST' && wordbookMatch[2] === 'enroll') {
+      try {
+        const body = await readJson(request).catch(() => ({} as Record<string, unknown>))
+        const limit = Number(body.limit)
+        const result = await enrollWordbook(store, book, {
+          ...(Number.isFinite(limit) && limit > 0 ? { limit: Math.min(20_000, Math.floor(limit)) } : {}),
+        })
+        sendJson(response, 200, { ok: true, result, book: wordbookView(store, book), summary: store.stats() })
+      } catch (error) {
+        sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+      }
+      return
+    }
+  }
+
+  if (method === 'GET' && url.pathname === '/api/vocab') {
+    const q = url.searchParams.get('q')?.trim() ?? ''
+    const group = url.searchParams.get('group') ?? 'all'
+    const type = url.searchParams.get('type') ?? 'all'
+    const source = url.searchParams.get('source') ?? ''
+    const cefr = url.searchParams.get('cefr') ?? ''
+    const book = url.searchParams.get('book') ?? ''
+    const sort = url.searchParams.get('sort') ?? 'due'
+    const now = new Date()
+    const all = store.listItems(q)
+    const words = all.filter((item) => item.type !== 'sentence')
+    const counts = {
+      all: words.length,
+      new: words.filter((item) => item.status === 'active' && item.staged !== true && isNew(item.review)).length,
+      due: words.filter((item) => item.status === 'active' && item.staged !== true && !isNew(item.review) && isDue(item.review, now)).length,
+      leech: words.filter((item) => item.status === 'active' && item.staged !== true && isLeech(item.review)).length,
+      backlog: words.filter((item) => item.status === 'active' && item.staged === true).length,
+      missing: words.filter((item) => !hasRealExample(item)).length,
+      known: words.filter((item) => item.status === 'known').length,
+      suspended: words.filter((item) => item.status === 'suspended').length,
+      sentences: all.length - words.length,
+    }
+    let filtered = type === 'sentence'
+      ? all.filter((item) => item.type === 'sentence')
+      : type === 'word'
+        ? words.slice()
+        : all.slice()
+    if (source) filtered = filtered.filter((item) => item.contexts.some((context) => context.resourceId === source) || item.sourceRef.includes(source))
+    if (cefr) filtered = filtered.filter((item) => item.cefr === cefr)
+    if (book) {
+      const bookLemmas = new Set((getWordbook(book)?.words ?? []).map((word) => word.w.toLowerCase()))
+      if (bookLemmas.size) filtered = filtered.filter((item) => bookLemmas.has(item.lemma.toLowerCase()))
+    }
+    if (group !== 'all') {
+      filtered = filtered.filter((item) => {
+        if (item.type === 'sentence') return false
+        if (group === 'new') return item.status === 'active' && item.staged !== true && isNew(item.review)
+        if (group === 'due') return item.status === 'active' && item.staged !== true && !isNew(item.review) && isDue(item.review, now)
+        if (group === 'leech') return item.status === 'active' && item.staged !== true && isLeech(item.review)
+        if (group === 'backlog') return item.status === 'active' && item.staged === true
+        if (group === 'missing') return !hasRealExample(item)
+        if (group === 'known') return item.status === 'known'
+        if (group === 'suspended') return item.status === 'suspended'
+        return true
+      })
+    }
+    const cefrOrder = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+    const cefrRank = (value: string | undefined): number => {
+      const index = cefrOrder.indexOf((value ?? '').toUpperCase())
+      return index >= 0 ? index : cefrOrder.length
+    }
+    filtered.sort((a, b) => {
+      if (sort === 'alpha') return a.lemma.localeCompare(b.lemma)
+      if (sort === 'recent') return b.createdAt.localeCompare(a.createdAt)
+      if (sort === 'cefr') return cefrRank(a.cefr) - cefrRank(b.cefr) || a.lemma.localeCompare(b.lemma)
+      if (sort === 'frequency') {
+        return (
+          (a.frequencyRank ?? Number.MAX_SAFE_INTEGER) - (b.frequencyRank ?? Number.MAX_SAFE_INTEGER) ||
+          a.lemma.localeCompare(b.lemma)
+        )
+      }
+      if (sort === 'lapses') {
+        return b.review.lapses - a.review.lapses || a.lemma.localeCompare(b.lemma)
+      }
+      if (a.status !== b.status) return a.status === 'active' ? -1 : 1
+      return a.review.due.localeCompare(b.review.due)
+    })
+    const total = filtered.length
+    const limit = Math.max(1, Math.min(500, Number(url.searchParams.get('limit') ?? 200)))
+    const offset = Math.max(0, Number(url.searchParams.get('offset') ?? 0))
+    const page = filtered.slice(offset, offset + limit)
+    const sourceMap = new Map<string, string>()
+    for (const pack of store.packs()) {
+      if (!sourceMap.has(pack.resourceId)) {
+        sourceMap.set(pack.resourceId, pack.title ?? store.getResource(pack.resourceId)?.title ?? pack.resourceId)
+      }
+    }
+    const sources = [...sourceMap.entries()].map(([id, title]) => ({ id, title }))
+    const cefrs = [...new Set(words.map((item) => item.cefr).filter((value): value is string => Boolean(value)))].sort()
+    sendJson(response, 200, {
+      items: page.map((item) => viewModel(item, store, now)),
+      counts,
+      total,
+      offset,
+      limit,
+      hasMore: offset + page.length < total,
+      sources,
+      cefrs,
+      summary: store.stats(now),
+    })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/vocab/known') {
+    try {
+      const body = await readJson(request, 2_000_000)
+      const words = parseKnownWords(typeof body.text === 'string' ? body.text : '')
+      if (words.length === 0) {
+        sendJson(response, 400, { error: '没有识别到单词，每行一个或用逗号分隔。' })
+        return
+      }
+      const byLemma = new Map<string, Array<{ id: string; status: string }>>()
+      for (const item of store.listItems()) {
+        if (item.type === 'sentence') continue
+        const key = item.lemma.toLowerCase().trim()
+        const list = byLemma.get(key) ?? []
+        list.push({ id: item.id, status: item.status })
+        byLemma.set(key, list)
+      }
+      const unknown: string[] = []
+      const ids: string[] = []
+      let matchedWords = 0
+      let alreadyKnown = 0
+      for (const word of words) {
+        const matches = byLemma.get(word)
+        if (!matches?.length) {
+          unknown.push(word)
+          continue
+        }
+        matchedWords += 1
+        for (const match of matches) {
+          ids.push(match.id)
+          if (match.status === 'known') alreadyKnown += 1
+        }
+      }
+      const itemsUpdated = await store.setStatusMany([...new Set(ids)], 'known')
+      sendJson(response, 200, {
+        ok: true,
+        words: words.length,
+        matchedWords,
+        itemsUpdated,
+        alreadyKnown,
+        unknown: unknown.slice(0, 20),
+        unknownCount: unknown.length,
+        summary: store.stats(),
+      })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const itemDetailMatch = /^\/api\/items\/([^/]+)$/.exec(url.pathname)
+  if (method === 'GET' && itemDetailMatch) {
+    const item = store.getItem(decodeURIComponent(itemDetailMatch[1]!))
+    if (!item) {
+      sendJson(response, 404, { error: 'Item not found' })
+      return
+    }
+    sendJson(response, 200, {
+      item: {
+        ...viewModel(item, store),
+        contexts: item.contexts,
+        examples: item.examples,
+        relations: item.relations,
+        tags: item.tags,
+        notes: item.notes,
+        wordFormation: item.wordFormation,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+        review: item.review,
+      },
+    })
+    return
+  }
+
+  const itemUpdateMatch = /^\/api\/items\/([^/]+)\/update$/.exec(url.pathname)
+  if (method === 'POST' && itemUpdateMatch) {
+    try {
+      const itemId = decodeURIComponent(itemUpdateMatch[1]!)
+      const body = await readJson(request)
+      const collocations = Array.isArray(body.collocations)
+        ? body.collocations.map((value) => String(value)).slice(0, 30)
+        : undefined
+      const patch = {
+        ...(typeof body.sense === 'string' ? { sense: body.sense } : {}),
+        ...(typeof body.definition === 'string' ? { definition: body.definition } : {}),
+        ...(typeof body.definitionZh === 'string' ? { definitionZh: body.definitionZh } : {}),
+        ...(typeof body.notes === 'string' ? { notes: body.notes } : {}),
+        ...(typeof body.memoryHook === 'string' ? { memoryHook: body.memoryHook } : {}),
+        ...(collocations ? { collocations } : {}),
+      }
+      if (Object.keys(patch).length === 0) {
+        sendJson(response, 400, { error: '没有可更新的字段。' })
+        return
+      }
+      const item = await store.updateItem(itemId, patch)
+      if (!item) {
+        sendJson(response, 404, { error: 'Item not found' })
+        return
+      }
+      const resourceIds = new Set(item.contexts.map((context) => context.resourceId))
+      for (const record of store.packs()) {
+        if (!resourceIds.has(record.resourceId) && !resourceIds.has(record.parentResourceId ?? '')) continue
+        try {
+          const contents = await loadPack(record.dir)
+          const target = contents.items.find((entry) => entry.id === itemId)
+          if (!target) continue
+          Object.assign(target, patch)
+          await savePackFiles(contents, record.dir)
+        } catch {
+          // A missing pack must not block editing the library card.
+        }
+      }
+      sendJson(response, 200, {
+        ok: true,
+        item: {
+          ...viewModel(item, store),
+          contexts: item.contexts,
+          examples: item.examples,
+          relations: item.relations,
+          tags: item.tags,
+          notes: item.notes,
+          wordFormation: item.wordFormation,
+          createdAt: item.createdAt,
+          updatedAt: item.updatedAt,
+          review: item.review,
+        },
+      })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/study/queue') {
+    const limit = Math.max(1, Math.min(50, Number(url.searchParams.get('limit') ?? 20)))
+    const newLimit = Math.max(0, Math.min(30, Number(url.searchParams.get('newLimit') ?? 10)))
+    const group = url.searchParams.get('group') ?? 'all'
+    const source = url.searchParams.get('source') ?? ''
+    const cefr = url.searchParams.get('cefr') ?? ''
+    const book = url.searchParams.get('book') ?? ''
+    const now = new Date()
+    const words = store.listItems().filter((item) => item.type !== 'sentence' && item.status === 'active')
+    const bookLemmas = book
+      ? new Set((getWordbook(book)?.words ?? []).map((word) => word.w.toLowerCase()))
+      : undefined
+    const scoped = words.filter((item) =>
+      (!source || item.contexts.some((context) => context.resourceId === source)) &&
+      (!cefr || item.cefr === cefr) &&
+      (!bookLemmas || bookLemmas.has(item.lemma.toLowerCase())),
+    )
+    const fresh = scoped.filter((item) => isNew(item.review)).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    const due = scoped.filter((item) => !isNew(item.review) && isDue(item.review, now))
+    const leech = scoped.filter((item) => isLeech(item.review))
+    let selected: typeof words
+    if (group === 'new') selected = fresh
+    else if (group === 'due') selected = due
+    else if (group === 'leech') selected = leech
+    else selected = [...fresh.slice(0, newLimit), ...due]
+    selected = selected.slice(0, limit)
+    sendJson(response, 200, {
+      items: selected.map((item) => viewModel(item, store, now)),
+      counts: {
+        new: fresh.length,
+        due: due.length,
+        leech: leech.length,
+        total: selected.length,
+      },
     })
     return
   }
@@ -1561,6 +2961,110 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     return
   }
 
+  if (method === 'GET' && url.pathname === '/api/backup') {
+    try {
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
+      const file = path.join(config.dataDir, 'backups', `library-${stamp}.json`)
+      const result = await writeLibraryBackup(store, file)
+      const body = await fs.readFile(result.file)
+      response.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'content-length': String(body.length),
+        'cache-control': 'no-store',
+        'content-disposition': `attachment; filename="closeread-backup-${stamp}.json"`,
+      })
+      response.end(body)
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/settings') {
+    const preferences = store.preferences()
+    sendJson(response, 200, {
+      dataDir: config.dataDir,
+      packsDir: config.packsDir,
+      counts: store.stats(),
+      preferences: {
+        desiredRetention: preferences.desiredRetention,
+        dailyNewTarget: preferences.dailyNewTarget,
+        dailyReviewTarget: preferences.dailyReviewTarget,
+        weeklyArticleGoal: preferences.weeklyArticleGoal,
+        weeklyStudyDaysGoal: preferences.weeklyStudyDaysGoal,
+      },
+      llm: llmStatus(),
+      tts: ttsStatus(),
+      usage: usageSummary(),
+      trash: await listTrash(),
+      warnings: store.warnings(),
+    })
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/trash') {
+    sendJson(response, 200, { entries: await listTrash() })
+    return
+  }
+
+  const trashRestoreMatch = /^\/api\/trash\/([^/]+)\/restore$/.exec(url.pathname)
+  if (method === 'POST' && trashRestoreMatch) {
+    try {
+      const result = await restoreTrash(store, decodeURIComponent(trashRestoreMatch[1]!))
+      sendJson(response, 200, { ok: true, result, summary: store.stats() })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const trashMatch = /^\/api\/trash\/([^/]+)$/.exec(url.pathname)
+  if (method === 'DELETE' && trashMatch) {
+    const removed = await purgeTrash(decodeURIComponent(trashMatch[1]!))
+    sendJson(response, removed ? 200 : 404, removed ? { ok: true } : { error: '回收站条目不存在。' })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/restore') {
+    const temp = path.join(config.dataDir, 'backups', `restore-${randomUUID()}.json`)
+    try {
+      const body = await readBody(request, 250 * 1024 * 1024)
+      if (body.length === 0) throw new Error('备份文件为空。')
+      await fs.mkdir(path.dirname(temp), { recursive: true })
+      await fs.writeFile(temp, body)
+      const result = await restoreLibraryBackup(
+        temp,
+        storePath,
+        path.join(config.dataDir, 'resources'),
+        config.packsDir,
+      )
+      await store.reload()
+      sendJson(response, 200, { ok: true, result, summary: store.stats() })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    } finally {
+      await fs.rm(temp, { force: true }).catch(() => {})
+    }
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/llm/test') {
+    if (requireLlm(response)) return
+    try {
+      const testSchema = z.object({ ok: z.boolean() })
+      const result = await chatJson(
+        testSchema,
+        'You are a connection test. Return exactly one JSON object.',
+        'Return {"ok":true}.',
+        { maxTokens: 20, temperature: 0 },
+      )
+      sendJson(response, 200, { ok: result.ok === true, model: config.llm.model, usage: usageSummary() })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   if (method === 'GET' && url.pathname === '/api/packs') {
     sendJson(response, 200, {
       packs: store.packs().map((pack) => {
@@ -1571,9 +3075,37 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
           ...packView(store, pack),
           issueId,
           issueTitle: issue?.title ?? issueId,
+          chapter: chapterNav(store, pack),
         }
       }),
     })
+    return
+  }
+
+  const neighborsMatch = /^\/api\/packs\/([^/]+)\/neighbors$/.exec(url.pathname)
+  if (method === 'GET' && neighborsMatch) {
+    const pack = store.findPack(decodeURIComponent(neighborsMatch[1]!))
+    if (!pack) {
+      sendJson(response, 404, { error: 'Pack not found' })
+      return
+    }
+    sendJson(response, 200, { chapter: chapterNav(store, pack) })
+    return
+  }
+
+  const recommendMatch = /^\/api\/packs\/([^/]+)\/recommend$/.exec(url.pathname)
+  if (method === 'GET' && recommendMatch) {
+    const pack = store.findPack(decodeURIComponent(recommendMatch[1]!))
+    if (!pack) {
+      sendJson(response, 404, { error: 'Pack not found' })
+      return
+    }
+    try {
+      const limit = Math.max(1, Math.min(6, Number(url.searchParams.get('limit') ?? 3)))
+      sendJson(response, 200, { recommendations: await recommendNext(store, pack.id, limit) })
+    } catch (error) {
+      sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
+    }
     return
   }
 
@@ -1598,7 +3130,8 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         sendJson(response, 400, { error: '请粘贴要导入的文本。' })
         return
       }
-      const resource = await ingestText(text, { title: title || undefined })
+      const aiClean = body.aiClean !== false && hasLlm()
+      const resource = await ingestText(text, { title: title || undefined, aiClean })
       const duplicate = duplicateOf(store, resource)
       if (duplicate) {
         await discardNewResource(resource)
@@ -1625,7 +3158,8 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         sendJson(response, 400, { error: '请填写网页链接。' })
         return
       }
-      const resource = await ingestSource(raw, { title: title || undefined })
+      const aiClean = body.aiClean !== false && hasLlm()
+      const resource = await ingestSource(raw, { title: title || undefined, aiClean })
       const duplicate = duplicateOf(store, resource)
       if (duplicate) {
         await discardNewResource(resource)
@@ -1682,8 +3216,10 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         resource = await ingestEpubBuffer(buffer, { filename, title })
       } else if (extension === '.mobi' || extension === '.azw' || extension === '.azw3') {
         resource = await ingestMobiBuffer(buffer, { filename, title })
+      } else if (extension === '.docx') {
+        resource = await ingestDocxBuffer(buffer, { filename, title })
       } else {
-        throw new Error('只支持 EPUB、MOBI、AZW、AZW3 文件。')
+        throw new Error('只支持 EPUB、MOBI、AZW、AZW3、DOCX 文件。')
       }
       try {
         resource.metadata.uploadPath = await saveUpload(buffer, filename)
@@ -1833,8 +3369,10 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         } catch {
           // A missing pack file should not block resource deletion.
         }
+      }
+      const trashEntry = await trashResource(store, resource)
+      for (const pack of relatedPacks) {
         await store.removePack(pack.id)
-        await fs.rm(pack.dir, { recursive: true, force: true }).catch(() => {})
       }
 
       const candidateIds = new Set([
@@ -1850,13 +3388,11 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       })
       const removedItems = await store.removeItems(removable)
       await store.removeResource(resource.id)
-      if (typeof resource.metadata.uploadPath === 'string') {
-        await fs.rm(resource.metadata.uploadPath, { force: true }).catch(() => {})
-      }
       sendJson(response, 200, {
         ok: true,
         removedPacks: relatedPacks.length,
         removedItems,
+        trashId: trashEntry.id,
         summary: store.stats(),
       })
     } catch (error) {
@@ -1895,6 +3431,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       translate: body.translate !== false,
       audio: body.audio === true,
       onlyNew: body.onlyNew === true,
+      ...(typeof body.style === 'string' && body.style.trim() ? { styleName: body.style.trim() } : {}),
       ...(requestedArticle !== undefined ? { articleIndex: requestedArticle } : {}),
     })
     sendJson(response, 202, { jobId: job.id, job })
@@ -1947,6 +3484,88 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     return
   }
 
+  if (method === 'POST' && url.pathname === '/api/review/undo') {
+    try {
+      const result = await store.undoLastReview()
+      if (!result) {
+        sendJson(response, 409, { error: '没有可撤销的复习记录。' })
+        return
+      }
+      sendJson(response, 200, {
+        ok: true,
+        item: viewModel(result.item, store),
+        summary: store.stats(),
+        undone: { reviewedAt: result.log.reviewedAt },
+      })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/words/examples') {
+    try {
+      if (!hasLlm()) {
+        sendJson(response, 400, { error: '批量补例句需要配置模型 API Key。' })
+        return
+      }
+      const body = await readJson(request)
+      const limit = Math.max(1, Math.min(10, Number(body.limit ?? 5)))
+      const book = typeof body.book === 'string' ? body.book : ''
+      const candidates = store.listItems()
+        .filter((item) => item.type !== 'sentence' && !hasRealExample(item) && (!book || item.tags.includes(`wordbook:${book}`)))
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+        .slice(0, limit)
+      const updated: typeof candidates = []
+      const failures: Array<{ lemma: string; error: string }> = []
+      for (const item of candidates) {
+        try {
+          const result = await generateLifeExamples(item, '日常')
+          const examples = result.examples.map((example) => ({ text: example.en, origin: 'generated' as const }))
+          updated.push({
+            ...item,
+            examples: [...item.examples, ...examples.filter((example) => !item.examples.some((existing) => existing.text === example.text))],
+            ...(item.notes ? {} : result.note ? { notes: result.note } : {}),
+            updatedAt: new Date().toISOString(),
+          })
+        } catch (error) {
+          failures.push({ lemma: item.lemma, error: error instanceof Error ? error.message : String(error) })
+        }
+      }
+      if (updated.length) await store.upsertItems(updated)
+      const remaining = store.listItems().filter((item) => item.type !== 'sentence' && !hasRealExample(item) && (!book || item.tags.includes(`wordbook:${book}`))).length
+      sendJson(response, 200, { ok: true, attempted: candidates.length, updated: updated.length, failures, remaining })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const exampleItemMatch = /^\/api\/items\/([^/]+)\/examples$/.exec(url.pathname)
+  if (method === 'POST' && exampleItemMatch) {
+    if (requireLlm(response)) return
+    try {
+      const item = store.getItem(decodeURIComponent(exampleItemMatch[1]!))
+      if (!item) {
+        sendJson(response, 404, { error: 'Item not found' })
+        return
+      }
+      const result = await generateLifeExamples(item, '日常')
+      const examples = result.examples.map((example) => ({ text: example.en, origin: 'generated' as const }))
+      const updated = {
+        ...item,
+        examples: [...item.examples, ...examples.filter((example) => !item.examples.some((existing) => existing.text === example.text))],
+        notes: item.notes || result.note,
+        updatedAt: new Date().toISOString(),
+      }
+      await store.upsertItems([updated])
+      sendJson(response, 200, { ok: true, item: viewModel(updated, store) })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   if (method === 'POST' && url.pathname === '/api/favorite') {
     const body = await readJson(request)
     const itemId = typeof body.itemId === 'string' ? body.itemId : ''
@@ -1978,6 +3597,33 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
       return
     }
     sendJson(response, 200, { ok: true, item: viewModel(item, store), summary: store.stats() })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/items/bulk') {
+    try {
+      const body = await readJson(request)
+      const ids = Array.isArray(body.ids)
+        ? [...new Set(body.ids.map((value) => String(value)).filter(Boolean))].slice(0, 500)
+        : []
+      const action = typeof body.action === 'string' ? body.action : ''
+      if (ids.length === 0) {
+        sendJson(response, 400, { error: '先选择要操作的词卡。' })
+        return
+      }
+      let count = 0
+      if (action === 'active' || action === 'known' || action === 'suspended') {
+        count = await store.setStatusMany(ids, action)
+      } else if (action === 'favorite' || action === 'unfavorite') {
+        count = await store.setFavoriteMany(ids, action === 'favorite')
+      } else {
+        sendJson(response, 400, { error: '不支持的批量操作。' })
+        return
+      }
+      sendJson(response, 200, { ok: true, count, summary: store.stats() })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
     return
   }
 
@@ -2722,6 +4368,7 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
         })
         return
       }
+      if (requireLlm(response)) return
       const paragraphIndex = (current.reading ?? []).findIndex((paragraph) =>
         paragraph.original.replace(/\s+/g, ' ').toLowerCase().includes(normalized),
       )
@@ -2801,14 +4448,20 @@ async function handle(request: http.IncomingMessage, response: http.ServerRespon
     } catch {
       // The pack may already be missing; the record can still be removed.
     }
+    const trashEntry = await trashPack(store, pack)
     const removable = itemIds.filter((itemId) => {
       const item = store.getItem(itemId)
       return item ? item.contexts.every((context) => context.resourceId === pack.resourceId) : false
     })
     const removedItems = await store.removeItems(removable)
     await store.removePack(pack.id)
-    await fs.rm(pack.dir, { recursive: true, force: true }).catch(() => {})
-    sendJson(response, 200, { ok: true, removedItems, packs: store.packs().length, summary: store.stats() })
+    sendJson(response, 200, {
+      ok: true,
+      removedItems,
+      trashId: trashEntry.id,
+      packs: store.packs().length,
+      summary: store.stats(),
+    })
     return
   }
 
@@ -2901,29 +4554,107 @@ export interface ReviewServer {
   store: Store
   port: number
   url: string
+  enableLan: () => Promise<LanStatus>
+  disableLan: () => Promise<LanStatus>
+  lanStatus: () => LanStatus
   close: () => Promise<void>
 }
 
-export async function startReviewServer(options: { port?: number; host?: string } = {}): Promise<ReviewServer> {  ensureDirs()
-  const store = await Store.open(storePath)
-  const port = options.port ?? 4317
-  const host = options.host ?? '127.0.0.1'
-
-  const server = http.createServer((request, response) => {
-    handle(request, response, store).catch((error: unknown) => {
-      if (!response.headersSent) {
-        sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
-      } else {
-        response.end()
-      }
-    })
+function closeHttpServer(instance: http.Server): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    instance.close((error) => (error ? reject(error) : resolve()))
+    instance.closeAllConnections?.()
   })
+}
 
+export async function startReviewServer(options: { port?: number } = {}): Promise<ReviewServer> {
+  ensureDirs()
+  const store = await Store.open(storePath)
+  const diagnosis = store.preferences().diagnosis
+  if (diagnosis?.level) config.level = diagnosis.level
+  const port = options.port ?? 4317
+  const accessFile = path.join(path.dirname(storePath), 'access.json')
+  const lanState: LanState = { enabled: false, token: '', port: null }
+  let lanServer: http.Server | undefined
+
+  function status(local: boolean): LanStatus {
+    const urls =
+      lanState.enabled && lanState.port !== null && local ? phoneUrls(lanState.port, lanState.token) : []
+    return {
+      enabled: lanState.enabled,
+      local,
+      port: lanState.port,
+      urls,
+      qr: urls.map((url) => ({ url, svg: qrSvg(url) })),
+    }
+  }
+
+  const lan: LanController = {
+    state: lanState,
+    status,
+    enable: () => enableLan(),
+    disable: () => disableLan(),
+  }
+
+  function createHandler(requireToken: boolean) {
+    return (request: http.IncomingMessage, response: http.ServerResponse): void => {
+      handle(request, response, store, lan, requireToken).catch((error: unknown) => {
+        if (!response.headersSent) {
+          sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
+        } else {
+          response.end()
+        }
+      })
+    }
+  }
+
+  async function enableLan(): Promise<LanStatus> {
+    if (lanState.enabled && lanServer) return status(true)
+    const token = await issueAccessToken(accessFile)
+    const lanHttp = http.createServer(createHandler(true))
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const onError = (error: Error): void => {
+          lanHttp.off('listening', onListening)
+          reject(error)
+        }
+        const onListening = (): void => {
+          lanHttp.off('error', onError)
+          resolve()
+        }
+        lanHttp.once('error', onError)
+        lanHttp.once('listening', onListening)
+        lanHttp.listen(0, '0.0.0.0')
+      })
+    } catch (error) {
+      await fs.rm(accessFile, { force: true }).catch(() => {})
+      throw error
+    }
+    const address = lanHttp.address()
+    const lanPort = typeof address === 'object' && address ? address.port : 0
+    lanServer = lanHttp
+    lanState.enabled = true
+    lanState.token = token
+    lanState.port = lanPort
+    return status(true)
+  }
+
+  async function disableLan(): Promise<LanStatus> {
+    const running = lanServer
+    lanServer = undefined
+    lanState.enabled = false
+    lanState.token = ''
+    lanState.port = null
+    if (running) await closeHttpServer(running).catch(() => {})
+    await fs.rm(accessFile, { force: true }).catch(() => {})
+    return status(true)
+  }
+
+  const server = http.createServer(createHandler(false))
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(port, host, () => resolve())
+    server.listen(port, '127.0.0.1', () => resolve())
   })
-
   const address = server.address()
   const actualPort = typeof address === 'object' && address ? address.port : port
 
@@ -2931,10 +4662,13 @@ export async function startReviewServer(options: { port?: number; host?: string 
     server,
     store,
     port: actualPort,
-    url: `http://${host}:${actualPort}`,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()))
-      }),
+    url: `http://127.0.0.1:${actualPort}`,
+    enableLan,
+    disableLan,
+    lanStatus: () => status(true),
+    close: async () => {
+      await disableLan().catch(() => {})
+      await closeHttpServer(server)
+    },
   }
 }

@@ -7,7 +7,7 @@ import { hasLlm } from '../config.js'
 import { itemId } from './item-id.js'
 import { rawItemSchema, wordFormationSchema, normalizeWordFormation } from './item-schema.js'
 import type { CachedCard } from './card-cache.js'
-import type { LearningItem, StoredItem } from '../types.js'
+import type { LearningItem } from '../types.js'
 
 const wordCardSchema = z.object({
   item: rawItemSchema,

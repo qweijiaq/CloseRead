@@ -2,14 +2,17 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-import { config } from '../config.js'
+import { config, hasLlm } from '../config.js'
 import type { Resource, ResourceArticle, ResourceKind, Segment } from '../types.js'
 import { readPdf, readPdfBuffer } from './pdf.js'
 import { readEpub, readEpubBuffer } from './epub.js'
 import { readMobi, readMobiBuffer } from './mobi.js'
+import { readDocxBuffer } from './docx.js'
 import { parseTranscript, segmentsFromText } from './segment.js'
 import { countWords } from './summary.js'
-import { detectBlockedPage, extractArticle, fetchUrl, titleFromUrl } from './web.js'
+import { detectBlockedPage, extractArticle, fetchArticle, fetchUrl, titleFromUrl } from './web.js'
+import { parseFeed } from './feed.js'
+import { cleanArticleWithAi } from './ai-clean.js'
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mov', '.mkv', '.webm', '.avi'])
 const AUDIO_EXTENSIONS = new Set(['.mp3', '.m4a', '.wav', '.aac', '.flac', '.ogg', '.opus'])
@@ -39,6 +42,8 @@ export interface IngestOptions {
   title?: string
   /** Where pasted text came from, for pack references. */
   source?: string
+  /** Ask the model to drop boilerplate blocks before the resource is stored. */
+  aiClean?: boolean
 }
 
 function slugify(input: string): string {
@@ -101,13 +106,33 @@ async function persistResource(input: {
   segments: Segment[]
   articles?: ResourceArticle[]
   metadata?: Record<string, string | number>
+  aiClean?: boolean
 }): Promise<Resource> {
-  const text = input.text.replace(/\r\n?/g, '\n').trim()
+  let text = input.text.replace(/\r\n?/g, '\n').trim()
   if (text.length < 100) throw new Error('The input produced too little text to build a learning pack.')
 
   const title = input.title.trim() || 'Untitled resource'
-  const id = `${timestampId()}-${slugify(title)}`
+  const metadata: Record<string, string | number> = { ...input.metadata }
+  let segments = input.segments
   const articles = input.articles && input.articles.length > 0 ? input.articles : undefined
+
+  if (input.aiClean && hasLlm() && !articles && (input.kind === 'text' || input.kind === 'web')) {
+    try {
+      const cleaned = await cleanArticleWithAi(text, title)
+      if (cleaned.removed > 0) {
+        text = cleaned.text
+        segments = segmentsFromText(text)
+        metadata.aiClean = 1
+        metadata.aiRemoved = cleaned.removed
+      } else if (cleaned.skipped) {
+        metadata.aiCleanSkipped = 1
+      }
+    } catch {
+      // Cleaning is an enhancement; keep the extracted text if the model fails.
+      metadata.aiCleanError = 1
+    }
+  }
+  const id = `${timestampId()}-${slugify(title)}`
   const resource: Resource = {
     id,
     title,
@@ -115,10 +140,10 @@ async function persistResource(input: {
     source: input.source,
     text,
     wordCount: countWords(text),
-    segments: input.segments,
+    segments,
     ...(articles ? { articles } : {}),
     metadata: {
-      ...input.metadata,
+      ...metadata,
       chars: text.length,
       hash: contentHash(text),
       ...(articles ? { articles: articles.length } : {}),
@@ -144,6 +169,7 @@ export async function ingestText(raw: string, options: IngestOptions = {}): Prom
     text,
     segments: segmentsFromText(text),
     metadata: { format: 'pasted' },
+    aiClean: options.aiClean,
   })
 }
 
@@ -223,6 +249,22 @@ export async function ingestMobiBuffer(buffer: Buffer, options: IngestEbookOptio
   })
 }
 
+/** Ingest a DOCX uploaded from the browser. */
+export async function ingestDocxBuffer(buffer: Buffer, options: IngestEbookOptions = {}): Promise<Resource> {
+  const filename = options.filename?.trim() || 'uploaded.docx'
+  const fallbackTitle = path.basename(filename, path.extname(filename)).trim() || 'Uploaded document'
+  const docx = readDocxBuffer(buffer, fallbackTitle)
+  return persistResource({
+    title: options.title?.trim() || docx.title,
+    kind: 'text',
+    source: `upload:${filename}`,
+    text: docx.text,
+    segments: segmentsFromText(docx.text),
+    metadata: { format: 'docx', filename },
+    aiClean: options.aiClean,
+  })
+}
+
 async function ingestFile(filePath: string, options: IngestOptions): Promise<Resource> {
   const extension = path.extname(filePath).toLowerCase()
   const fallbackTitle = path.basename(filePath, extension)
@@ -270,6 +312,19 @@ async function ingestFile(filePath: string, options: IngestOptions): Promise<Res
     })
   }
 
+  if (extension === '.docx') {
+    const docx = readDocxBuffer(await fs.readFile(filePath), fallbackTitle)
+    return persistResource({
+      title: options.title?.trim() || docx.title,
+      kind: 'text',
+      source: filePath,
+      text: docx.text,
+      segments: segmentsFromText(docx.text),
+      metadata: { format: 'docx' },
+      aiClean: options.aiClean,
+    })
+  }
+
   if (TRANSCRIPT_EXTENSIONS.has(extension)) {
     const raw = await fs.readFile(filePath, 'utf8')
     const parsed = parseTranscript(raw)
@@ -292,6 +347,7 @@ async function ingestFile(filePath: string, options: IngestOptions): Promise<Res
       text: raw,
       segments: segmentsFromText(raw),
       metadata: { format: extension.slice(1) },
+      aiClean: options.aiClean,
     })
   }
 
@@ -305,6 +361,7 @@ async function ingestFile(filePath: string, options: IngestOptions): Promise<Res
       text: article.text,
       segments: segmentsFromText(article.text),
       metadata: { format: 'html', extraction: article.selector },
+      aiClean: options.aiClean,
     })
   }
 
@@ -341,7 +398,7 @@ async function ingestFile(filePath: string, options: IngestOptions): Promise<Res
   }
 
   throw new Error(
-    `Unsupported file type: ${extension || '(no extension)'}. Supported: .pdf, .epub, .mobi, .azw, .azw3, .txt, .md, .srt, .vtt, .html, .htm, URLs, and audio/video with a sibling transcript.`,
+    `Unsupported file type: ${extension || '(no extension)'}. Supported: .pdf, .epub, .mobi, .azw, .azw3, .docx, .txt, .md, .srt, .vtt, .html, .htm, URLs, and audio/video with a sibling transcript.`,
   )
 }
 
@@ -364,6 +421,29 @@ async function ingestUrl(url: string, options: IngestOptions): Promise<Resource>
     })
   }
 
+  if (fetched.xml !== undefined) {
+    const feed = parseFeed(fetched.xml, fetched.finalUrl)
+    const latest = feed.items[0]
+    if (!latest) throw new Error(`RSS/Atom 订阅里没有找到可导入的文章：${fetched.finalUrl}`)
+    if (latest.link === fetched.finalUrl) throw new Error('订阅的最新条目仍指向订阅本身，换一个订阅地址再试。')
+    const article = await fetchArticle(latest.link)
+    return persistResource({
+      title: options.title?.trim() || article.title || latest.title || titleFromUrl(latest.link),
+      kind: 'web',
+      source: latest.link,
+      text: article.text,
+      segments: segmentsFromText(article.text),
+      metadata: {
+        url: latest.link,
+        feedUrl: fetched.finalUrl,
+        feedTitle: feed.title,
+        extraction: article.metadata.extraction ?? '',
+        ...(latest.published ? { published: latest.published } : {}),
+      },
+      aiClean: options.aiClean,
+    })
+  }
+
   if (fetched.html !== undefined) {
     const article = extractArticle(fetched.html, titleFromUrl(fetched.finalUrl))
     if (article.text.length < 200) {
@@ -381,6 +461,7 @@ async function ingestUrl(url: string, options: IngestOptions): Promise<Resource>
       text: article.text,
       segments: segmentsFromText(article.text),
       metadata: { url: fetched.finalUrl, extraction: article.selector },
+      aiClean: options.aiClean,
     })
   }
 
@@ -388,6 +469,7 @@ async function ingestUrl(url: string, options: IngestOptions): Promise<Resource>
     return ingestText(fetched.text, {
       title: options.title?.trim() || titleFromUrl(fetched.finalUrl),
       source: url,
+      aiClean: options.aiClean,
     })
   }
 

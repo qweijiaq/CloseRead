@@ -8,15 +8,17 @@ import { analyzeResource } from './analyze/index.js'
 import { seedCardCache } from './analyze/card-cache.js'
 import { knownRatioInText } from './analyze/known.js'
 import { generatePackAudio, isSayAvailable } from './audio/tts.js'
-import { config, ensureDirs, hasLlm, projectRoot, storePath } from './config.js'
+import { config, ensureDirs, hasLlm, hasNeuralTts, projectRoot, storePath } from './config.js'
 import { readEpub } from './ingest/epub.js'
 import { ingestSource, ingestText, contentHash, normalizeUrl } from './ingest/index.js'
 import { readMobi } from './ingest/mobi.js'
 import { readPdf } from './ingest/pdf.js'
 import { previewText, resourceWarnings } from './ingest/summary.js'
 import { writePack } from './pack/build.js'
+import { loadPack } from './pack/mutate.js'
 import { renderHtml } from './pack/html.js'
 import { startReviewServer } from './review/server.js'
+import { restoreLibraryBackup, writeLibraryBackup } from './store/backup.js'
 import { Store } from './store/store.js'
 import { analyzeStyle } from './style/analyze.js'
 import { mergeStyles } from './style/merge.js'
@@ -43,6 +45,7 @@ interface AddCliOptions extends BuildCliOptions {
   title?: string
   clipboard: boolean
   build: boolean
+  aiClean?: boolean
 }
 
 const HELP = `CloseRead — turn authentic English input into intensive reading packs.
@@ -57,17 +60,20 @@ Usage:
   pnpm dev build <id|latest>          Analyse a resource and build a learning pack
   pnpm dev list                       List ingested resources
   pnpm dev items [--due] [--query q]  List learning items
-  pnpm dev review [--port 4317]       Start the local review UI
+  pnpm dev review [--port 4317] [--lan] Start the local review UI (--lan also serves phones)
   pnpm dev export <id|latest>         Export the pack's Anki CSV
   pnpm dev audio <id|latest>          Generate audio for an existing pack (macOS say)
   pnpm dev style <list|show|add|merge> Manage writing-style profiles
   pnpm dev demo                       Run the full pipeline on the bundled sample
   pnpm dev doctor                     Check the environment and library
+  pnpm dev backup [file]              Back up the library to one JSON file
+  pnpm dev restore <file> --force     Restore the library from a backup
 
 Add options:
   --title <name>   Override the resource title
   --build          Build the learning pack immediately after ingesting
   --no-llm         Ingest and build without an LLM (when --build is used)
+  --no-ai-clean    Keep raw extracted text instead of AI-removing boilerplate
   --open           Open the generated pack (when --build is used)
 
 Style commands:
@@ -169,7 +175,7 @@ async function commandAdd(input: string | undefined, options: AddCliOptions): Pr
   let resource: Resource
   if (options.text !== undefined) {
     console.log('Ingesting pasted text …')
-    resource = await ingestText(options.text, { title: options.title })
+    resource = await ingestText(options.text, { title: options.title, aiClean: options.aiClean })
   } else if (options.clipboard) {
     console.log('Reading the clipboard …')
     const clipboard = (await readClipboard()).trim()
@@ -177,13 +183,13 @@ async function commandAdd(input: string | undefined, options: AddCliOptions): Pr
     const clipboardUrl = /\s/.test(clipboard) ? null : normalizeUrl(clipboard)
     if (clipboardUrl) {
       console.log(`Clipboard contains a URL: ${clipboardUrl}`)
-      resource = await ingestSource(clipboardUrl, { title: options.title })
+      resource = await ingestSource(clipboardUrl, { title: options.title, aiClean: options.aiClean })
     } else {
-      resource = await ingestText(clipboard, { title: options.title })
+      resource = await ingestText(clipboard, { title: options.title, aiClean: options.aiClean })
     }
   } else if (input && input !== '-') {
     console.log(`Ingesting ${input} …`)
-    resource = await ingestSource(input, { title: options.title })
+    resource = await ingestSource(input, { title: options.title, aiClean: options.aiClean })
   } else {
     if (input === '-') console.log('Reading text from stdin …')
     else if (process.stdin.isTTY) console.log('Paste an article or some text, then press Ctrl-D. (You can also pass a file path or URL.)')
@@ -193,7 +199,7 @@ async function commandAdd(input: string | undefined, options: AddCliOptions): Pr
       process.exitCode = 1
       return
     }
-    resource = await ingestText(text, { title: options.title })
+    resource = await ingestText(text, { title: options.title, aiClean: options.aiClean })
   }
 
   const store = await Store.open(storePath)
@@ -275,8 +281,14 @@ async function commandResplit(idOrLatest: string | undefined, file: string | und
   if (articles.length > 20) console.log(`  … and ${articles.length - 20} more`)
 }
 
+function applyStoredLevel(store: Store): void {
+  const level = store.preferences().diagnosis?.level
+  if (level) config.level = level
+}
+
 async function commandBuild(idOrLatest: string, options: BuildCliOptions): Promise<void> {
   const store = await Store.open(storePath)
+  applyStoredLevel(store)
   const resource = store.resolveResource(idOrLatest)
   if (!resource) {
     console.error(`Resource not found: ${idOrLatest}`)
@@ -290,7 +302,7 @@ async function commandBuild(idOrLatest: string, options: BuildCliOptions): Promi
 
   const style = options.styleName ? await loadStyleProfile(options.styleName) : await resolveDefaultStyle()
   await seedCardCache(store.listItems())
-  const knownLemmas = store.listItems().filter((item) => item.status === 'known').map((item) => item.lemma)
+  const knownLemmas = store.knownLemmas()
   const knownRatio = knownRatioInText(resource.text, knownLemmas)
   const outcome = await analyzeResource(resource, {
     limit: options.limit,
@@ -351,10 +363,26 @@ async function commandBuild(idOrLatest: string, options: BuildCliOptions): Promi
   if (options.open) await openPath(path.join(result.dir, 'index.html'))
 }
 
-async function commandReview(port: number, open: boolean): Promise<void> {
+async function commandReview(port: number, open: boolean, lan: boolean): Promise<void> {
   const server = await startReviewServer({ port })
   const store = await Store.open(storePath)
   const stats = store.stats()
+  if (lan) {
+    try {
+      const status = await server.enableLan()
+      console.log('')
+      console.log('Phone access (same Wi-Fi, token required):')
+      if (status.urls.length === 0) {
+        console.log('  No LAN IPv4 address was detected. Check the network or use the 手机 panel in the app.')
+      } else {
+        for (const url of status.urls) console.log(`  ${url}`)
+      }
+      console.log('  The link contains an access token; do not share it publicly.')
+      console.log('  Close phone access from the 手机 panel when you are done.')
+    } catch (error) {
+      console.error(`Could not enable phone access: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
   console.log('')
   console.log(`Review UI: ${server.url}`)
   console.log(line('due', stats.due))
@@ -422,8 +450,8 @@ async function commandAudio(idOrLatest: string, open: boolean): Promise<void> {
     process.exitCode = 1
     return
   }
-  if (!(await isSayAvailable())) {
-    console.log('macOS `say` is not available on this machine; audio generation is skipped.')
+  if (!hasNeuralTts() && !(await isSayAvailable())) {
+    console.log('没有可用的语音引擎：请安装 macOS 语音，或在音频设置中配置神经语音。')
     return
   }
   const packJson = JSON.parse(await fs.readFile(path.join(pack.dir, 'pack.json'), 'utf8')) as LearningPack
@@ -450,6 +478,7 @@ async function commandDemo(open: boolean, styleName?: string): Promise<void> {
   console.log('1/4 Ingesting the bundled sample …')
   const resource = await ingestSource(sample)
   const store = await Store.open(storePath)
+  applyStoredLevel(store)
   await store.addResource(resource)
   console.log(`    ${resource.title} · ${resource.wordCount} words · ${resource.segments.length} segments`)
 
@@ -560,6 +589,39 @@ async function commandStyle(
   }
 }
 
+async function commandBackup(target: string | undefined): Promise<void> {
+  const store = await Store.open(storePath)
+  for (const warning of store.warnings()) {
+    console.warn(`Warning: ${warning.message}${warning.path ? ` (${warning.path})` : ''}`)
+  }
+  const file = target
+    ? path.resolve(target)
+    : path.join(
+        config.dataDir,
+        'backups',
+        `library-${new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}.json`,
+      )
+  const result = await writeLibraryBackup(store, file)
+  console.log(
+    `Backed up ${result.items} items, ${result.packs} packs, ${result.logs} reviews, ${result.outputs} outputs and ${result.resources} resources.`,
+  )
+  console.log(`  ${result.file}`)
+  console.log('Pack folders, reading progress and the quote wall are included when present.')
+}
+
+async function commandRestore(file: string | undefined, force: boolean): Promise<void> {
+  if (!file) throw new Error('Usage: pnpm dev restore <backup.json> --force')
+  if (!force) {
+    console.log('Restore replaces the current library. Re-run with --force to continue.')
+    return
+  }
+  const result = await restoreLibraryBackup(path.resolve(file), storePath, path.join(config.dataDir, 'resources'), config.packsDir)
+  console.log(`Restored ${result.items} items, ${result.packs} packs, ${result.resources} resources.`)
+  if (result.packFiles) console.log(`Restored ${result.packFiles} pack files (including reading progress and audio).`)
+  if (result.safetyCopy) console.log(`Previous store saved at ${result.safetyCopy}`)
+  console.log('Restart the review server or desktop app to load the restored library.')
+}
+
 async function commandDoctor(): Promise<void> {
   const store = await Store.open(storePath)
   const stats = store.stats()
@@ -580,6 +642,9 @@ async function commandDoctor(): Promise<void> {
   console.log(line('style', defaultStyle ? `${defaultStyle.name} — ${defaultStyle.title}` : 'none'))
   console.log(line('say', (await isSayAvailable()) ? 'available' : 'not available'))
   console.log(line('pdf-parse', pdfOk ? 'ok' : 'missing'))
+  const diagnosis = store.preferences().diagnosis
+  console.log(line('level', diagnosis ? `${diagnosis.level} (diagnosed)` : config.level))
+  console.log(line('known words', store.knownLemmas().length))
   console.log('')
   console.log('Library')
   console.log(line('resources', store.listResources().length))
@@ -587,7 +652,35 @@ async function commandDoctor(): Promise<void> {
   console.log(line('due', stats.due))
   console.log(line('new', stats.newItems))
   console.log(line('favorites', stats.favorites))
-  console.log(line('packs', store.packs().length))
+  const packs = store.packs()
+  const invalidPacks: string[] = []
+  for (const pack of packs) {
+    try {
+      await loadPack(pack.dir)
+    } catch (error) {
+      invalidPacks.push(`${pack.id}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  console.log(line('packs', packs.length))
+  console.log(line('packs ok', packs.length - invalidPacks.length))
+  const lastGood = await fs.access(store.backupFile).then(() => store.backupFile).catch(() => 'none yet')
+  console.log(line('last good', lastGood))
+  const snapshots = await store.snapshots()
+  console.log(line('snapshots', snapshots.length ? `${snapshots.length} in ${store.backupDirectory}` : 'none yet'))
+  if (invalidPacks.length > 0) {
+    console.log('')
+    console.log('Invalid packs')
+    for (const message of invalidPacks) console.log(`  ${message}`)
+  }
+  const warnings = store.warnings()
+  if (warnings.length > 0) {
+    console.log('')
+    console.log('Warnings')
+    for (const warning of warnings) {
+      console.log(`  ${warning.code}: ${warning.message}`)
+      if (warning.path) console.log(`    ${warning.path}`)
+    }
+  }
 }
 
 async function main(): Promise<void> {
@@ -597,6 +690,7 @@ async function main(): Promise<void> {
     options: {
       limit: { type: 'string' },
       'no-llm': { type: 'boolean' },
+      'no-ai-clean': { type: 'boolean' },
       'no-zh': { type: 'boolean' },
       'zh-context': { type: 'boolean' },
       style: { type: 'string' },
@@ -607,6 +701,7 @@ async function main(): Promise<void> {
       audio: { type: 'boolean' },
       out: { type: 'string' },
       open: { type: 'boolean' },
+      lan: { type: 'boolean' },
       port: { type: 'string' },
       query: { type: 'string' },
       due: { type: 'boolean' },
@@ -641,6 +736,7 @@ async function main(): Promise<void> {
         title: values.title,
         clipboard: values.clipboard === true,
         build: values.build === true,
+        aiClean: values['no-ai-clean'] !== true,
       })
       break
     case 'build':
@@ -656,7 +752,7 @@ async function main(): Promise<void> {
       await commandItems(values.due === true, values.query)
       break
     case 'review':
-      await commandReview(Number(values.port ?? 4317) || 4317, values.open === true)
+      await commandReview(Number(values.port ?? 4317) || 4317, values.open === true, values.lan === true)
       break
     case 'export':
       await commandExport(positionals[1] ?? 'latest', values.out)
@@ -677,6 +773,12 @@ async function main(): Promise<void> {
       break
     case 'doctor':
       await commandDoctor()
+      break
+    case 'backup':
+      await commandBackup(positionals[1] ?? values.out)
+      break
+    case 'restore':
+      await commandRestore(positionals[1], values.force === true)
       break
     case 'help':
     default:

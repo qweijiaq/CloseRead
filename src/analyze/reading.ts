@@ -8,6 +8,8 @@ export function fallbackReading(resource: Resource, items: LearningItem[]): Read
     .map((segment, index) => ({
       index,
       original: segment.text,
+      ...(typeof segment.page === 'number' ? { page: segment.page } : {}),
+      ...(segment.timestamp ? { timestamp: segment.timestamp } : {}),
       itemIds: items
         .filter((item) =>
           item.contexts.some(

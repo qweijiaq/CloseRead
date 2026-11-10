@@ -15,7 +15,15 @@
     "demo": "tsx src/cli.ts demo",
     "review": "tsx src/cli.ts review",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/*.test.ts"
+    "lint": "tsc --noEmit && node --check src/review/lab.js && node --check src/review/reader.js && node --check src/review/sw.js",
+    "format:check": "node scripts/check-format.mjs",
+    "test:e2e": "tsx --test e2e/*.test.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "desktop": "electron desktop/main.cjs",
+    "desktop:pack": "electron-builder --dir",
+    "desktop:build": "electron-builder --mac --win",
+    "desktop:build:mac": "bash scripts/build-mac-dmg.sh",
+    "desktop:build:win": "electron-builder --win nsis"
   },
   "dependencies": {
     "@lingo-reader/mobi-parser": "^0.4.6",
@@ -26,14 +34,54 @@
     "msedge-tts": "2.1.1",
     "pdf-parse": "^2.4.5",
     "pdfjs-dist": "5.4.296",
+    "qrcode-generator": "2.0.4",
     "ts-fsrs": "^5.4.2",
+    "tsx": "^4.21.0",
     "turndown": "^7.2.4",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@types/turndown": "^5.0.5",
-    "tsx": "^4.21.0",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
     "typescript": "^5.7.0"
+  },
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "dev.closeread.app",
+    "productName": "CloseRead",
+    "directories": {
+      "output": "desktop-dist"
+    },
+    "asar": false,
+    "files": [
+      "desktop/**",
+      "src/**",
+      "samples/**",
+      "package.json",
+      "!**/*.map",
+      "!tests/**",
+      "!demo/**",
+      "!docs/**",
+      "!data/**",
+      "!packs/**"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.education"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
+  },
+  "author": "qweijiaq",
+  "optionalDependencies": {
+    "@esbuild/win32-arm64": "0.28.2",
+    "@esbuild/win32-x64": "0.28.2"
   }
 }
