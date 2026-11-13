@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <strong>简体中文</strong>
+  <a href="README.md">English</a> · <strong>简体中文</strong> · <a href="https://qweijiaq.github.io/CloseRead/">在线演示</a>
 </p>
 
 **CloseRead 把一个 PDF、EPUB、MOBI、DOCX、网页链接、文本文件或演讲转录，做成一份可以逐段精读的学习包：译文、笔记、词卡、句子卡，以及留在本地的复习库。**

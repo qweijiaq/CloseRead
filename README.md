@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a> · <a href="https://qweijiaq.github.io/CloseRead/">Live demo</a>
 </p>
 
 **CloseRead turns a PDF, EPUB, MOBI, DOCX, article URL, text file or talk transcript into a paragraph-by-paragraph intensive reading pack: translation, notes, word cards, sentence cards and a local review library.**
