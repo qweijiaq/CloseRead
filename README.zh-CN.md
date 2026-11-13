@@ -1,8 +1,17 @@
-# CloseRead · 细读
+<p align="center">
+  <img src="assets/banner.svg" alt="CloseRead — 任意文本的逐段精读" width="100%">
+</p>
 
-[![CI](https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml/badge.svg)](https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml)
+<h1 align="center">CloseRead · 细读</h1>
 
-[English](README.md) | 简体中文
+<p align="center">
+  <a href="https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-2ea44f"></a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <strong>简体中文</strong>
+</p>
 
 **CloseRead 把一个 PDF、EPUB、MOBI、DOCX、网页链接、文本文件或演讲转录，做成一份可以逐段精读的学习包：译文、笔记、词卡、句子卡，以及留在本地的复习库。**
 
@@ -94,7 +103,7 @@ pnpm dev restore <file> --force  # 先停掉服务
 
 ## 更安静的工作台
 
-现在全站使用同一套壳：桌面左侧栏、移动端底部导航，以及统一的视觉语言。今日、复习、词库、成长、实验室和阅读页不再各自为政；每个页面只保留一个主行动，次要操作收在下面。默认阅读页是 `/read/:id`：在这里选中一个词或一句话，可以直接加入词卡或句子卡；旧的 `/pack/:id` 保留为 **工具模式**，用于完整笔记、编辑和 AI 剧场。
+现在全站只有两个主入口：**精读** 和 **背单词**。桌面左侧栏和移动端底部导航都只保留这两个动作，练习、成长、复盘和写作输出收进“更多”；词网已从界面移除。精读首页只负责继续读、导入和文章列表；背单词首页先显示今天要复习的卡。默认阅读页是 `/read/:id`：选中一个词或一句话即可加入词卡或句子卡；旧的 `/pack/:id` 保留为 **工具模式**，从“更多阅读工具”进入。
 
 ![今日工作台](docs/review/ui-home.png)
 
@@ -122,7 +131,7 @@ CLI 可以用 `pnpm dev add --no-ai-clean` 保留原始提取文本。PDF/EPUB �
 
 ![词库](docs/review/vocab-library.png)
 
-### 练习：听、说、写
+### 更多：练习
 
 打开 `/lab`，或点侧栏的 **练习**。3 个任务都从你的**学习词库**取词，不再绑定某一篇文章；先选范围（全部 / 新词 / 到期 / 易忘 / 收藏），题目优先使用带真实例句的词。
 
@@ -180,6 +189,8 @@ CLI 可以用 `pnpm dev add --no-ai-clean` 保留原始提取文本。PDF/EPUB �
 ### 复习
 
 - 单词卡和句子卡都使用 FSRS 排期，目标记忆率可以在 85%–95% 之间调整。
+- 背单词采用翻卡流程：正面是单词、发音和原文语境，点击卡片或按空格翻面；背面显示释义、搭配、例句和来源，再用 Again / Hard / Good / Easy 评分（快捷键 1–4）。
+- 每日新词可选 5/10/15/20/30/50；开始复习时可以开启「AI 选相关词」，每天从到期和新词中选一组同主题词并缓存当天，无模型 Key 时按来源/语境分组兜底。
 - 首次作答正确率单独统计，重复复习不会把正确率刷高。
 - 队列上方显示未来 7 天到期负载；可以用按钮或 `U` / `Cmd/Ctrl+Z` 撤销上一次评分；连续遗忘 4 次以上的卡会标为“易忘”，提示暂停或改写。
 - 核心卡进入每日队列；Bonus 卡只在学习包中展示。
@@ -187,12 +198,12 @@ CLI 可以用 `pnpm dev add --no-ai-clean` 保留原始提取文本。PDF/EPUB �
 - 已有一份“我认识的词”列表时，可以直接粘贴或上传 CSV/TXT；匹配到的词会标记为已掌握，不新增卡片。
 - 支持 Anki CSV、Obsidian/打印用 Markdown，以及 HTML/EPUB/PDF/PNG 导出；MOBI 导出需要 Calibre。
 
-### 写作
+### 更多：写作
 
 - 读完文章后写三句英文，保存到本机输出记录。
 - 可以让编辑给一次反馈，也可以基于反馈继续“改写一版”；每一版单独保存、单独获取反馈，方便比较自己改了什么。
 
-### 额外
+### 更多：统计与实验
 
 - 24 个词的词汇诊断，用来建立初始水平和已知词表，避免第一篇文章从零开始猜。
 - 阅读成就和 12 周阅读日历（连续天数、复习、输出、夜猫子/早起鸟），全部从已有记录派生，不新增存储。

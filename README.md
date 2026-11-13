@@ -1,8 +1,17 @@
-# CloseRead
+<p align="center">
+  <img src="assets/banner.svg" alt="CloseRead — paragraph-level intensive reading of any text" width="100%">
+</p>
 
-[![CI](https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml/badge.svg)](https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml)
+<h1 align="center">CloseRead</h1>
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+<p align="center">
+  <a href="https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-2ea44f"></a>
+</p>
+
+<p align="center">
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
 **CloseRead turns a PDF, EPUB, MOBI, DOCX, article URL, text file or talk transcript into a paragraph-by-paragraph intensive reading pack: translation, notes, word cards, sentence cards and a local review library.**
 
@@ -94,7 +103,7 @@ The main server binds to `127.0.0.1`. To read or review on a phone or tablet on 
 
 ## A calmer workspace
 
-The app now uses one consistent shell: a left sidebar on desktop, bottom navigation on mobile, and a shared visual language across the daily dashboard, review, library, progress, the lab, and the reading view. The primary action on each screen is singular; secondary actions stay quiet. The default reading view is `/read/:id`: select a word or sentence there to add it directly, or open **工具模式** for the full annotation and AI workspace.
+The app now has two primary modes: **Reading** and **Vocabulary**. The desktop sidebar and mobile bottom bar expose only those two actions; practice, progress, weekly review and writing output move behind **More**, and the word web has been removed from the interface. The reading home only continues reading, imports material and lists articles; the vocabulary home leads with today's review. The default reading view is `/read/:id`: select a word or sentence to add it directly; the older `/pack/:id` remains as **tool mode** inside “more reading tools”.
 
 ![CloseRead dashboard](docs/review/ui-home.png)
 
@@ -122,7 +131,7 @@ Words without a real example are marked **无例句** and are skipped by 练习.
 
 ![Vocabulary library](docs/review/vocab-library.png)
 
-### Practice: listen, speak, write
+### More: practice
 
 Open `/lab` (or **练习** in the sidebar). Three word-based missions draw from your **learned vocabulary**, not from a selected article. Pick a scope (all / new / due / leech / favorites); the tasks use target words with real example sentences.
 
@@ -180,6 +189,8 @@ Each pack is a folder you can keep, inspect or move:
 ### Review
 
 - FSRS scheduling for word and sentence cards, with an adjustable target retention (85–95%).
+- Vocabulary review uses a flashcard: the front shows the word, pronunciation and source sentence; tap the card or press Space to flip. The back shows meanings, collocations, examples and the source, followed by Again / Hard / Good / Easy (keys 1–4).
+- Choose 5/10/15/20/30/50 new words per day; enable “AI 选相关词” when starting a session to pick a thematically related set from due/new words and cache it for the day, with a source/context fallback when no model key is configured.
 - First-attempt accuracy is shown separately so repeated reviews do not inflate it.
 - A 7-day due forecast sits above the queue; the last rating can be undone with the button or `U` / `Cmd/Ctrl+Z`; cards with 4+ lapses are flagged as leeches with a pause/rewrite hint.
 - Core/bonus split: core cards enter the queue; bonus cards stay in the pack.
@@ -187,12 +198,12 @@ Each pack is a folder you can keep, inspect or move:
 - Paste or upload a CSV/TXT list of words you already know; matching cards are marked known, and no new cards are created.
 - Anki CSV, Markdown for Obsidian, and HTML/EPUB/PDF/PNG export. MOBI export needs Calibre.
 
-### Write
+### More: writing
 
 - Write three English sentences after reading; drafts are kept in the local output history.
 - Ask the editor for feedback, then revise and save another version. Each revision is stored separately and can get its own editor reply, so you can see what changed.
 
-### Extras
+### More: stats and experiments
 
 - A 24-word vocabulary check seeds your level and known words, so the first build is not a cold start.
 - Achievements and a 12-week reading calendar (streaks, reviews, outputs, night-owl/early-bird) derived from existing records; no extra data is stored.
