@@ -4946,14 +4946,15 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
   // The analysis pipeline pays a one-time initialisation cost (~10s in the
   // container). Pay it during startup instead of making the first visitor wait.
   if (process.env.NODE_ENV === 'production' && process.env.LEARN_NO_WARMUP !== '1') {
-    void compileToPack({
-      kind: 'text',
-      text: 'CloseRead warms its compiler once at startup. This article is discarded.',
-      title: 'Warm up',
-    })
+    const warmupText = [
+      'Attention has quietly become the scarcest resource of the modern economy. It cannot be stored, borrowed, or bought in bulk, and every platform that captures it is really selling access to the people behind it.',
+      'The cost shows up in small places: a notification interrupts a sentence, a tab stays open for a week, and the work that needed an hour of silence never quite happens.',
+      'Deliberate friction helps. Closing the laptop, writing the first sentence by hand, or leaving the phone in another room turns an impulse into a decision.',
+    ].join('\n\n')
+    void compileToPack({ kind: 'text', text: warmupText, title: 'Warm up' })
       .then((result) => console.log(`Compiler warm-up ready (${result.pack.items.length} items).`))
-      .catch(() => {
-        // A failed warm-up is not fatal; the first real compile retries it.
+      .catch((error: unknown) => {
+        console.warn(`Compiler warm-up skipped: ${error instanceof Error ? error.message : String(error)}`)
       })
   }
 
