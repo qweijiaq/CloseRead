@@ -48,7 +48,7 @@ describe('review server', { concurrency: 1 }, () => {
   let server: Awaited<ReturnType<typeof startReviewServer>>
 
   before(async () => {
-    const store = await Store.open(storePath)
+    const store = await Store.open(storePath())
     await store.upsertItems([makeItem()])
     await store.addPack({
       id: 'pack-filter',

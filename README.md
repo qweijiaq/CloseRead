@@ -209,6 +209,18 @@ The main server stays on `127.0.0.1`. To read on a phone or tablet on the same W
   <img src="assets/screenshots/mobile.png" width="30%" alt="CloseRead on a phone">
 </p>
 
+## Public deployment (no sign-up)
+
+Setting `LEARN_PUBLIC_HOST` turns on public mode. There is no account system: every browser gets an anonymous cookie, reads the shared demo, and gets its own workspace on the first import or key save.
+
+- Each visitor has a private `data/users/<id>/data` and `data/users/<id>/packs`; nobody can read another visitor's articles, progress or keys.
+- Provider keys are encrypted at rest with AES-256-GCM derived from `LEARN_SECRET` and never returned by the API.
+- The sidebar shows how many people have used the site and how many are online, served by `GET /api/public/stats`; bots are excluded.
+- A workspace is capped at 250 MB, and one IP can create at most 5 workspaces per day.
+- `?owner=<LEARN_OWNER_KEY>` pins your browser to a stable workspace.
+
+See [DEPLOY.md](DEPLOY.md) for the full walkthrough.
+
 ## CLI
 
 | Command | Purpose |
@@ -222,6 +234,7 @@ The main server stays on `127.0.0.1`. To read on a phone or tablet on the same W
 | `pnpm dev audio <id\|latest>` | Generate audio with macOS `say` |
 | `pnpm dev resplit <id> <file>` | Re-parse a resource into articles |
 | `pnpm dev backup` / `restore` | Create or restore a full library archive |
+| `pnpm dev guests` | List visitor workspaces; `--days 90 --force` prunes idle ones |
 | `pnpm dev demo` | Run the full pipeline on the bundled sample |
 
 Run `pnpm dev --help` for build options such as `--no-llm`, `--limit`, `--style`, `--audio` and `--no-source`.

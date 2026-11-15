@@ -35,7 +35,7 @@ describe('daily budget', () => {
   after(async () => fs.rm(temp, { recursive: true, force: true }))
 
   it('keeps staged wordbook words out of due and releases them on demand', async () => {
-    const store = await Store.open(storePath)
+    const store = await Store.open(storePath())
     await store.upsertItems([word('staged-one')])
     assert.equal(store.stats().backlog, 1)
     assert.equal(store.stats().newItems, 0)

@@ -1326,6 +1326,18 @@ ${pwaHead()}
     color: var(--muted); font-size: 10.5px; text-decoration: none;
   }
   .side-github:hover { color: var(--ink); }
+  .community {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 6px;
+    margin: 0 8px 8px; color: var(--muted);
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em;
+  }
+  .community[hidden] { display: none; }
+  .community b { color: var(--ink); font-weight: 600; }
+  .community span + span::before { content: "· "; color: var(--line-strong); }
+  .community-inline { display: none; }
+  @media (max-width: 760px) {
+    .community-inline { display: flex; margin: 2px 2px 14px; }
+  }
   .settings-about-copy { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.7; max-width: 64ch; }
   .settings-about-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
   .settings-about-meta { margin-top: 12px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
@@ -1373,6 +1385,7 @@ ${pwaHead()}
     </details>
     <div class="sidebar-spacer"></div>
     <div class="side-stats" hidden><div class="stats" id="stats"></div></div>
+    <div class="community" id="community" hidden aria-live="polite"></div>
     <a class="side-github" href="${GITHUB_REPO}" target="_blank" rel="noopener noreferrer" aria-label="在 GitHub 打开 CloseRead 仓库（新窗口）">
       <span>GitHub</span><span aria-hidden="true">↗</span>
     </a>
@@ -1402,6 +1415,7 @@ ${pwaHead()}
   <section class="view active" id="view-home">
     <div class="home-hero" id="home-hero"></div>
     <div class="reading-stats" id="reading-stats"></div>
+    <div class="community community-inline" id="community-inline" hidden aria-live="polite"></div>
     <div class="read-home-links">
       <button class="btn" data-go-tab="packs" type="button">全部文章</button>
       <button class="btn" data-go-tab="import" type="button">导入新材料</button>
@@ -1669,6 +1683,8 @@ ${pwaHead()}
   var TTS_PRESETS = ${JSON.stringify(TTS_PROVIDERS.map((provider) => ({ id: provider.id, label: provider.label, baseUrl: provider.baseUrl, model: provider.model, voice: provider.voice, voices: provider.voices, instructions: provider.instructions, hint: provider.hint })))};
   var els = {
     stats: document.getElementById('stats'),
+    community: document.getElementById('community'),
+    communityInline: document.getElementById('community-inline'),
     lanToggle: document.getElementById('lan-toggle'),
     lanPanel: document.getElementById('lan-panel'),
     lanBody: document.getElementById('lan-body'),
@@ -1876,6 +1892,23 @@ ${pwaHead()}
         return data;
       });
     });
+  }
+
+  function loadCommunityStats() {
+    var hosts = [els.community, els.communityInline].filter(function (node) { return Boolean(node); });
+    if (!hosts.length) return;
+    api('/api/public/stats').then(function (data) {
+      var visible = Boolean(data) && data.mode === 'public';
+      var total = visible ? Number(data.totalUsers || 0) : 0;
+      var online = visible ? Number(data.online || 0) : 0;
+      hosts.forEach(function (host) {
+        host.hidden = !visible;
+        if (!visible) { host.innerHTML = ''; return; }
+        host.innerHTML =
+          '<span><b>' + total.toLocaleString('en-US') + '</b> 人用过</span>' +
+          '<span><b>' + online.toLocaleString('en-US') + '</b> 人在线</span>';
+      });
+    }).catch(function () {});
   }
 
   function renderStoreWarnings(warnings) {
@@ -5036,6 +5069,8 @@ ${pwaHead()}
     else if (reviewThemeMedia.addListener) reviewThemeMedia.addListener(onReviewThemeChange);
   }
   loadLanStatus();
+  loadCommunityStats();
+  window.setInterval(loadCommunityStats, 60000);
   if (els.selectionSize) {
     try {
       var savedSize = localStorage.getItem('learn-selection-size');

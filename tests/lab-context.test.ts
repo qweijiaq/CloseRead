@@ -36,7 +36,7 @@ describe('vocabulary-based lab context', () => {
   after(async () => fs.rm(temp, { recursive: true, force: true }))
 
   it('builds scopes and prompts from learned words instead of packs', async () => {
-    const store = await Store.open(storePath)
+    const store = await Store.open(storePath())
     await store.upsertItems([
       word('lab-1', 'attention', 'Attention is scarce on social platforms.', '注意力'),
       word('lab-2', 'resilience', 'Resilience helps teams recover from setbacks.', '韧性'),

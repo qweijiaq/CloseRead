@@ -126,7 +126,7 @@ describe('browser reading flow', () => {
       includeSource: true,
       audio: false,
     })
-    const store = await Store.open(storePath)
+    const store = await Store.open(storePath())
     await store.addResource(resource)
     await store.upsertItems(result.pack.items)
     await store.addPack(result.record)

@@ -3,7 +3,9 @@ import path from 'node:path'
 
 import * as cheerio from 'cheerio'
 import TurndownService from 'turndown'
+import { publicModeEnabled } from '../config.js'
 import { looksLikeFeed } from './feed.js'
+import { fetchPublicUrl } from './net-guard.js'
 
 const turndown = new TurndownService({
   headingStyle: 'atx',
@@ -216,16 +218,18 @@ function fetchFailure(url: string, status: number, statusText: string): Error {
 /** Fetch a URL once and classify it as HTML, plain text, or PDF. */
 export async function fetchUrl(url: string): Promise<FetchedUrl> {
   let response: Response
+  const init: RequestInit = {
+    headers: {
+      'user-agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36',
+      accept: 'text/html,application/xhtml+xml,text/plain,application/pdf;q=0.9,*/*;q=0.1',
+    },
+    signal: AbortSignal.timeout(20_000),
+  }
   try {
-    response = await fetch(url, {
-      headers: {
-        'user-agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36',
-        accept: 'text/html,application/xhtml+xml,text/plain,application/pdf;q=0.9,*/*;q=0.1',
-      },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(20_000),
-    })
+    response = publicModeEnabled()
+      ? await fetchPublicUrl(url, init)
+      : await fetch(url, { ...init, redirect: 'follow' })
   } catch (error) {
     const name = error instanceof Error ? error.name : ''
     if (name === 'TimeoutError' || name === 'AbortError') {

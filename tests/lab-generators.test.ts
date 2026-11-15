@@ -265,7 +265,7 @@ describe('lab AI generators', () => {
       notes: [],
       selection: { mode: 'auto', recommended: 0, core: 0, bonus: 0, wordCount: 9, cefr: 'B2', reason: 'test' },
     }, { outDir: path.join(temp, 'packs', resource.id), audio: false })
-    const store = await Store.open(storePath)
+    const store = await Store.open(storePath())
     await store.addResource(resource)
     await store.addPack(result.record)
     const now = new Date().toISOString()

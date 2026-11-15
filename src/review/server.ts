@@ -35,7 +35,7 @@ import { petState } from '../lab/pet.js'
 import { enrollWordbook, getWordbook, listWordbooks, wordbookView } from '../wordbooks/index.js'
 import { generateAdventureFeedback, generateArgumentMap, generateDictationHint, generateDubbing, generateDungeonFlavor, generateLifeExamples, generateNewsShort, generatePetLine, generatePodcast, generateQuoteInsight, generateRegisterRemix, generateSubtitleHunter } from '../lab/generators.js'
 import { renderLabApp } from './lab.js'
-import { config, ensureDirs, hasLlm, llmProviderOptions, llmStatus, projectRoot, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
+import { config, currentWorkspace, ensureDirs, hasLlm, llmProviderOptions, llmStatus, projectRoot, publicModeEnabled, rootWorkspaceRef, runInWorkspace, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
 import { listProviderModels } from '../llm/models.js'
 import { buildWordGraph } from '../graph/build.js'
 import {
@@ -94,6 +94,7 @@ import { achievementPayload } from './achievements.js'
 import { DIAGNOSIS_WORDS, computeDiagnosisLevel, sampleDiagnosisWords } from './diagnosis.js'
 import { weeklyPayload } from './weekly.js'
 import { renderReviewApp } from './web.js'
+import { VisitorRegistry, assertWorkspaceCapacity } from './visitors.js'
 
 function dueLabel(item: StoredItem, now: Date = new Date()): string {
   if (item.status === 'known') return '已掌握'
@@ -1155,6 +1156,7 @@ async function handle(
   store: Store,
   lan: LanController,
   requireToken: boolean,
+  visitors: VisitorRegistry,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://localhost')
   const method = request.method ?? 'GET'
@@ -1166,6 +1168,20 @@ async function handle(
   const trustedHost = Boolean(publicHost) && (host === publicHost || host === `${publicHost}:443`)
   if (!requireToken && !isLocalHostName(host) && !trustedHost) {
     sendJson(response, 403, { error: 'Unexpected Host header.' })
+    return
+  }
+
+  // The owner link carries a secret; drop it from the address bar after the
+  // cookie has been issued.
+  const ownerKey = process.env.LEARN_OWNER_KEY?.trim() ?? ''
+  if (method === 'GET' && ownerKey.length >= 16 && url.searchParams.get('owner') === ownerKey) {
+    const next = new URL(url)
+    next.searchParams.delete('owner')
+    response.writeHead(302, {
+      location: `${next.pathname}${next.search}`,
+      'cache-control': 'no-store',
+    })
+    response.end()
     return
   }
 
@@ -1629,6 +1645,11 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
 </main></body></html>`
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
     response.end(html)
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/public/stats') {
+    sendJson(response, 200, { ...visitors.stats(), mode: publicModeEnabled() ? 'public' : 'local' })
     return
   }
 
@@ -3024,9 +3045,13 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
 
   if (method === 'GET' && url.pathname === '/api/settings') {
     const preferences = store.preferences()
+    const workspace = currentWorkspace()
+    const stats = visitors.stats()
     sendJson(response, 200, {
       dataDir: config.dataDir,
       packsDir: config.packsDir,
+      workspace: { id: workspace.id, readOnly: workspace.readOnly, mode: publicModeEnabled() ? 'public' : 'local' },
+      community: stats,
       counts: { ...store.stats(), packs: store.packs().length },
       preferences: {
         desiredRetention: preferences.desiredRetention,
@@ -3076,7 +3101,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       await fs.writeFile(temp, body)
       const result = await restoreLibraryBackup(
         temp,
-        storePath,
+        storePath(),
         path.join(config.dataDir, 'resources'),
         config.packsDir,
       )
@@ -3161,6 +3186,19 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       provider: llmStatus().label,
     })
     return
+  }
+
+  if (
+    method === 'POST' &&
+    publicModeEnabled() &&
+    (url.pathname.startsWith('/api/import/') || url.pathname === '/api/build')
+  ) {
+    try {
+      await assertWorkspaceCapacity(currentWorkspace())
+    } catch (error) {
+      sendJson(response, 413, { error: error instanceof Error ? error.message : String(error) })
+      return
+    }
   }
 
   if (method === 'POST' && url.pathname === '/api/import/text') {
@@ -4611,11 +4649,12 @@ function closeHttpServer(instance: http.Server): Promise<void> {
 
 export async function startReviewServer(options: { port?: number } = {}): Promise<ReviewServer> {
   ensureDirs()
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   const diagnosis = store.preferences().diagnosis
   if (diagnosis?.level) config.level = diagnosis.level
   const port = options.port ?? 4317
-  const accessFile = path.join(path.dirname(storePath), 'access.json')
+  const visitors = new VisitorRegistry(store)
+  const accessFile = path.join(path.dirname(storePath()), 'access.json')
   const lanState: LanState = { enabled: false, token: '', port: null }
   let lanServer: http.Server | undefined
 
@@ -4640,7 +4679,27 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
 
   function createHandler(requireToken: boolean) {
     return (request: http.IncomingMessage, response: http.ServerResponse): void => {
-      handle(request, response, store, lan, requireToken).catch((error: unknown) => {
+      const run = async (): Promise<void> => {
+        // Container health checks must not mint a visitor identity each run.
+        if (request.method === 'GET' && (request.url ?? '').startsWith('/api/health')) {
+          response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+          response.end('{"ok":true}')
+          return
+        }
+        // The LAN listener stays single-user; the public listener resolves a
+        // visitor and switches the active workspace for the whole request chain.
+        const context = requireToken
+          ? { workspace: rootWorkspaceRef(), store, visitorId: 'local', personal: false }
+          : await visitors.resolve(request, response)
+        if (context.claimError) {
+          sendJson(response, 429, { error: context.claimError })
+          return
+        }
+        await runInWorkspace(context.workspace, () =>
+          handle(request, response, context.store, lan, requireToken, visitors),
+        )
+      }
+      run().catch((error: unknown) => {
         if (!response.headersSent) {
           sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) })
         } else {
@@ -4710,6 +4769,7 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
     lanStatus: () => status(true),
     close: async () => {
       await disableLan().catch(() => {})
+      await visitors.flush().catch(() => {})
       await closeHttpServer(server)
     },
   }

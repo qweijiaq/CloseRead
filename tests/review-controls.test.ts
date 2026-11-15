@@ -37,7 +37,7 @@ describe('review controls', () => {
   let originalDue = ''
 
   before(async () => {
-    const store = await Store.open(storePath)
+    const store = await Store.open(storePath())
     await store.upsertItems([makeItem()])
     originalDue = store.getItem('control-item')!.review.due
     server = await startReviewServer({ port: 0 })

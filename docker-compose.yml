@@ -10,6 +10,11 @@ services:
       LEARN_PUBLIC_HOST: ${LEARN_PUBLIC_HOST:?Set LEARN_PUBLIC_HOST in .env}
       LEARN_DATA_DIR: /app/data
       LEARN_PACKS_DIR: /app/packs
+      # Encrypts visitor provider keys at rest. Changing it makes stored keys
+      # unreadable, so keep the value backed up.
+      LEARN_SECRET: ${LEARN_SECRET:?Set LEARN_SECRET in .env}
+      # Optional: ?owner=<key> pins the site owner's workspace across browsers.
+      LEARN_OWNER_KEY: ${LEARN_OWNER_KEY:-}
     volumes:
       - ./data:/app/data
       - ./packs:/app/packs
@@ -21,7 +26,7 @@ services:
           "CMD",
           "node",
           "-e",
-          "fetch('http://127.0.0.1:4317/api/summary').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+          "fetch('http://127.0.0.1:4317/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
         ]
       interval: 30s
       timeout: 5s

@@ -18,6 +18,7 @@ import { writePack } from './pack/build.js'
 import { loadPack } from './pack/mutate.js'
 import { renderHtml } from './pack/html.js'
 import { startReviewServer } from './review/server.js'
+import { VisitorRegistry, pruneWorkspaces } from './review/visitors.js'
 import { restoreLibraryBackup, writeLibraryBackup } from './store/backup.js'
 import { Store } from './store/store.js'
 import { analyzeStyle } from './style/analyze.js'
@@ -68,6 +69,7 @@ Usage:
   pnpm dev doctor                     Check the environment and library
   pnpm dev backup [file]              Back up the library to one JSON file
   pnpm dev restore <file> --force     Restore the library from a backup
+  pnpm dev guests [--days N] [--force]  List visitor workspaces; prune idle ones
 
 Add options:
   --title <name>   Override the resource title
@@ -202,7 +204,7 @@ async function commandAdd(input: string | undefined, options: AddCliOptions): Pr
     resource = await ingestText(text, { title: options.title, aiClean: options.aiClean })
   }
 
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   const hash = String(resource.metadata.hash ?? contentHash(resource.text))
   const existing = store
     .listResources()
@@ -237,7 +239,7 @@ async function commandResplit(idOrLatest: string | undefined, file: string | und
     return
   }
 
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   const resource = store.resolveResource(idOrLatest)
   if (!resource) {
     console.error(`Resource not found: ${idOrLatest}`)
@@ -287,7 +289,7 @@ function applyStoredLevel(store: Store): void {
 }
 
 async function commandBuild(idOrLatest: string, options: BuildCliOptions): Promise<void> {
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   applyStoredLevel(store)
   const resource = store.resolveResource(idOrLatest)
   if (!resource) {
@@ -365,7 +367,7 @@ async function commandBuild(idOrLatest: string, options: BuildCliOptions): Promi
 
 async function commandReview(port: number, open: boolean, lan: boolean): Promise<void> {
   const server = await startReviewServer({ port })
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   const stats = store.stats()
   if (lan) {
     try {
@@ -395,10 +397,13 @@ async function commandReview(port: number, open: boolean, lan: boolean): Promise
   process.on('SIGINT', () => {
     void server.close().then(() => process.exit(0))
   })
+  process.on('SIGTERM', () => {
+    void server.close().then(() => process.exit(0))
+  })
 }
 
 async function commandItems(dueOnly: boolean, query: string | undefined): Promise<void> {
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   const items = dueOnly ? store.dueItems(new Date(), 500) : store.listItems(query)
   if (items.length === 0) {
     console.log(dueOnly ? 'Nothing is due.' : 'No items yet. Run: pnpm dev demo')
@@ -414,7 +419,7 @@ async function commandItems(dueOnly: boolean, query: string | undefined): Promis
 }
 
 async function commandExport(idOrLatest: string, out: string | undefined): Promise<void> {
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   const resource = store.resolveResource(idOrLatest)
   if (!resource) {
     console.error(`Resource not found: ${idOrLatest}`)
@@ -437,7 +442,7 @@ async function commandExport(idOrLatest: string, out: string | undefined): Promi
 }
 
 async function commandAudio(idOrLatest: string, open: boolean): Promise<void> {
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   const resource = store.resolveResource(idOrLatest)
   if (!resource) {
     console.error(`Resource not found: ${idOrLatest}`)
@@ -477,7 +482,7 @@ async function commandDemo(open: boolean, styleName?: string): Promise<void> {
 
   console.log('1/4 Ingesting the bundled sample …')
   const resource = await ingestSource(sample)
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   applyStoredLevel(store)
   await store.addResource(resource)
   console.log(`    ${resource.title} · ${resource.wordCount} words · ${resource.segments.length} segments`)
@@ -589,8 +594,48 @@ async function commandStyle(
   }
 }
 
+async function commandGuests(options: { days?: number; force: boolean }): Promise<void> {
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+  }
+  function formatDate(value: number | null): string {
+    if (value === null) return 'unknown'
+    return new Date(value).toISOString().slice(0, 10)
+  }
+
+  if (options.days !== undefined) {
+    if (!Number.isFinite(options.days) || options.days <= 0) throw new Error('--days needs a positive number.')
+    const pruned = await pruneWorkspaces({ days: options.days, dryRun: !options.force })
+    if (pruned.length === 0) {
+      console.log(`No visitor workspace has been idle for ${options.days} days.`)
+    } else {
+      console.log(options.force ? 'Removed visitor workspaces:' : 'Idle visitor workspaces (dry run):')
+      for (const entry of pruned) {
+        console.log(line(entry.id, `${formatSize(entry.size)}  last seen ${formatDate(entry.lastSeen)}`))
+      }
+      if (!options.force) console.log('\nRe-run with --force to delete them.')
+    }
+  }
+
+  const workspaces = await VisitorRegistry.listWorkspaces()
+  if (workspaces.length === 0) {
+    console.log('No visitor workspaces yet.')
+    return
+  }
+  const total = workspaces.reduce((sum, entry) => sum + entry.size, 0)
+  console.log('')
+  console.log(`${workspaces.length} visitor workspaces, ${formatSize(total)} total`)
+  for (const entry of workspaces.slice(0, 30)) {
+    console.log(line(entry.id, `${formatSize(entry.size)}  ${entry.packs} packs`))
+  }
+  if (workspaces.length > 30) console.log(`  ... and ${workspaces.length - 30} more`)
+}
+
 async function commandBackup(target: string | undefined): Promise<void> {
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   for (const warning of store.warnings()) {
     console.warn(`Warning: ${warning.message}${warning.path ? ` (${warning.path})` : ''}`)
   }
@@ -615,7 +660,7 @@ async function commandRestore(file: string | undefined, force: boolean): Promise
     console.log('Restore replaces the current library. Re-run with --force to continue.')
     return
   }
-  const result = await restoreLibraryBackup(path.resolve(file), storePath, path.join(config.dataDir, 'resources'), config.packsDir)
+  const result = await restoreLibraryBackup(path.resolve(file), storePath(), path.join(config.dataDir, 'resources'), config.packsDir)
   console.log(`Restored ${result.items} items, ${result.packs} packs, ${result.resources} resources.`)
   if (result.packFiles) console.log(`Restored ${result.packFiles} pack files (including reading progress and audio).`)
   if (result.safetyCopy) console.log(`Previous store saved at ${result.safetyCopy}`)
@@ -623,7 +668,7 @@ async function commandRestore(file: string | undefined, force: boolean): Promise
 }
 
 async function commandDoctor(): Promise<void> {
-  const store = await Store.open(storePath)
+  const store = await Store.open(storePath())
   const stats = store.stats()
   const defaultStyle = await resolveDefaultStyle()
   let pdfOk = false
@@ -704,6 +749,7 @@ async function main(): Promise<void> {
       lan: { type: 'boolean' },
       port: { type: 'string' },
       query: { type: 'string' },
+      days: { type: 'string' },
       due: { type: 'boolean' },
       text: { type: 'string' },
       title: { type: 'string' },
@@ -746,7 +792,7 @@ async function main(): Promise<void> {
       await commandResplit(positionals[1], positionals[2])
       break
     case 'list':
-      printResources(await Store.open(storePath))
+      printResources(await Store.open(storePath()))
       break
     case 'items':
       await commandItems(values.due === true, values.query)
@@ -776,6 +822,12 @@ async function main(): Promise<void> {
       break
     case 'backup':
       await commandBackup(positionals[1] ?? values.out)
+      break
+    case 'guests':
+      await commandGuests({
+        days: values.days === undefined ? undefined : Number(values.days),
+        force: values.force === true,
+      })
       break
     case 'restore':
       await commandRestore(positionals[1], values.force === true)

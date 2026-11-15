@@ -209,6 +209,18 @@ CloseRead 没有账号、埋点、统计、广告或云同步。只有你主动�
   <img src="assets/screenshots/mobile.png" width="30%" alt="CloseRead 手机界面">
 </p>
 
+## 公开部署（无需注册）
+
+设置 `LEARN_PUBLIC_HOST` 后进入公开模式：不需要账号，每个浏览器拿到一个匿名 cookie，读演示内容；第一次导入或保存 Key 时自动创建独立空间。
+
+- 数据按访客分开：`data/users/<id>/data` 和 `data/users/<id>/packs`，访客之间读不到彼此的文章、进度和 Key。
+- 模型 Key 用 `LEARN_SECRET` 派生的 AES-256-GCM 加密落盘，接口不回显。
+- 左下角显示"多少人用过 / 多少人在线"，由 `GET /api/public/stats` 提供；爬虫不计入。
+- 单个空间上限 250 MB，同一 IP 每天最多创建 5 个空间。
+- `?owner=<LEARN_OWNER_KEY>` 可以把你的浏览器固定成一个稳定空间。
+
+完整步骤见 [DEPLOY.md](DEPLOY.md)。
+
 ## CLI
 
 | 命令 | 作用 |
@@ -222,6 +234,7 @@ CloseRead 没有账号、埋点、统计、广告或云同步。只有你主动�
 | `pnpm dev audio <id\|latest>` | 用 macOS `say` 生成音频 |
 | `pnpm dev resplit <id> <file>` | 重新把一份材料拆成文章 |
 | `pnpm dev backup` / `restore` | 创建或恢复完整词库归档 |
+| `pnpm dev guests` | 查看访客空间；`--days 90 --force` 清理闲置空间 |
 | `pnpm dev demo` | 用示例文章跑完整流程 |
 
 `pnpm dev --help` 里还有 `--no-llm`、`--limit`、`--style`、`--audio`、`--no-source` 等生成选项。
