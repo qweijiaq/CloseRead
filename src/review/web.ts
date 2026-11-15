@@ -300,8 +300,10 @@ ${pwaHead()}
   .achievement small { display: block; color: var(--muted); font-size: 10.5px; line-height: 1.5; }
   .achievement-track { height: 4px; margin: 6px 0 3px; border-radius: 999px; background: rgba(28, 26, 22, .1); overflow: hidden; }
   .achievement-track span { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
-  .activity-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 12px); gap: 3px; overflow-x: auto; padding-bottom: 4px; }
-  .activity-cell { width: 12px; height: 12px; border-radius: 2px; background: var(--paper-2); }
+  /* Auto tracks stretch by default, which spread 12 weeks into 12 lonely
+     columns across the page. Pack them like a real calendar. */
+  .activity-grid { display: grid; grid-auto-flow: column; grid-auto-columns: 14px; grid-template-rows: repeat(7, 14px); justify-content: start; gap: 3px; overflow-x: auto; padding-bottom: 4px; }
+  .activity-cell { width: 14px; height: 14px; border-radius: 2px; background: var(--paper-2); }
   .activity-cell.level-1 { background: rgba(63, 95, 127, .25); }
   .activity-cell.level-2 { background: rgba(63, 95, 127, .5); }
   .activity-cell.level-3 { background: var(--accent); }
