@@ -1347,6 +1347,31 @@ ${pwaHead()}
   .onboarding-list b { color: var(--ink); font-weight: 600; }
   .onboarding-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
   .onboarding-actions .link-button { font-size: 11.5px; }
+  .onboarding-warning {
+    margin: 0 0 14px; padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--rust) 32%, var(--line));
+    border-radius: 10px; background: color-mix(in srgb, var(--rust) 6%, var(--surface));
+    color: var(--ink); font-size: 12px; line-height: 1.7;
+  }
+  .onboarding-warning b { color: var(--rust); }
+  .backup-reminder {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+    margin: 0 0 18px; padding: 14px 16px;
+    border: 1px solid color-mix(in srgb, var(--rust) 32%, var(--line));
+    border-left: 3px solid var(--rust);
+    border-radius: 14px; background: color-mix(in srgb, var(--rust) 5%, var(--surface));
+  }
+  .backup-reminder[hidden] { display: none; }
+  .backup-reminder b { display: block; margin-bottom: 3px; font-size: 13px; }
+  .backup-reminder p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; max-width: 62ch; }
+  .backup-reminder-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .backup-reminder-actions .link-button { font-size: 11.5px; }
+  .settings-warning {
+    margin: 10px 0 0; padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--rust) 32%, var(--line));
+    border-radius: 10px; background: color-mix(in srgb, var(--rust) 6%, var(--surface));
+    color: var(--ink); font-size: 12px; line-height: 1.7;
+  }
   .import-note { margin: -4px 0 14px; }
   @media (max-width: 760px) {
     .community-inline { display: flex; margin: 2px 2px 14px; }
@@ -1436,9 +1461,20 @@ ${pwaHead()}
         <li><b>模型 Key 可选。</b>不填也能用，释义来自免费词典；填了自己的 Key，释义、练习和翻译会更准。Key 只存在这个浏览器。</li>
         <li><b>从一篇文章开始。</b>粘贴文本、贴一个链接，或上传 PDF / EPUB / DOCX。</li>
       </ol>
+      <p class="onboarding-warning"><b>务必定期导出。</b>清浏览器数据、换设备，或在 iPhone 上超过 7 天不打开，本地内容都可能被清掉。导出文件存在你自己的电脑或网盘里，随时能导回来。</p>
       <div class="onboarding-actions">
         <button class="btn btn-primary" id="onboarding-start" type="button">导入第一篇</button>
         <button class="link-button" id="onboarding-dismiss" type="button">知道了，别再显示</button>
+      </div>
+    </section>
+    <section class="backup-reminder" id="backup-reminder" aria-live="polite" hidden>
+      <div>
+        <b>你的文章只存在这个浏览器里</b>
+        <p>清浏览器数据、换手机，或在 iPhone 上超过 7 天不打开，都可能丢失。建议现在导出一份，以后随时能导回来。</p>
+      </div>
+      <div class="backup-reminder-actions">
+        <button class="btn btn-primary" id="backup-reminder-export" type="button">立即导出</button>
+        <button class="link-button" id="backup-reminder-snooze" type="button">7 天后再提醒</button>
       </div>
     </section>
     <div class="home-hero" id="home-hero"></div>
@@ -1995,6 +2031,51 @@ ${pwaHead()}
   }
 
   var ONBOARD_KEY = 'cr-onboarding-dismissed';
+
+  var EXPORT_STAMP_KEY = 'cr-last-export';
+  var EXPORT_SNOOZE_KEY = 'cr-backup-snooze';
+  var EXPORT_INTERVAL_MS = 14 * 24 * 60 * 60 * 1000;
+  var EXPORT_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
+
+  function markExported() {
+    try { localStorage.setItem(EXPORT_STAMP_KEY, String(Date.now())); } catch (error) {}
+  }
+
+  // Nudge people to keep an off-browser copy. This is the only guard against a
+  // cleared browser profile or iOS reclaiming an unused site's storage.
+  function maybeShowBackupReminder() {
+    var host = document.getElementById('backup-reminder');
+    if (!host || !state.publicMode) return;
+    var now = Date.now();
+    try {
+      var snooze = Number(localStorage.getItem(EXPORT_SNOOZE_KEY) || 0);
+      if (snooze && now < snooze) return;
+      var last = Number(localStorage.getItem(EXPORT_STAMP_KEY) || 0);
+      if (last && now - last < EXPORT_INTERVAL_MS) return;
+    } catch (error) {
+      return;
+    }
+    localDb().then(function (db) { return db.summary(); }).then(function (info) {
+      if (!info || info.packs < 1) return;
+      host.hidden = false;
+      var exportBtn = document.getElementById('backup-reminder-export');
+      if (exportBtn && exportBtn.getAttribute('data-bound') !== '1') {
+        exportBtn.setAttribute('data-bound', '1');
+        exportBtn.addEventListener('click', function () {
+          host.hidden = true;
+          exportWorkspaceLocal(exportBtn);
+        });
+      }
+      var snoozeBtn = document.getElementById('backup-reminder-snooze');
+      if (snoozeBtn && snoozeBtn.getAttribute('data-bound') !== '1') {
+        snoozeBtn.setAttribute('data-bound', '1');
+        snoozeBtn.addEventListener('click', function () {
+          try { localStorage.setItem(EXPORT_SNOOZE_KEY, String(Date.now() + EXPORT_SNOOZE_MS)); } catch (error) {}
+          host.hidden = true;
+        });
+      }
+    }).catch(function () {});
+  }
 
   function renderOnboarding() {
     var host = document.getElementById('onboarding');
@@ -2683,7 +2764,9 @@ ${pwaHead()}
         '<button class="btn" id="settings-restore-run" type="button">从文件导入</button>' +
         '<span id="settings-restore-status"></span></div>' +
         '<p class="small muted">导入会覆盖当前的文章、学习项和阅读进度，请先导出一份。模型 Key 不包含在文件里，需要在新设备上重新填写。</p>' +
-        '<p class="small muted">手机上建议先用「添加到主屏幕」再使用：长期不打开的站点，浏览器可能会清理它的本地数据。</p>';
+        (state.publicMode
+          ? '<p class="settings-warning"><b>数据只在这个浏览器里。</b>清除浏览数据、换设备，或在 iPhone 上超过 7 天不打开，内容都可能丢失。导出是唯一的备份方式，建议每个月导一次。</p>'
+          : '');
     }
     var usageHost = document.getElementById('settings-usage');
     if (usageHost) {
@@ -2804,6 +2887,7 @@ ${pwaHead()}
           link.download = 'closeread-' + new Date().toISOString().slice(0, 10) + '.json';
           link.click();
           setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+          markExported();
           toast('已导出 ' + Math.round(blob.size / 1024) + ' KB，在新设备上用「从文件导入」恢复');
         });
       })
@@ -5237,7 +5321,10 @@ ${pwaHead()}
     if (reviewThemeMedia.addEventListener) reviewThemeMedia.addEventListener('change', onReviewThemeChange);
     else if (reviewThemeMedia.addListener) reviewThemeMedia.addListener(onReviewThemeChange);
   }
-  api('/api/session').then(function (s) { state.publicMode = Boolean(s && s.public); }).catch(function () {});
+  api('/api/session').then(function (s) {
+    state.publicMode = Boolean(s && s.public);
+    maybeShowBackupReminder();
+  }).catch(function () {});
   var passportExport = document.getElementById('backup-download');
   if (passportExport) {
     passportExport.addEventListener('click', function () {
