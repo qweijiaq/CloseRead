@@ -95,7 +95,7 @@ export function pwaManifest(): Record<string, unknown> {
   return {
     name: 'CloseRead',
     short_name: 'CloseRead',
-    description: 'Local-first English intensive reading workspace.',
+    description: 'Local-first English intensive reading workspace. Your articles and progress stay in your browser.',
     start_url: '/?tab=home',
     scope: '/',
     display: 'standalone',

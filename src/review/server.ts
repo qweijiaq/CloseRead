@@ -1765,7 +1765,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
 <h1>把当前网页交给 CloseRead</h1>
 <p>把下面的按钮拖到浏览器书签栏。以后在任意文章页点一下，就会打开本地 CloseRead，并自动填入当前链接。</p>
 <a class="bookmark" href="${bookmarklet}">导入当前网页</a>
-<p>需要先启动 <code>pnpm dev review</code>。书签只调用本机 127.0.0.1，不会上传当前页面。</p>
+<p>书签只把当前页面的链接交给 CloseRead，不会上传页面内容。文章由 CloseRead 按链接重新抓取。</p>
 <code>${bookmarklet.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>
 </main></body></html>`
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })

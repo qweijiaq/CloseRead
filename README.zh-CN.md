@@ -29,7 +29,7 @@
 | 真实文本 | 聊天回答散在对话里；背单词 App 里通常没有这篇文章 | 一篇文章一个学习包，保留完整原文、段落顺序和页码/时间戳 |
 | 语境 | 词卡离开原句，只剩一个孤立的词 | 每张卡都跟着来源段落走，原句和上下文一起保留 |
 | 产出 | 译文、笔记、练习还要自己整理 | 译文、结构图、段落笔记、词卡、完形、阅读理解和讨论都在同一页 |
-| 归属 | 进度和词库留在别人的账号里 | 原文、学习包、阅读进度和备份都是你磁盘上的文件 |
+| 归属 | 进度和词库留在别人的账号里 | 原文、学习包、阅读进度和备份都在你自己的磁盘或浏览器里 |
 
 ## 学习包里有什么
 
@@ -68,7 +68,7 @@
 - 交互式 HTML、EPUB、PDF（舒适/紧凑）和 PNG（单张长图或分页 ZIP）。
 - Anki CSV、独立学习包 Markdown，以及包含批注、句子卡和词汇的精读笔记 Markdown。
 - 安装 Calibre 后可导出 MOBI；PDF/PNG 渲染使用本机 Chrome。
-- 完整备份归档：词库、导入材料、学习包目录、阅读进度、缓存音频和本机金句墙。
+- 设备迁移文件：学习项、导入材料、学习包、阅读进度、批注和设置，换手机或换电脑时导入即可。
 
 ![CloseRead 阅读页](assets/screenshots/reader.png)
 
@@ -123,7 +123,7 @@ pnpm desktop:build:win    # Windows NSIS，请在 Windows 上运行
 
 不配置模型 Key 时，CloseRead 用规则流程生成结构、笔记、词卡和练习；中文释义和短译文来自公开词典/机器翻译接口，质量会浅一些，也会有文本离开本机。
 
-配置 Key 后，可以使用 DeepSeek、OpenAI 兼容接口、Anthropic、Gemini、Qwen/百炼、GLM/智谱、xAI 或 Moonshot。在导入面板的 **模型设置** 里填写，或使用 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`DASHSCOPE_API_KEY`、`GLM_API_KEY` 等环境变量。保存在应用里的 Key 位于 `data/llm.json`。
+配置 Key 后，可以使用 DeepSeek、OpenAI 兼容接口、Anthropic、Gemini、Qwen/百炼、GLM/智谱、xAI 或 Moonshot。在导入面板的 **模型设置** 里填写，或使用 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`DASHSCOPE_API_KEY`、`GLM_API_KEY` 等环境变量。本地模式下 Key 保存在 `data/llm.json`；公开部署下只存在访客自己的浏览器里。
 
 语音是另一项可选配置，支持 macOS 系统语音、Microsoft Edge 在线语音、阿里云百炼 `qwen3-tts-flash`、GLM-TTS、Gemini TTS、MiniMax、ElevenLabs 和 OpenAI 兼容的 `/audio/speech` 接口。
 
@@ -133,10 +133,10 @@ pnpm desktop:build:win    # Windows NSIS，请在 Windows 上运行
 
 ```text
 data/
-  store.json              词库、学习包、卡片状态、输出和偏好
-  store.json.bak          上一份可用的词库
+  store.json              学习项、学习包、卡片状态、输出和偏好
+  store.json.bak          上一份可用的快照
   store.json.corrupt-*    无法解析的文件会移到隔离位置，不会被覆盖
-  backups/                每日词库快照，保留 7 份
+  backups/                每日快照，保留 7 份
   resources/              每份导入材料一个 JSON
   trash/                  删除的学习包和材料
   llm.json, tts.json      服务商设置和 API Key
@@ -148,11 +148,26 @@ packs/<id>/
 
 设置 `LEARN_DATA_DIR` 和 `LEARN_PACKS_DIR` 可以把这两个文件夹移到别处，例如从终端启动桌面版时。
 
-CloseRead 会原子写入，并保留上一份可用词库；但它是单用户应用，**同一个数据目录只运行一个服务**。两个服务同时写 `store.json` 会互相覆盖。
+CloseRead 会原子写入，并保留上一份可用快照；但本地模式是单用户应用，**同一个数据目录只运行一个服务**。两个服务同时写 `store.json` 会互相覆盖。
+
+### 公开部署时数据在哪里
+
+设置 `LEARN_PUBLIC_HOST` 后进入公开模式，存储位置完全不同：
+
+```text
+访客的浏览器（IndexedDB）
+  store.json、packs/<id>/*、阅读进度、批注、设置
+
+服务器
+  data/                 演示内容 + 访问统计（几十 KB）
+  /tmp/closeread-run/   临时运行目录，进程每次启动清空
+```
+
+服务器不保存访客的文章，重启后什么都不留；浏览器下次打开会把自己那份推回去。换设备用 **设置 → 设备迁移** 导出再导入。详见 [DEPLOY.md](DEPLOY.md)。
 
 ### 备份与恢复
 
-每日自动快照只覆盖 `store.json`。要一份包含原文、学习包、`reading.json`、缓存音频和金句的可迁移副本，用 **设置 → 下载完整备份**，或：
+每日自动快照只覆盖 `store.json`。要一份包含原文、学习包、`reading.json`、缓存音频和金句的可迁移副本，用 **设置 → 设备迁移**，或：
 
 ```bash
 pnpm dev backup                  # 写入 data/backups/library-<timestamp>.json
@@ -171,9 +186,9 @@ CloseRead 没有账号、埋点、统计、广告或云同步。只有你主动�
 - **在线语音**：把要朗读的文本发给你选择的语音服务；本机系统语音不会。
 - **手机访问**：在局域网内用普通 HTTP 提供应用，并用 HttpOnly Cookie 里的随机令牌保护。只在可信网络使用。
 
-`data/llm.json` 和 `data/tts.json` 里的 Key 是明文 JSON；在系统支持时会以仅本人可读的权限写入。备份和导出的学习包都是未加密的阅读材料副本。
+本地模式下 `data/llm.json` 和 `data/tts.json` 里的 Key 是明文 JSON；在系统支持时会以仅本人可读的权限写入。公开部署下 Key 只存在访客自己的浏览器里，并由 `LEARN_SECRET` 加密。备份和导出的学习包都是未加密的阅读材料副本。
 
-本地服务绑定 `127.0.0.1`，没有登录鉴权，不要暴露到公网。
+本地服务绑定 `127.0.0.1`，没有登录鉴权，不要直接暴露到公网；公开部署请按 [DEPLOY.md](DEPLOY.md) 配置反向代理和 `LEARN_PUBLIC_HOST`。
 
 ## 导出格式
 
@@ -200,6 +215,7 @@ CloseRead 没有账号、埋点、统计、广告或云同步。只有你主动�
 - 令牌会写入 HttpOnly Cookie，并从地址栏去掉。手机访问使用独立的随机局域网端口，可以随时关闭。
 - 手机可以阅读、批注、加词/加句、写输出；导入、删除、重新生成学习包和修改模型/语音设置仍在电脑上。
 - 可以把 CloseRead 添加到手机主屏幕，像独立应用一样打开。局域网连接是 HTTP，不是 HTTPS；手机打不开时先检查系统防火墙和路由器的 AP 隔离。
+- 公开部署的站点直接在手机上打开即可，不需要手机访问开关；内容保存在手机浏览器里，建议先「添加到主屏幕」，避免长期不访问被系统清理。
 
 <p align="center">
   <img src="assets/screenshots/reader-dark.png" width="82%" alt="CloseRead 夜间阅读">

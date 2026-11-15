@@ -29,7 +29,7 @@ It is a reading workspace, not a chat tutor, and not a flashcard app with articl
 | Real text | Chat answers disappear into a thread; vocabulary apps rarely contain the article | One pack per article, with the full source, paragraph order and page or timestamp references |
 | Context | Word cards lose the sentence they came from | Every card stays attached to its paragraph; the source sentence travels with it |
 | Output | You still have to organise translations, notes and exercises yourself | Translation, structure map, paragraph notes, cards, cloze, comprehension and discussion are one page |
-| Ownership | Progress and vocabulary live in someone else's account | Sources, packs, reading progress and backups are files on your disk |
+| Ownership | Progress and vocabulary live in someone else's account | Sources, packs, reading progress and backups stay on your own disk or in your own browser |
 
 ## What a pack contains
 
@@ -68,7 +68,7 @@ It is a reading workspace, not a chat tutor, and not a flashcard app with articl
 - Interactive HTML, EPUB, PDF (comfortable or compact) and PNG (single image or page-by-page ZIP).
 - Anki CSV, standalone pack Markdown, and Markdown notes containing annotations, sentence cards and vocabulary.
 - MOBI when Calibre is installed; PDF/PNG rendering uses local Chrome.
-- A complete backup archive with the library, imported sources, pack folders, reading progress, cached audio and the local quote wall when present.
+- A device-migration file with the library, imported sources, packs, reading progress, notes and settings; import it on another phone or computer.
 
 ![CloseRead reader](assets/screenshots/reader.png)
 
@@ -148,11 +148,26 @@ packs/<id>/
 
 Set `LEARN_DATA_DIR` and `LEARN_PACKS_DIR` to move both folders, for example when running the desktop shell from a terminal.
 
-CloseRead writes atomically and keeps the last good library, but it is a single-user app. **Run one server per data directory.** Two servers writing to the same `store.json` can overwrite each other.
+CloseRead writes atomically and keeps the last good library, but local mode is a single-user app. **Run one server per data directory.** Two servers writing to the same `store.json` can overwrite each other.
+
+### Where data lives when deployed publicly
+
+Setting `LEARN_PUBLIC_HOST` changes the storage model completely:
+
+```text
+the visitor's browser (IndexedDB)
+  store.json, packs/<id>/*, reading progress, notes, settings
+
+the server
+  data/                  demo content + visit counters (a few tens of KB)
+  /tmp/closeread-run/    scratch workspace, wiped on every process start
+```
+
+The server keeps no articles; after a restart nothing is left there and the browser pushes its copy back on the next visit. Use **Settings → device migration** to move a workspace to another device. See [DEPLOY.md](DEPLOY.md).
 
 ### Backup and restore
 
-The automatic daily snapshots cover `store.json` only. For a portable copy that includes sources, packs, `reading.json`, cached audio and quotes, use **Settings → Download full backup** or:
+The automatic daily snapshots cover `store.json` only. For a portable copy that includes sources, packs, `reading.json`, cached audio and quotes, use **Settings → device migration** or:
 
 ```bash
 pnpm dev backup                  # data/backups/library-<timestamp>.json
@@ -169,11 +184,11 @@ CloseRead has no accounts, telemetry, analytics, ads or cloud sync. It makes net
 - **Model notes and translations** send selected article text to the provider you configure.
 - **Without a model key**, word and short-text lookups use `api.dictionaryapi.dev`, `api.datamuse.com`, `dict.youdao.com` and `api.mymemory.translated.net`.
 - **Cloud TTS** sends the text to the voice provider you choose; local system voices do not.
-- **Phone access** serves the app over plain HTTP on your LAN, protected by a random token in an HttpOnly cookie. Use it only on a trusted network.
+- **Phone access** serves the app over plain HTTP on your LAN, protected by a random token in an HttpOnly cookie. Use it only on a trusted network. A public deployment is opened directly on the phone; no toggle is needed.
 
-Keys in `data/llm.json` and `data/tts.json` are stored as plain JSON with owner-only permissions where the OS supports it. Backups and exported packs are unencrypted copies of your reading material.
+In local mode, keys in `data/llm.json` and `data/tts.json` are stored as plain JSON with owner-only permissions where the OS supports it. In a public deployment they live only in the visitor's browser, encrypted with `LEARN_SECRET`. Backups and exported packs are unencrypted copies of your reading material.
 
-The local server binds to `127.0.0.1` and has no login. Do not expose it to the public internet.
+The local server binds to `127.0.0.1` and has no login. Do not expose it directly to the public internet; a public deployment goes through the reverse proxy described in [DEPLOY.md](DEPLOY.md).
 
 ## Export at a glance
 
@@ -200,6 +215,7 @@ The main server stays on `127.0.0.1`. To read on a phone or tablet on the same W
 - The token is stored in an HttpOnly cookie and removed from the address bar. Phone access uses a separate random LAN port and can be closed at any time.
 - Phones can read, annotate, collect words and sentences, write outputs. Importing, deleting, rebuilding packs and changing model/TTS settings stay on the computer.
 - Add CloseRead to the home screen for a standalone window. The local server is HTTP, not HTTPS; check the OS firewall and router AP isolation if the phone cannot connect.
+- On a public deployment just open the site on the phone; there is no toggle. The article stays in that phone's browser, so add it to the home screen to avoid the system clearing site data after long periods of disuse.
 
 <p align="center">
   <img src="assets/screenshots/reader-dark.png" width="82%" alt="CloseRead dark reading mode">

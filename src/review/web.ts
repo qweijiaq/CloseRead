@@ -1335,6 +1335,19 @@ ${pwaHead()}
   .community b { color: var(--ink); font-weight: 600; }
   .community span + span::before { content: "· "; color: var(--line-strong); }
   .community-inline { display: none; }
+  .onboarding {
+    margin: 0 0 18px; padding: 18px 20px;
+    border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    border-radius: 14px; background: var(--surface);
+  }
+  .onboarding[hidden] { display: none; }
+  .onboarding-kicker { display: block; margin-bottom: 4px; color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .16em; text-transform: uppercase; }
+  .onboarding h2 { margin: 0 0 10px; font-family: var(--display); font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+  .onboarding-list { margin: 0 0 14px; padding-left: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.8; }
+  .onboarding-list b { color: var(--ink); font-weight: 600; }
+  .onboarding-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+  .onboarding-actions .link-button { font-size: 11.5px; }
+  .import-note { margin: -4px 0 14px; }
   @media (max-width: 760px) {
     .community-inline { display: flex; margin: 2px 2px 14px; }
   }
@@ -1413,6 +1426,21 @@ ${pwaHead()}
       <div class="phone-mode-banner" id="phone-mode-banner" hidden>手机模式：可继续精读、看释义和记批注；导入、删除和设置请回到电脑。</div>
 
   <section class="view active" id="view-home">
+    <section class="onboarding" id="onboarding" aria-labelledby="onboarding-title" hidden>
+      <div class="onboarding-head">
+        <span class="onboarding-kicker">第一次来</span>
+        <h2 id="onboarding-title">三件事，三十秒看完</h2>
+      </div>
+      <ol class="onboarding-list">
+        <li><b>内容存在这个浏览器里。</b>换手机或换电脑打开是空的，要迁移请在「设置 → 设备迁移」导出再导入。</li>
+        <li><b>模型 Key 可选。</b>不填也能用，释义来自免费词典；填了自己的 Key，释义、练习和翻译会更准。Key 只存在这个浏览器。</li>
+        <li><b>从一篇文章开始。</b>粘贴文本、贴一个链接，或上传 PDF / EPUB / DOCX。</li>
+      </ol>
+      <div class="onboarding-actions">
+        <button class="btn btn-primary" id="onboarding-start" type="button">导入第一篇</button>
+        <button class="link-button" id="onboarding-dismiss" type="button">知道了，别再显示</button>
+      </div>
+    </section>
     <div class="home-hero" id="home-hero"></div>
     <div class="reading-stats" id="reading-stats"></div>
     <div class="community community-inline" id="community-inline" hidden aria-live="polite"></div>
@@ -1442,7 +1470,7 @@ ${pwaHead()}
   </section>
 
   <section class="view" id="view-passport">
-    <div class="passport-links"><button class="btn" data-go-tab="insights" type="button">查看本周复盘</button><button class="btn" id="backup-download" type="button">下载完整备份</button></div>
+    <div class="passport-links"><button class="btn" data-go-tab="insights" type="button">查看本周复盘</button><button class="btn" id="backup-download" type="button">导出全部内容</button></div>
     <div id="passport-head"></div>
     <div class="passport-block" id="passport-weekly"></div>
     <div class="passport-stamps" id="passport-stamps"></div>
@@ -1462,7 +1490,7 @@ ${pwaHead()}
       <div class="home-card settings-card" id="settings-usage">加载中…</div>
       <div class="home-card settings-card settings-about" id="settings-about">
         <h2>关于 CloseRead</h2>
-        <p class="settings-about-copy">开源英语精读工具。每个浏览器有自己独立的专属空间，内容互不可见；模型由你自己选择，也可以随时导出整个空间换设备。</p>
+        <p class="settings-about-copy" id="settings-about-copy">开源英语精读工具。内容存在你的浏览器里，服务器不保存你的文章；模型由你自己选择，也可以随时导出换设备。</p>
         <div class="settings-about-links">
           <a class="btn btn-primary" href="${GITHUB_REPO}" target="_blank" rel="noopener noreferrer">在 GitHub 点亮 Star</a>
           <a class="btn" href="${GITHUB_FORK}" target="_blank" rel="noopener noreferrer">Fork</a>
@@ -1524,6 +1552,7 @@ ${pwaHead()}
 
   <section class="view" id="view-import">
     <div class="import-mode" id="import-mode">检查分析模式…</div>
+    <p class="small muted import-note">导入的文字会由服务器解析并生成学习包，结果只保存在你的浏览器里，服务器不留存。</p>
     <div class="source-tabs" id="source-tabs" role="tablist" aria-label="导入来源">
       <button class="active" type="button" data-source="text" role="tab">粘贴文本</button>
       <button type="button" data-source="url" role="tab">网页链接</button>
@@ -1555,7 +1584,7 @@ ${pwaHead()}
       </div>
       <div class="llm-settings-actions">
         <button class="btn btn-primary" id="llm-save" type="button">保存模型设置</button>
-        <span class="muted" id="llm-settings-message">Key 只保存在本机 data/llm.json，不会上传。</span>
+        <span class="muted" id="llm-settings-message">Key 只保存在这个浏览器里，调用模型时随请求发送，不会写入服务器磁盘。</span>
       </div>
     </details>
     <label class="selection-size">
@@ -1580,7 +1609,7 @@ ${pwaHead()}
       <small>默认按文章长度建议 8–16 项（约 20–25 分钟），也可以按 5 个一档手动指定。</small>
     </label>
     <label class="article-toggle audio-toggle"><input type="checkbox" id="build-audio"> 生成音频（macOS）</label>
-    <label class="article-toggle audio-toggle"><input type="checkbox" id="only-new"> 只选生词（已在词库的词不进入本包）</label>
+    <label class="article-toggle audio-toggle"><input type="checkbox" id="only-new"> 只选生词（已收录的词不进入本包）</label>
     <div class="queue-banner" id="queue-banner" hidden>
       <span id="queue-banner-text"></span>
       <button class="btn" id="resume-queue" type="button">继续队列</button>
@@ -1965,6 +1994,30 @@ ${pwaHead()}
     }).catch(function () {});
   }
 
+  var ONBOARD_KEY = 'cr-onboarding-dismissed';
+
+  function renderOnboarding() {
+    var host = document.getElementById('onboarding');
+    if (!host) return;
+    var dismissed = false;
+    try { dismissed = localStorage.getItem(ONBOARD_KEY) === '1'; } catch (error) {}
+    if (dismissed) { host.hidden = true; return; }
+    host.hidden = false;
+    var start = document.getElementById('onboarding-start');
+    if (start && start.getAttribute('data-bound') !== '1') {
+      start.setAttribute('data-bound', '1');
+      start.addEventListener('click', function () { switchTab('import'); });
+    }
+    var dismiss = document.getElementById('onboarding-dismiss');
+    if (dismiss && dismiss.getAttribute('data-bound') !== '1') {
+      dismiss.setAttribute('data-bound', '1');
+      dismiss.addEventListener('click', function () {
+        try { localStorage.setItem(ONBOARD_KEY, '1'); } catch (error) {}
+        host.hidden = true;
+      });
+    }
+  }
+
   function renderStoreWarnings(warnings) {
     var box = document.getElementById('store-warning');
     if (!box) return;
@@ -1975,7 +2028,7 @@ ${pwaHead()}
       return;
     }
     box.hidden = false;
-    box.innerHTML = '<strong>词库提醒</strong>' + list.map(function (warning) {
+    box.innerHTML = '<strong>数据提醒</strong>' + list.map(function (warning) {
       return '<div>' + escapeHtml(warning.message || '') +
         (warning.path ? '<code>' + escapeHtml(warning.path) + '</code>' : '') + '</div>';
     }).join('');
@@ -2240,7 +2293,7 @@ ${pwaHead()}
           ' · ' + escapeHtml(String(diagnosis.completedAt).slice(0, 10))
         : '3 分钟 · 用来校准阅读难度') +
       '</span></div>' +
-      '<p class="insight-copy">先凭第一反应判断，暂不显示释义；点“核对释义”后再对照意思、修正判断。结果只保存在本机，用来校准文章难度和生词标注。</p>' +
+      '<p class="insight-copy">先凭第一反应判断，暂不显示释义；点“核对释义”后再对照意思、修正判断。结果只保存在你的浏览器里，用来校准文章难度和生词标注。</p>' +
       '<div class="diagnosis-words' + (revealed ? ' is-revealed' : '') + '" id="diagnosis-words">' +
       words.map(function (word) {
         var isKnown = Boolean(known[word.lemma]);
@@ -2615,6 +2668,12 @@ ${pwaHead()}
     var backupHost = document.getElementById('settings-backup');
     if (backupHost) {
       state.publicMode = Boolean(data.workspace && data.workspace.mode === 'public');
+      var aboutCopy = document.getElementById('settings-about-copy');
+      if (aboutCopy) {
+        aboutCopy.textContent = state.publicMode
+          ? '开源英语精读工具。你的文章、进度和批注存在这个浏览器里，服务器不保存；换设备用下面的「设备迁移」。'
+          : '开源英语精读工具。内容存在本机的 data/ 和 packs/ 目录里，模型由你自己选择。';
+      }
       backupHost.innerHTML = '<h2>设备迁移</h2>' +
         (state.publicMode
           ? '<p class="muted">你的文章、学习项、阅读进度和批注这个浏览器里各存一份。换手机或换电脑时，先在这里导出，再在新设备上导入。</p>'
@@ -2695,7 +2754,7 @@ ${pwaHead()}
       var file = input && input.files && input.files[0];
       if (!file) { if (status) status.textContent = '先选择一个迁移文件。'; return; }
       if (state.publicMode) { importWorkspaceLocal(file, status, restoreRun); return; }
-      if (!confirm('恢复会覆盖当前词库、学习包目录和阅读进度。确认继续？')) return;
+      if (!confirm('恢复会覆盖当前文章、学习项和阅读进度。确认继续？')) return;
       setBusy(restoreRun, true, '恢复中…');
       file.text().then(function (text) {
         return api('/api/restore', { method: 'POST', body: text });
@@ -5178,9 +5237,18 @@ ${pwaHead()}
     if (reviewThemeMedia.addEventListener) reviewThemeMedia.addEventListener('change', onReviewThemeChange);
     else if (reviewThemeMedia.addListener) reviewThemeMedia.addListener(onReviewThemeChange);
   }
+  api('/api/session').then(function (s) { state.publicMode = Boolean(s && s.public); }).catch(function () {});
+  var passportExport = document.getElementById('backup-download');
+  if (passportExport) {
+    passportExport.addEventListener('click', function () {
+      if (state.publicMode) exportWorkspaceLocal(passportExport);
+      else downloadBackup(passportExport);
+    });
+  }
   loadLanStatus();
   loadCommunityStats();
   window.setInterval(loadCommunityStats, 60000);
+  renderOnboarding();
 
   // Keep the durable copy in this browser in sync with the server's scratch
   // workspace. After a restart the scratch copy is gone and this pushes the
