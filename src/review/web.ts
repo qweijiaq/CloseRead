@@ -557,6 +557,13 @@ ${pwaHead()}
   .pack-group-head { padding: 6px 2px 2px; }
   .pack-group-head strong { font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
   .pack-group-head span { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; }
+  .pack-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: none; }
+  .pack-actions .btn { white-space: nowrap; }
+  @media (max-width: 760px) {
+    .pack-row { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 15px; }
+    .pack-actions { width: 100%; }
+    .pack-actions .btn { flex: 0 0 auto; }
+  }
   .pack-actions { display: flex; gap: 6px; align-items: center; }
   .pack-actions .btn { padding: 6px 10px; font-size: 12px; }
   .btn.danger { color: var(--rust); }
