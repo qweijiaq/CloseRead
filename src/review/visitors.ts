@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { randomBytes } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { createWorkspace, publicModeEnabled, rootDataDir, rootPacksDir, rootWorkspaceRef } from '../config.js'
@@ -10,7 +10,23 @@ import { Store } from '../store/store.js'
 import type { PackRecord } from '../types.js'
 
 const VISITOR_COOKIE = 'cr_visitor'
-const OWNER_VISITOR_ID = 'owner-main'
+
+/**
+ * The owner is whoever holds the owner cookie. It is derived from
+ * LEARN_OWNER_KEY so the value cannot be guessed or forged without the secret;
+ * a fixed string like "owner-main" would let anyone edit devtools and become
+ * the author.
+ */
+export function ownerVisitorId(): string {
+  const key = process.env.LEARN_OWNER_KEY?.trim() ?? ''
+  if (key.length < 16) return ''
+  return `owner-${createHmac('sha256', key).update('closeread-owner').digest('base64url').slice(0, 22)}`
+}
+
+export function isOwnerVisitor(id: string): boolean {
+  const owner = ownerVisitorId()
+  return Boolean(owner) && id === owner
+}
 const ONLINE_WINDOW_MS = 3 * 60 * 1000
 const FLUSH_INTERVAL_MS = 15 * 1000
 const COOKIE_MAX_AGE = 2 * 365 * 24 * 60 * 60
@@ -442,7 +458,7 @@ export class VisitorRegistry {
     if (ownerKey && ownerKey.length >= 16) {
       const requested = new URL(request.url ?? '/', 'http://localhost').searchParams.get('owner')
       if (requested === ownerKey) {
-        id = OWNER_VISITOR_ID
+        id = ownerVisitorId()
         created = true
       }
     }

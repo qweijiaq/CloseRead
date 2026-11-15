@@ -98,7 +98,7 @@ import { achievementPayload } from './achievements.js'
 import { DIAGNOSIS_WORDS, computeDiagnosisLevel, sampleDiagnosisWords } from './diagnosis.js'
 import { weeklyPayload } from './weekly.js'
 import { renderReviewApp } from './web.js'
-import { VisitorRegistry, assertWorkspaceCapacity } from './visitors.js'
+import { VisitorRegistry, assertWorkspaceCapacity, isOwnerVisitor } from './visitors.js'
 import { FeedbackBoard } from '../community/feedback.js'
 import type { FeedbackStatus } from '../community/feedback.js'
 import { rootDataDir } from '../config.js'
@@ -1860,7 +1860,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
 
   if (method === 'GET' && url.pathname === '/api/feedback') {
     const list = await feedbackBoard.list(visitorId)
-    sendJson(response, 200, { ...list, owner: visitorId === 'owner-main' })
+    sendJson(response, 200, { ...list, owner: isOwnerVisitor(visitorId) })
     return
   }
 
@@ -1891,7 +1891,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
 
   const deleteMatch = /^\/api\/feedback\/([^/]+)$/.exec(url.pathname)
   if (method === 'DELETE' && deleteMatch) {
-    if (visitorId !== 'owner-main') {
+    if (!isOwnerVisitor(visitorId)) {
       sendJson(response, 403, { error: '只有站点作者能删除意见。' })
       return
     }
@@ -1902,7 +1902,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
 
   const statusMatch = /^\/api\/feedback\/([^/]+)\/status$/.exec(url.pathname)
   if (method === 'POST' && statusMatch) {
-    if (visitorId !== 'owner-main') {
+    if (!isOwnerVisitor(visitorId)) {
       sendJson(response, 403, { error: '只有站点作者能改状态。' })
       return
     }
