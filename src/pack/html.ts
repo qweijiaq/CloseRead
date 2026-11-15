@@ -779,6 +779,7 @@ ${exportMode ? '' : themeBootScript()}
   .build-warning-head strong { color: var(--cinnabar); }
   .build-warning-head span { color: var(--ink-45); font-size: 11.5px; }
   .build-warning ul { margin: 0; padding-left: 18px; color: var(--ink-70); }
+  .build-warning a { color: var(--cinnabar); text-decoration: underline; text-underline-offset: 2px; }
   .build-warning li { margin: 2px 0; }
   .build-warning p { margin: 8px 0 0; color: var(--ink-45); font-size: 11.5px; }
   .selection-note strong { color: var(--ink); }
@@ -1580,7 +1581,7 @@ ${exportMode ? '' : themeBootScript()}
 
   .pack-more-open { display: none; }
   @media (max-width: 760px) {
-    body { padding-bottom: env(safe-area-inset-bottom); }
+    body { padding-bottom: calc(40px + env(safe-area-inset-bottom)); }
     .topbar {
       gap: 8px;
       min-height: 56px;
@@ -1589,12 +1590,21 @@ ${exportMode ? '' : themeBootScript()}
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
     }
-    .topbar-left { flex: 1 1 auto; gap: 8px; }
-    .topbar-left .brand { max-width: 34vw; font-size: 14px; }
+    .topbar-left { flex: 1 1 auto; min-width: 0; gap: 8px; overflow: hidden; }
+    .topbar-left .brand { max-width: none; min-width: 0; font-size: 14px; }
+    .topbar-right { flex: 0 0 auto; }
+    .export-wrap { flex: 0 0 auto; }
     #back-review { min-height: 38px; padding: 6px 9px; }
     .topbar-right { gap: 5px; }
     .topbar-right > .topbar-action { display: none; }
     .topbar-action { min-height: 38px; padding: 6px 10px; border-radius: 8px; touch-action: manipulation; }
+    @media (max-width: 400px) {
+      .topbar-left .brand { display: none; }
+      /* Back link keeps the context; the pack title is right below anyway. */
+      .topbar-left { flex: 0 0 auto; }
+      #back-review { padding: 6px 8px; }
+      .topbar-action { padding: 6px 8px; font-size: 11.5px; }
+    }
     .pack-more-open {
       display: inline-flex;
       align-items: center;

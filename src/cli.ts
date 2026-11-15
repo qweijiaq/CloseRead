@@ -15,12 +15,9 @@ import { readMobi } from './ingest/mobi.js'
 import { readPdf } from './ingest/pdf.js'
 import { previewText, resourceWarnings } from './ingest/summary.js'
 import { writePack } from './pack/build.js'
-import { loadPack, savePackFiles } from './pack/mutate.js'
+import { loadPack } from './pack/mutate.js'
 import { renderHtml } from './pack/html.js'
-import { answerReadingQuestion } from './analyze/note-answer.js'
-import { generateDerivationGraph } from './analyze/derivation.js'
-import { sentenceLookupKey, translateSentence } from './analyze/sentence-translation.js'
-import { sentences as splitSentences } from './analyze/tokenize.js'
+import { prefetchPack } from './pack/prefetch.js'
 import { startReviewServer } from './review/server.js'
 import { VisitorRegistry, pruneWorkspaces } from './review/visitors.js'
 import { restoreLibraryBackup, writeLibraryBackup } from './store/backup.js'
@@ -624,72 +621,17 @@ async function commandPrefetch(
     return
   }
   const contents = await loadPack(pack.dir)
-  const paragraphs = contents.reading ?? []
-  const pending = paragraphs.filter((entry) => entry.note?.question && !entry.note.answer)
-  console.log(`${pack.id}: ${pending.length} / ${paragraphs.length} 段待生成`)
-  let done = 0
-  for (const paragraph of pending) {
-    try {
-      const answer = await answerReadingQuestion(
-        paragraph.original,
-        paragraph.note!.question!,
-        contents.title,
-      )
-      paragraph.note!.answer = answer
-      done += 1
-      console.log(`  [${done}/${pending.length}] 第 ${paragraph.index + 1} 段 ok`)
-      // Save as we go so an interrupted run keeps its progress.
-      if (done % 3 === 0) await savePackFiles(contents, pack.dir)
-    } catch (error) {
-      console.warn(`  第 ${paragraph.index + 1} 段失败：${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-  if (options.expand) {
-    const pending = (contents.items ?? []).filter((item) => !item.derivation)
-    console.log(`单词展开：${pending.length} 个待生成`)
-    let ok = 0
-    for (const item of pending) {
-      try {
-        item.derivation = await generateDerivationGraph(item)
-        ok += 1
-        console.log(`  [${ok}/${pending.length}] ${item.lemma} ok`)
-        if (ok % 3 === 0) await savePackFiles(contents, pack.dir)
-      } catch (error) {
-        console.warn(`  ${item.lemma} 失败：${error instanceof Error ? error.message : String(error)}`)
-      }
-    }
-    done += ok
-  }
-
-  if (options.sentences) {
-    const store = (contents.sentenceTranslations ??= {})
-    const list: Array<{ sentence: string; context: string }> = []
-    for (const paragraph of contents.reading ?? []) {
-      for (const sentence of splitSentences(paragraph.original)) {
-        const key = sentenceLookupKey(sentence)
-        if (store[key]) continue
-        list.push({ sentence, context: paragraph.original })
-      }
-    }
-    console.log(`句子翻译：${list.length} 句待生成`)
-    let ok = 0
-    for (const entry of list) {
-      try {
-        store[sentenceLookupKey(entry.sentence)] = await translateSentence(entry.sentence, entry.context)
-        ok += 1
-        if (ok % 5 === 0) {
-          console.log(`  [${ok}/${list.length}] 已生成`)
-          await savePackFiles(contents, pack.dir)
-        }
-      } catch (error) {
-        console.warn(`  失败：${error instanceof Error ? error.message : String(error)}`)
-      }
-    }
-    done += ok
-  }
-
-  await savePackFiles(contents, pack.dir)
-  console.log(`完成：写入 ${done} 条预生成内容 → ${pack.dir}`)
+  const result = await prefetchPack(
+    contents,
+    pack.dir,
+    { answers: true, expand: options.expand, sentences: options.sentences },
+    (message) => console.log(`  ${message}`),
+  )
+  const total = result.answers + result.expand + result.sentences
+  console.log(
+    `完成：答案 ${result.answers} · 单词展开 ${result.expand} · 句子翻译 ${result.sentences}（共 ${total}）`,
+  )
+  console.log(`  ${pack.dir}`)
 }
 
 async function commandGuests(options: { days?: number; force: boolean }): Promise<void> {

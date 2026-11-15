@@ -54,6 +54,7 @@ import { readMobi } from '../ingest/mobi.js'
 import { readPdf } from '../ingest/pdf.js'
 import { previewText, resourceWarnings } from '../ingest/summary.js'
 import { writePack } from '../pack/build.js'
+import { prefetchPack } from '../pack/prefetch.js'
 import { renderHtml } from '../pack/html.js'
 import { selectRemovableItems } from '../pack/rebuild.js'
 import { addItemToPack, addSentenceToPack, generatePackItem, loadPack, removeItemFromPack, savePackFiles } from '../pack/mutate.js'
@@ -413,6 +414,7 @@ interface BuildJob {
   startedAt: string
   pack?: { id: string; title: string; itemCount: number; url: string; articleIndex?: number }
   removedItems?: number
+  prefetched?: number
   error?: string
 }
 
@@ -424,6 +426,8 @@ interface BuildRequestOptions {
   onlyNew?: boolean
   styleName?: string
   articleIndex?: number
+  /** Pre-generate answers/derivations/translations after the pack is built. */
+  prefetch?: { answers?: boolean; expand?: boolean; sentences?: boolean }
 }
 
 const buildJobs = new Map<string, BuildJob>()
@@ -704,6 +708,19 @@ function startBuild(store: Store, resource: Resource, options: Partial<BuildRequ
       }
       await store.addPack(record)
       await store.recordDailyArticle(record.id, record.title ?? result.pack.title)
+      const prefetch = options.prefetch
+      if (prefetch && (prefetch.answers || prefetch.expand || prefetch.sentences)) {
+        try {
+          const contents = await loadPack(result.dir)
+          const extra = await prefetchPack(contents, result.dir, prefetch, (message) => {
+            job.message = message
+          })
+          const total = extra.answers + extra.expand + extra.sentences
+          job.prefetched = total
+        } catch {
+          // A failed prefetch must not fail the pack that was already written.
+        }
+      }
       job.status = 'done'
       job.message = '学习包已生成'
       job.pack = {
@@ -3378,8 +3395,8 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         sendJson(response, 409, { error: '这个学习包已经在公共库里了。' })
         return
       }
-      if (shared.packs().length >= 200) {
-        sendJson(response, 429, { error: '公共库已满，暂时不能再公开新的学习包。' })
+      if (shared.packs().length >= 500) {
+        sendJson(response, 429, { error: '公共库已满（500 个），暂时不能再公开新的学习包。' })
         return
       }
       const name = `${path.basename(pack.dir)}`
@@ -3838,6 +3855,15 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       translate: body.translate !== false,
       audio: body.audio === true,
       onlyNew: body.onlyNew === true,
+      ...(body.prefetch && typeof body.prefetch === 'object'
+        ? {
+            prefetch: {
+              answers: (body.prefetch as Record<string, unknown>).answers === true,
+              expand: (body.prefetch as Record<string, unknown>).expand === true,
+              sentences: (body.prefetch as Record<string, unknown>).sentences === true,
+            },
+          }
+        : {}),
       ...(typeof body.style === 'string' && body.style.trim() ? { styleName: body.style.trim() } : {}),
       ...(requestedArticle !== undefined ? { articleIndex: requestedArticle } : {}),
     })

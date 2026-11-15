@@ -560,6 +560,14 @@ ${pwaHead()}
   .pack-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: none; }
   .pack-actions .btn { white-space: nowrap; }
   .pack-shared-tag { padding: 4px 9px; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 999px; color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
+  .library-note { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 1.7; max-width: 68ch; }
+  .prefetch-modal { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(12,16,13,.45); }
+  .prefetch-card { width: min(420px, 100%); padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.24); }
+  .prefetch-card h3 { margin: 0 0 8px; font-family: var(--display); font-size: 18px; font-weight: 700; }
+  .prefetch-card p { margin: 0 0 12px; }
+  .prefetch-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; cursor: pointer; }
+  .prefetch-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+  .prefetch-actions { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
   @media (max-width: 760px) {
     .pack-row { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 15px; }
     .pack-actions { width: 100%; }
@@ -1435,6 +1443,7 @@ ${pwaHead()}
     <nav class="side-nav" aria-label="学习">
       <button class="active" data-tab="read" type="button"><span>精读</span></button>
       <button data-tab="packs" type="button"><span>文章</span></button>
+      <button data-tab="shared" type="button"><span>公共库</span></button>
     </nav>
     <details class="side-more" data-more>
       <summary>更多</summary>
@@ -1608,6 +1617,11 @@ ${pwaHead()}
     </div>
   </section>
 
+  <section class="view" id="view-shared">
+    <p class="library-note">公共库由所有访客贡献。打开某个学习包时，服务器会把它复制进你的空间，之后的进度和批注只属于你。</p>
+    <div id="library-list"></div>
+  </section>
+
   <section class="view" id="view-import">
     <div class="import-mode" id="import-mode">检查分析模式…</div>
     <p class="small muted import-note">导入的文字会由服务器解析并生成学习包，结果只保存在你的浏览器里，服务器不留存。</p>
@@ -1718,6 +1732,7 @@ ${pwaHead()}
   <nav class="mobile-nav" aria-label="移动导航">
     <button class="active" data-tab="read" type="button">精读</button>
     <button data-tab="packs" type="button">文章</button>
+    <button data-tab="shared" type="button">公共库</button>
     <button data-mobile-more type="button">更多</button>
   </nav>
   <div class="mobile-more" id="mobile-more" hidden>
@@ -3417,18 +3432,39 @@ ${pwaHead()}
     if (wrap._sync) wrap._sync();
   }
 
+  function loadShared() {
+    var host = document.getElementById('library-list');
+    if (!host) return;
+    if (!host.innerHTML.trim()) host.innerHTML = '<div class="empty loading">正在加载公共库…</div>';
+    api('/api/shared').then(function (result) {
+      var packs = (result && result.packs) || [];
+      if (!packs.length) {
+        host.innerHTML = '<div class="empty"><strong>公共库还是空的</strong>' +
+          '读完之后可以在「文章」里点「公开」，把这个学习包分享给其他人。' +
+          '<button class="btn btn-primary" data-go-tab="packs" style="margin-top:14px">去我的文章</button></div>';
+        return;
+      }
+      host.innerHTML = packs.map(function (pack) {
+        return '<div class="pack-row">' +
+          '<div><a href="' + escapeHtml(pack.url) + '">' + escapeHtml(pack.title) + '</a>' +
+          '<div class="due">' + pack.itemCount + ' 项 · ' + escapeHtml((pack.createdAt || '').slice(0, 10)) + ' · 打开后复制到你的空间</div></div>' +
+          '<div class="pack-actions">' +
+            '<a class="btn btn-primary" href="' + escapeHtml(pack.url) + '">精读</a>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }).catch(function (error) {
+      host.innerHTML = '<div class="empty">加载失败：' + escapeHtml(error.message) + '</div>';
+    });
+  }
+
   function loadPacks() {
     if (els.packsList && !els.packsList.innerHTML.trim()) {
       els.packsList.innerHTML = '<div class="empty loading"><span class="spinner"></span>正在加载文章…</div>';
     }
-    Promise.all([
-      api('/api/packs'),
-      api('/api/shared').catch(function () { return { packs: [] }; })
-    ]).then(function (results) {
-      var result = results[0] || {};
-      var sharedPacks = (results[1] && results[1].packs) || [];
+    api('/api/packs').then(function (result) {
       var packs = result.packs || [];
-      if (!packs.length && !sharedPacks.length) {
+      if (!packs.length) {
         els.packsList.innerHTML = '<div class="empty"><strong>还没有学习包</strong>在「导入」里添加 PDF、粘贴文字或填写链接。' +
           '<button class="btn btn-primary" data-go-tab="import" style="margin-top:14px">去导入</button></div>';
         return;
@@ -3445,23 +3481,7 @@ ${pwaHead()}
         byIssue[key].packs.push(pack);
       });
 
-      var sharedHtml = sharedPacks.length
-        ? '<div class="pack-group pack-group-shared">' +
-            '<div class="pack-group-head"><strong>公共库</strong>' +
-            '<span>作者发布 · ' + sharedPacks.length + ' 个学习包</span></div>' +
-            sharedPacks.map(function (pack) {
-              return '<div class="pack-row">' +
-                '<div><a href="' + escapeHtml(pack.url) + '">' + escapeHtml(pack.title) + '</a>' +
-                '<div class="due">可直接读 · ' + pack.itemCount + ' 项 · 答案已预生成</div></div>' +
-                '<div class="pack-actions">' +
-                  '<a class="btn btn-primary" href="' + escapeHtml(pack.url) + '">精读</a>' +
-                '</div>' +
-              '</div>';
-            }).join('') +
-          '</div>'
-        : '';
-
-      els.packsList.innerHTML = sharedHtml + groups.map(function (group) {
+      els.packsList.innerHTML = groups.map(function (group) {
         var rows = group.packs.map(function (pack) {
           var label = pack.articleIndex === null || pack.articleIndex === undefined
             ? '整本'
@@ -4288,7 +4308,48 @@ ${pwaHead()}
     processBuildQueue();
   }
 
-  function startBuild(resourceId, articleIndex, fromQueue) {
+  function askPrefetchOptions() {
+    return new Promise(function (resolve) {
+      var overlay = document.createElement('div');
+      overlay.className = 'prefetch-modal';
+      overlay.innerHTML =
+        '<div class="prefetch-card" role="dialog" aria-modal="true" aria-label="生成选项">' +
+          '<h3>生成选项</h3>' +
+          '<p class="small muted">勾选的内容会在生成学习包之后一并预生成，没有配置 Key 的读者也能直接看到答案。</p>' +
+          '<label class="prefetch-row"><input type="checkbox" data-pf="answers" checked> 段落问题答案</label>' +
+          '<label class="prefetch-row"><input type="checkbox" data-pf="expand" checked> 单词展开 / 词源</label>' +
+          '<label class="prefetch-row"><input type="checkbox" data-pf="sentences" checked> 逐句翻译</label>' +
+          '<p class="small muted">三项全选会明显更慢，一篇文章大约 1–5 分钟；只想要正文最快的做法是全部取消。</p>' +
+          '<div class="prefetch-actions">' +
+            '<button class="btn btn-primary" data-pf-ok type="button">开始生成</button>' +
+            '<button class="link-button" data-pf-cancel type="button">取消</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      function close(value) {
+        overlay.remove();
+        document.removeEventListener('keydown', onKey);
+        resolve(value);
+      }
+      function onKey(event) {
+        if (event.key === 'Escape') close(null);
+      }
+      document.addEventListener('keydown', onKey);
+      overlay.addEventListener('click', function (event) {
+        if (event.target === overlay) close(null);
+      });
+      overlay.querySelector('[data-pf-cancel]').addEventListener('click', function () { close(null); });
+      overlay.querySelector('[data-pf-ok]').addEventListener('click', function () {
+        var choice = {};
+        overlay.querySelectorAll('[data-pf]').forEach(function (box) {
+          choice[box.getAttribute('data-pf')] = box.checked;
+        });
+        close(choice);
+      });
+    });
+  }
+
+  function startBuild(resourceId, articleIndex, fromQueue, prefetch) {
     if (state.building) {
       toast('正在生成，请稍候');
       return;
@@ -4311,6 +4372,7 @@ ${pwaHead()}
             : 'auto',
         audio: Boolean(els.buildAudio && els.buildAudio.checked),
         onlyNew: Boolean(els.onlyNew && els.onlyNew.checked),
+        ...(prefetch ? { prefetch: prefetch } : {}),
         ...(els.buildStyle && els.buildStyle.value ? { style: els.buildStyle.value } : {})
       })
     }).then(function (result) {
@@ -4565,17 +4627,21 @@ ${pwaHead()}
     var articleBuildTarget = target.closest('[data-build-article]');
     if (articleBuildTarget) {
       event.preventDefault();
-      startBuild(
-        articleBuildTarget.getAttribute('data-build-resource'),
-        Number(articleBuildTarget.getAttribute('data-build-article'))
-      );
+      var articleResource = articleBuildTarget.getAttribute('data-build-resource');
+      var articleIndex = Number(articleBuildTarget.getAttribute('data-build-article'));
+      askPrefetchOptions().then(function (choice) {
+        if (choice) startBuild(articleResource, articleIndex, undefined, choice);
+      });
       return;
     }
     var buildTarget = target.closest('[data-build]');
     if (buildTarget) {
       event.preventDefault();
+      var buildId = buildTarget.getAttribute('data-build');
       var article = buildTarget.getAttribute('data-article');
-      startBuild(buildTarget.getAttribute('data-build'), article === null ? undefined : Number(article));
+      askPrefetchOptions().then(function (choice) {
+        if (choice) startBuild(buildId, article === null ? undefined : Number(article), undefined, choice);
+      });
       return;
     }
     var infoTarget = target.closest('[data-resource-info]');
@@ -5114,6 +5180,7 @@ ${pwaHead()}
   var TAB_META = {
     read: ['READ', '精读'],
     packs: ['READ', '文章'],
+    shared: ['LIBRARY', '公共库'],
     passport: ['PROGRESS', '成长'],
     insights: ['WEEKLY REVIEW', '复盘'],
     import: ['NEW MATERIAL', '导入文章'],
@@ -5123,6 +5190,7 @@ ${pwaHead()}
   var TAB_VIEW = {
     read: 'view-home',
     packs: 'view-packs',
+    shared: 'view-shared',
     import: 'view-import',
     settings: 'view-settings',
     passport: 'view-passport',
@@ -5136,6 +5204,7 @@ ${pwaHead()}
   function navTabFor(tab) {
     if (tab === 'read' || tab === 'import') return 'read';
     if (tab === 'packs') return 'packs';
+    if (tab === 'shared') return 'shared';
     if (tab === 'passport' || tab === 'insights') return 'more';
     return '';
   }
@@ -5172,6 +5241,7 @@ ${pwaHead()}
     });
     if (tab === 'read') loadPlan();
     if (tab === 'packs') loadPacks();
+    if (tab === 'shared') loadShared();
     if (tab === 'passport') { loadPassport(); loadGrowthWeekly(); }
     if (tab === 'insights') loadInsights();
     if (tab === 'import') loadRecentImports();
