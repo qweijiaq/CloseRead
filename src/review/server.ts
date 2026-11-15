@@ -4862,6 +4862,14 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
           response.end('{"ok":true}')
           return
         }
+        // Compiling is stateless: the caller keeps the result, so no workspace
+        // (and no cookie) should be created for it.
+        if ((request.url ?? '').startsWith('/api/compile')) {
+          await runInWorkspace(rootWorkspaceRef(), () =>
+            handle(request, response, store, lan, requireToken, visitors),
+          )
+          return
+        }
         // The LAN listener stays single-user; the public listener resolves a
         // visitor and switches the active workspace for the whole request chain.
         const context = requireToken
