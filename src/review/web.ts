@@ -556,7 +556,7 @@ ${pwaHead()}
   .pack-group-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 4px 2px; }
   .pack-group-head { padding: 6px 2px 2px; }
   .pack-group-head strong { font-family: var(--display); font-size: 15px; font-weight: 700; letter-spacing: -.02em; }
-  .pack-group-head span { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; }
+  .pack-group-head span { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; white-space: nowrap; }
   .pack-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: none; }
   .pack-actions .btn { white-space: nowrap; }
   .pack-shared-tag { padding: 4px 9px; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 999px; color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
@@ -3757,6 +3757,8 @@ ${pwaHead()}
             '</div>' +
           '</div>';
         }).join('');
+        // A group with one pack already shows the title in the row.
+        if (group.packs.length === 1) return '<div class="pack-group">' + rows + '</div>';
         return '<div class="pack-group"><div class="pack-group-head"><strong>' + escapeHtml(group.title) +
           '</strong><span>' + group.packs.length + ' 个学习包</span></div>' + rows + '</div>';
       }).join('');
@@ -4207,7 +4209,7 @@ ${pwaHead()}
         ? status.label + ' · ' + status.model
         : '未配置';
     }
-    if (!status.configured && els.llmSettings) els.llmSettings.open = true;
+    // Keep the panel collapsed: opening it pushed the import form below the fold.
   }
 
   function loadLlmSettings() {
