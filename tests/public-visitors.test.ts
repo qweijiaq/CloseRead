@@ -250,6 +250,9 @@ describe('public visitor workspaces', { concurrency: 1 }, () => {
   })
 
   it('reports how many visitors the site has seen', async () => {
+    const cookie = cookieFrom(await fetch(`${base}/api/summary`))
+    // "online" only counts an open, visible page saying hello.
+    await fetch(`${base}/api/public/ping`, { headers: { cookie } })
     const stats = (await fetch(`${base}/api/public/stats`).then((response) =>
       response.json(),
     )) as { mode: string; totalUsers: number; online: number }
