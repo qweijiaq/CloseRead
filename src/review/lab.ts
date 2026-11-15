@@ -55,7 +55,7 @@ ${pwaHead()}
           <div class="cselect lab-cselect" data-cselect>
             <input type="hidden" id="lab-scope" value="all">
             <button class="cselect-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
-              <span class="cselect-label">全部学习词</span><span class="cselect-arrow">⌄</span>
+              <span class="cselect-label">全部学习词</span><span class="cselect-arrow" aria-hidden="true"><svg viewBox="0 0 10 6" width="9" height="6"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
             </button>
             <div class="cselect-menu" role="listbox" hidden></div>
           </div>

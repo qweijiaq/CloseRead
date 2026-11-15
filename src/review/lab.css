@@ -214,7 +214,8 @@ label.field { display: block; margin: 12px 0 5px; color: var(--muted); font-size
 .cselect { position: relative; display: inline-flex; min-width: 0; }
 .cselect-trigger { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink); border-radius: 10px; padding: 9px 11px; font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .cselect-trigger:hover, .cselect-trigger[aria-expanded="true"] { border-color: var(--accent); }
-.cselect-arrow { color: var(--muted); font-size: 10px; }
+.cselect-arrow { display: inline-flex; align-items: center; justify-content: center; width: 10px; height: 6px; color: var(--muted); }
+.cselect-arrow svg { display: block; }
 .cselect-menu { position: absolute; left: 0; top: calc(100% + 4px); z-index: 80; min-width: 100%; max-height: 260px; overflow: auto; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); box-shadow: 0 10px 30px rgba(28,26,22,.16); }
 .cselect-option { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); text-align: left; padding: 7px 9px; border-radius: 6px; font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
 .cselect-option:hover, .cselect-option.is-selected { background: var(--surface-2); color: var(--accent); }
