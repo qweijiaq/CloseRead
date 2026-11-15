@@ -1664,7 +1664,12 @@ ${exportMode ? '' : themeBootScript()}
       padding-bottom: calc(8px + env(safe-area-inset-bottom));
     }
     .export-menu > button, .export-menu > a { min-height: 44px; padding: 10px 11px; font-size: 13px; }
-    .page { width: 100%; padding: 26px 14px calc(64px + env(safe-area-inset-bottom)); }
+    .page { width: 100%; padding: 20px 18px calc(64px + env(safe-area-inset-bottom)); }
+    .hero { padding-top: 4px; }
+    .hero h1, .front-title { font-size: clamp(26px, 8.2vw, 34px); line-height: 1.24; }
+    .add-panel > p { display: none; }
+    .add-panel { margin-top: 16px; padding: 14px 0; }
+    .add-panel h2 { font-size: 16px; margin-bottom: 6px; }
     .hero-actions {
       flex-wrap: nowrap;
       overflow-x: auto;

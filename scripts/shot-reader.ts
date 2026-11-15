@@ -36,6 +36,19 @@ try {
     await fs.mkdir(out, { recursive: true })
     await fs.writeFile(path.join(out, file), Buffer.from(shot.data, 'base64'))
     console.log(file, '→', path.join(out, file))
+
+    // Whole page, so the reading area below the fold is visible in one image.
+    const pageHeight = await page.evaluate<number>('Math.min(document.body.scrollHeight, 8000)')
+    const sliceTop = await page.evaluate<number>("(() => { const el = document.querySelector('.paragraph'); return el ? Math.max(0, el.getBoundingClientRect().top + window.scrollY - 80) : 1400 })()")
+    const bodyShot = await page.send('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: true,
+      clip: { x: 0, y: sliceTop, width, height: Math.min(1800, Math.max(400, pageHeight - sliceTop)), scale: 1 },
+    })
+    if (!bodyShot.data) throw new Error(`body capture failed ${file}`)
+    const bodyFile = file.replace('.png', '-body.png')
+    await fs.writeFile(path.join(out, bodyFile), Buffer.from(bodyShot.data, 'base64'))
+    console.log(bodyFile, '→', path.join(out, bodyFile), `top=${Math.round(sliceTop)} total=${pageHeight}px`)
   }
 } finally {
   await page.close()
