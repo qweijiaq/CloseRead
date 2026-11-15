@@ -213,10 +213,12 @@ The main server stays on `127.0.0.1`. To read on a phone or tablet on the same W
 
 Setting `LEARN_PUBLIC_HOST` turns on public mode. There is no account system: every browser gets an anonymous cookie, reads the shared demo, and gets its own workspace on the first import or key save.
 
-- Each visitor has a private `data/users/<id>/data` and `data/users/<id>/packs`; nobody can read another visitor's articles, progress or keys.
-- Provider keys are encrypted at rest with AES-256-GCM derived from `LEARN_SECRET` and never returned by the API.
+- Every visitor's articles, items, reading progress and notes live in their own browser (IndexedDB). The server keeps only an in-process scratch workspace and wipes it on every start.
+- The server just serves the page, compiles what you import, and counts visitors. There is no user data to back up, prune or migrate.
+- After each write the browser pulls the changed files and stores them; after a server restart it pushes them back on the next visit.
+- Provider keys stay on the device and are only passed along with your own request; nothing is written to disk.
 - The sidebar shows how many people have used the site and how many are online, served by `GET /api/public/stats`; bots are excluded.
-- A workspace is capped at 250 MB, and one IP can create at most 5 workspaces per day.
+- Settings → device migration exports the whole workspace to one file and imports it on another device.
 - `?owner=<LEARN_OWNER_KEY>` pins your browser to a stable workspace.
 
 See [DEPLOY.md](DEPLOY.md) for the full walkthrough.
