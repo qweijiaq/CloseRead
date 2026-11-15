@@ -29,7 +29,7 @@ It is a reading workspace, not a chat tutor, and not a flashcard app with articl
 | Real text | Chat answers disappear into a thread; vocabulary apps rarely contain the article | One pack per article, with the full source, paragraph order and page or timestamp references |
 | Context | Word cards lose the sentence they came from | Every card stays attached to its paragraph; the source sentence travels with it |
 | Output | You still have to organise translations, notes and exercises yourself | Translation, structure map, paragraph notes, cards, cloze, comprehension and discussion are one page |
-| Ownership | Progress and vocabulary live in someone else's account | Sources, packs, reading progress and backups stay on your own disk or in your own browser |
+| Ownership | Progress and study records live in someone else's account | Sources, packs, reading progress and backups stay on your own disk or in your own browser |
 
 ## What a pack contains
 
@@ -49,7 +49,7 @@ It is a reading workspace, not a chat tutor, and not a flashcard app with articl
 - Word cards with context, Chinese gloss, etymology, roots and affixes, a derivation tree, word family, synonyms, antonyms, confusables, collocations and examples.
 - Sentence cards with the full sentence, translation, chunks, pattern, grammar, substitutions and register rewrites for back-translation.
 - Cloze, comprehension (fact, inference, main idea, word choice) and discussion prompts with reference answers.
-- A 24-word vocabulary check that calibrates article difficulty and glossing; results stay on this machine.
+- A 24-word vocabulary check that calibrates article difficulty and glossing; results stay in your browser.
 
 ### Keep
 
@@ -202,7 +202,7 @@ The local server binds to `127.0.0.1` and has no login. Do not expose it directl
 | Anki CSV | Import cards into Anki |
 | Markdown | Standalone pack or reading notes for Obsidian and other editors |
 | Weekly report | Markdown summary of the last seven days |
-| Backup JSON | Full local archive for moving or restoring the library |
+| Backup JSON | Full archive for moving or restoring the workspace |
 
 The pack folder also keeps `pack.json`, `meta.json`, `pack.md`, `notes.md`, `anki.csv` and `index.html`, so a pack can be inspected or moved without the app. `meta.json` records the input hash, mode, provider/model, prompt version, timestamp and warnings, but no API keys.
 
@@ -247,12 +247,12 @@ See [DEPLOY.md](DEPLOY.md) for the full walkthrough.
 | `pnpm dev build <id\|latest>` | Build a pack from an imported resource |
 | `pnpm dev review` | Start the local reading UI |
 | `pnpm dev list` | List imported resources |
-| `pnpm dev doctor` | Check the environment and library |
+| `pnpm dev doctor` | Check the environment and data folders |
 | `pnpm dev export <id\|latest>` | Export the pack's Anki CSV |
 | `pnpm dev audio <id\|latest>` | Generate audio with macOS `say` |
 | `pnpm dev resplit <id> <file>` | Re-parse a resource into articles |
-| `pnpm dev backup` / `restore` | Create or restore a full library archive |
-| `pnpm dev guests` | List visitor workspaces; `--days 90 --force` prunes idle ones |
+| `pnpm dev backup` / `restore` | Create or restore a full data archive |
+| `pnpm dev guests` | Inspect the process's scratch workspaces (diagnostics) |
 | `pnpm dev demo` | Run the full pipeline on the bundled sample |
 
 Run `pnpm dev --help` for build options such as `--no-llm`, `--limit`, `--style`, `--audio` and `--no-source`.
