@@ -1340,6 +1340,7 @@ ${pwaHead()}
   }
   .community[hidden] { display: none; }
   .community b { color: var(--ink); font-weight: 600; }
+  .community .live { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #3f8f5a; vertical-align: 1px; }
   .community span + span::before { content: "· "; color: var(--line-strong); }
   .community-inline { display: none; }
   .onboarding {
@@ -1393,7 +1394,8 @@ ${pwaHead()}
   .llm-hint { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.6; }
   .llm-hint[hidden] { display: none; }
   @media (max-width: 760px) {
-    .community-inline { display: flex; margin: 2px 2px 14px; }
+    .community-inline { display: flex; margin: 0 2px 18px; font-size: 11.5px; gap: 0 10px; }
+    .community-inline b { font-size: 13px; }
   }
   .settings-about-copy { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.7; max-width: 64ch; }
   .settings-about-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
@@ -1497,8 +1499,8 @@ ${pwaHead()}
       </div>
     </section>
     <div class="home-hero" id="home-hero"></div>
-    <div class="reading-stats" id="reading-stats"></div>
     <div class="community community-inline" id="community-inline" hidden aria-live="polite"></div>
+    <div class="reading-stats" id="reading-stats"></div>
     <div class="read-home-links">
       <button class="btn" data-go-tab="packs" type="button">全部文章</button>
       <button class="btn" data-go-tab="import" type="button">导入新材料</button>
@@ -2045,7 +2047,7 @@ ${pwaHead()}
         if (!visible) { host.innerHTML = ''; return; }
         host.innerHTML =
           '<span><b>' + total.toLocaleString('en-US') + '</b> 人用过</span>' +
-          '<span><b>' + online.toLocaleString('en-US') + '</b> 人在线</span>';
+          '<span><i class="live"></i><b>' + online.toLocaleString('en-US') + '</b> 人在线</span>';
       });
     }).catch(function () {});
   }
