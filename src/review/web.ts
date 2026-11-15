@@ -1462,7 +1462,7 @@ ${pwaHead()}
       <div class="home-card settings-card" id="settings-usage">加载中…</div>
       <div class="home-card settings-card settings-about" id="settings-about">
         <h2>关于 CloseRead</h2>
-        <p class="settings-about-copy">本地优先的开源英语精读工具。数据保存在你自己的电脑上，模型由你自己选择。</p>
+        <p class="settings-about-copy">开源英语精读工具。每个浏览器有自己独立的专属空间，内容互不可见；模型由你自己选择，也可以随时导出整个空间换设备。</p>
         <div class="settings-about-links">
           <a class="btn btn-primary" href="${GITHUB_REPO}" target="_blank" rel="noopener noreferrer">在 GitHub 点亮 Star</a>
           <a class="btn" href="${GITHUB_FORK}" target="_blank" rel="noopener noreferrer">Fork</a>
@@ -2557,13 +2557,14 @@ ${pwaHead()}
     }
     var backupHost = document.getElementById('settings-backup');
     if (backupHost) {
-      backupHost.innerHTML = '<h2>备份与恢复</h2>' +
-        '<p class="muted">完整备份包含词库、导入材料、学习包目录、阅读进度、缓存音频和金句。</p>' +
-        '<div class="settings-actions"><button class="btn btn-primary" id="settings-backup" type="button">下载完整备份</button></div>' +
+      backupHost.innerHTML = '<h2>设备迁移</h2>' +
+        '<p class="muted">换手机或换电脑时，在这里导出全部内容，再在新设备上导入。文件包含文章、学习项、阅读进度、批注和设置。</p>' +
+        '<div class="settings-actions"><button class="btn btn-primary" id="settings-backup" type="button">导出到本机</button></div>' +
         '<div class="settings-file"><input type="file" id="settings-restore-file" accept="application/json,.json">' +
-        '<button class="btn" id="settings-restore-run" type="button">从备份恢复</button>' +
+        '<button class="btn" id="settings-restore-run" type="button">从文件导入</button>' +
         '<span id="settings-restore-status"></span></div>' +
-        '<p class="small muted">恢复会覆盖当前词库、学习包目录和阅读进度；请先下载一份当前备份。</p>';
+        '<p class="small muted">导入会覆盖当前的文章、学习项和阅读进度，请先导出一份。模型 Key 不包含在文件里，需要在新设备上重新填写。</p>' +
+        '<p class="small muted">手机上建议先用「添加到主屏幕」再使用：长期不打开的站点，浏览器可能会清理它的本地数据。</p>';
     }
     var usageHost = document.getElementById('settings-usage');
     if (usageHost) {
@@ -2679,7 +2680,7 @@ ${pwaHead()}
       link.download = 'closeread-backup-' + new Date().toISOString().slice(0, 10) + '.json';
       link.click();
       setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
-      toast('完整备份已下载；恢复请用电脑上的 pnpm dev restore');
+      toast('已导出 ' + Math.round(blob.size / 1024) + ' KB，在新设备上用「从文件导入」恢复');
     }).catch(function (error) {
       toast('备份失败：' + error.message);
     }).finally(function () {
