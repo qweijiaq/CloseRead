@@ -8,6 +8,7 @@ const tempData = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-public-data-'))
 const tempPacks = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-public-packs-'))
 process.env.LEARN_DATA_DIR = tempData
 process.env.LEARN_PACKS_DIR = tempPacks
+process.env.LEARN_RUN_DIR = path.join(tempData, 'run')
 // A non-empty public host is what turns on per-visitor workspaces.
 process.env.LEARN_PUBLIC_HOST = 'public.example.com'
 process.env.LEARN_SECRET = 'test-secret-with-enough-entropy'
@@ -99,11 +100,13 @@ describe('public visitor workspaces', { concurrency: 1 }, () => {
     const payload = await settings(cookie)
     assert.equal(payload.workspace.mode, 'public')
     assert.equal(payload.workspace.readOnly, true)
-    const users = await fs.readdir(path.join(tempData, 'users')).catch(() => [] as string[])
-    assert.deepEqual(users, [])
+    const session = (await fetch(`${base}/api/session`, { headers: { cookie } }).then((r) =>
+      r.json(),
+    )) as { personal: boolean }
+    assert.equal(session.personal, false)
   })
 
-  it('creates a private workspace on the first write', async () => {
+  it('creates a private workspace on the first write and checkpoints it', async () => {
     const first = await fetch(`${base}/api/summary`)
     const cookie = cookieFrom(first)
     const saved = await post({ weeklyArticleGoal: 7 }, cookie)
@@ -111,10 +114,31 @@ describe('public visitor workspaces', { concurrency: 1 }, () => {
     const payload = await settings(cookie)
     assert.equal(payload.workspace.readOnly, false)
     assert.equal(payload.preferences.weeklyArticleGoal, 7)
-    const users = await fs.readdir(path.join(tempData, 'users'))
-    assert.equal(users.length, 1)
-    const seeded = await fs.readdir(path.join(tempData, 'users', users[0]!, 'data'))
-    assert.ok(seeded.includes('store.json'))
+
+    const checkpoint = (await fetch(`${base}/api/checkpoint`, { headers: { cookie } }).then((r) =>
+      r.json(),
+    )) as { files: Array<{ path: string; content: string }> }
+    const store = checkpoint.files.find((file) => file.path === 'data/store.json')
+    assert.ok(store, 'the browser needs store.json to rehydrate')
+    assert.equal(JSON.parse(store.content).preferences.weeklyArticleGoal, 7)
+  })
+
+  it('accepts a browser-side copy back after a restart', async () => {
+    const cookie = cookieFrom(await fetch(`${base}/api/summary`))
+    await post({ weeklyArticleGoal: 5 }, cookie)
+    const checkpoint = (await fetch(`${base}/api/checkpoint`, { headers: { cookie } }).then((r) =>
+      r.json(),
+    )) as { files: Array<{ path: string; content: string }> }
+    assert.ok(checkpoint.files.length > 0)
+
+    const hydrated = await fetch(`${base}/api/hydrate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: base, cookie },
+      body: JSON.stringify({ files: Object.fromEntries(checkpoint.files.map((file) => [file.path, file.content])) }),
+    })
+    assert.equal(hydrated.status, 200)
+    const payload = await settings(cookie)
+    assert.equal(payload.preferences.weeklyArticleGoal, 5)
   })
 
   it('keeps two visitors apart', async () => {
@@ -146,7 +170,10 @@ describe('public visitor workspaces', { concurrency: 1 }, () => {
     })
     assert.equal(saved.status, 200)
     const id = (await settings(cookie)).workspace.id
-    const raw = await fs.readFile(path.join(tempData, 'users', id, 'data', 'llm.json'), 'utf8')
+    const raw = await fs.readFile(
+      path.join(process.env.LEARN_RUN_DIR!, 'users', id, 'data', 'llm.json'),
+      'utf8',
+    )
     assert.ok(raw.includes('enc:v1:'))
     assert.ok(!raw.includes('sk-plain-text-key'))
     const listed = await fetch(`${base}/api/llm`, { headers: { cookie } }).then(

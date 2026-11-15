@@ -8,6 +8,7 @@ const tempData = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-compile-data-'))
 const tempPacks = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-compile-packs-'))
 process.env.LEARN_DATA_DIR = tempData
 process.env.LEARN_PACKS_DIR = tempPacks
+process.env.LEARN_RUN_DIR = path.join(tempData, 'run')
 process.env.LEARN_PUBLIC_HOST = 'compile.example.com'
 
 const { startReviewServer } = await import('../src/review/server.js')

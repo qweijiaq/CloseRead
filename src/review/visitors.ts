@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import { randomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -111,6 +112,8 @@ export class VisitorRegistry {
   private workspaces = new Map<string, Workspace>()
   private stores = new Map<string, Promise<Store>>()
   private storeUsage = new Map<string, number>()
+  private syncState = new Map<string, Map<string, string>>()
+  private pendingChanges = new Map<string, Map<string, string>>()
   private demoWorkspace: Workspace | undefined
 
   constructor(
@@ -122,17 +125,35 @@ export class VisitorRegistry {
     return path.join(rootDataDir, 'community', 'visits.json')
   }
 
+  /**
+   * Visitor workspaces are scratch space, not storage: they live in the OS temp
+   * directory and are wiped on every start. The browser holds the durable copy
+   * and hydrates it back, which keeps the server free of anything to maintain.
+   */
   private get usersRoot(): string {
-    return path.join(rootDataDir, 'users')
+    return path.join(this.runRoot, 'users')
+  }
+
+  /** Scratch root. Tests override it so parallel suites do not share one. */
+  private get runRoot(): string {
+    const override = process.env.LEARN_RUN_DIR?.trim()
+    return override || path.join(os.tmpdir(), 'closeread-run')
   }
 
   private workspaceDir(id: string): string {
     return path.join(this.usersRoot, id)
   }
 
+  /** Drop every scratch workspace left over from a previous process. */
+  private async resetScratch(): Promise<void> {
+    await fs.rm(this.runRoot, { recursive: true, force: true }).catch(() => {})
+    await fs.mkdir(this.usersRoot, { recursive: true }).catch(() => {})
+  }
+
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return
     this.loaded = true
+    await this.resetScratch()
     try {
       const raw = await fs.readFile(this.visitsFile, 'utf8')
       const parsed = JSON.parse(raw) as VisitFile
@@ -440,6 +461,62 @@ export class VisitorRegistry {
     return { workspace, store, visitorId: id, personal: true }
   }
 
+  /**
+   * The browser is the source of truth. When it reconnects after a restart (or
+   * after its scratch workspace expired) it uploads everything it kept.
+   */
+  async hydrate(id: string, files: Record<string, string>): Promise<number> {
+    const target = this.workspaceDir(id)
+    await fs.rm(target, { recursive: true, force: true }).catch(() => {})
+    await fs.mkdir(target, { recursive: true })
+    let written = 0
+    for (const [relative, content] of Object.entries(files)) {
+      if (!isSafeRelativePath(relative)) continue
+      if (typeof content !== 'string') continue
+      const file = path.join(target, relative)
+      await fs.mkdir(path.dirname(file), { recursive: true })
+      await fs.writeFile(file, content)
+      written += 1
+    }
+    // Reopen from the hydrated files instead of any stale in-memory store.
+    this.workspaces.delete(id)
+    this.stores.delete(id)
+    return written
+  }
+
+  /** Snapshot the scratch workspace and return everything that changed. */
+  async capture(id: string, hint?: string): Promise<void> {
+    const root = this.workspaceDir(id)
+    const current = await collectWorkspaceFiles(root, hint)
+    const previous = this.syncState.get(id)
+    const pending = this.pendingChanges.get(id) ?? new Map<string, string>()
+    for (const [relative, stamp] of current) {
+      if (previous?.get(relative) === stamp) continue
+      try {
+        pending.set(relative, await fs.readFile(path.join(root, relative), 'utf8'))
+      } catch {
+        // A file that vanished between listing and reading is simply skipped.
+      }
+    }
+    this.syncState.set(id, current)
+    this.pendingChanges.set(id, pending)
+  }
+
+  takeChanges(id: string): Array<{ path: string; content: string }> {
+    const pending = this.pendingChanges.get(id)
+    if (!pending || pending.size === 0) return []
+    this.pendingChanges.set(id, new Map())
+    return [...pending.entries()].map(([file, content]) => ({ path: file, content }))
+  }
+
+  hasChanges(id: string): boolean {
+    return (this.pendingChanges.get(id)?.size ?? 0) > 0
+  }
+
+  hasSynced(id: string): boolean {
+    return this.syncState.has(id)
+  }
+
   /** Number of private workspaces on disk, used by the guests CLI. */
   static async listWorkspaces(): Promise<{ id: string; size: number; packs: number }[]> {
     const root = path.join(rootDataDir, 'users')
@@ -474,6 +551,50 @@ async function directorySize(dir: string, limit = Number.POSITIVE_INFINITY): Pro
 async function countPacks(dir: string): Promise<number> {
   const entries = await fs.readdir(path.join(dir, 'packs'), { withFileTypes: true }).catch(() => [])
   return entries.filter((entry) => entry.isDirectory()).length
+}
+
+const SKIP_DIRS = new Set(['cache', 'backups', 'trash', 'uploads', 'exports', 'lab'])
+const SKIP_EXT = /\.(mp3|m4a|wav|ogg|opus|png|jpe?g|gif|webp|pdf|epub|mobi|azw3|docx)$/i
+const MAX_SYNC_FILES = 3000
+
+function isSafeRelativePath(value: string): boolean {
+  if (!value || value.length > 400) return false
+  if (value.startsWith('/') || value.includes('\\')) return false
+  if (value.split('/').some((part) => part === '..' || part === '')) return false
+  return /^[A-Za-z0-9._\-/]+$/.test(value)
+}
+
+/**
+ * List the text files worth keeping in the browser. Audio and caches are
+ * derived data, so they are regenerated instead of transferred.
+ */
+async function collectWorkspaceFiles(root: string, hint?: string): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  const walk = async (dir: string, prefix: string, depth: number): Promise<void> => {
+    if (depth > 3) return
+    const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        if (SKIP_DIRS.has(entry.name)) continue
+        await walk(path.join(dir, entry.name), relative, depth + 1)
+        continue
+      }
+      if (!entry.isFile() || SKIP_EXT.test(entry.name)) continue
+      const stat = await fs.stat(path.join(dir, entry.name)).catch(() => undefined)
+      if (!stat) continue
+      out.set(relative, `${stat.size}:${Math.round(stat.mtimeMs)}`)
+    }
+  }
+  await walk(root, '', 0)
+  if (out.size > MAX_SYNC_FILES && hint) {
+    const filtered = new Map<string, string>()
+    for (const [relative, stamp] of out) {
+      if (relative === 'store.json' || relative.includes(hint)) filtered.set(relative, stamp)
+    }
+    return filtered
+  }
+  return out
 }
 
 export const WORKSPACE_LIMIT_BYTES = 250 * 1024 * 1024

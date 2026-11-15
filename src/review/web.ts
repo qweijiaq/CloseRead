@@ -1675,7 +1675,7 @@ ${pwaHead()}
     graph: null, graphSelected: null, graphQuery: '', graphFocus: null,
     graphPositions: [], graphNodes: [], graphEdges: [],
     graphZoom: 1, graphPanX: 0, graphPanY: 0, graphHop: 1, graphPathStart: null, graphPath: [],
-    lan: null, nuanceCombo: 0,
+    lan: null, nuanceCombo: 0, publicMode: false,
     importResource: null, importArticle: null, importArticlesView: false,
     upload: null, lastUpload: null
   };
@@ -1889,9 +1889,58 @@ ${pwaHead()}
     return fetch(path, options).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (data) {
         if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+        var method = (options && options.method) || 'GET';
+        if (method !== 'GET' && method !== 'HEAD') scheduleCheckpoint();
         return data;
       });
     });
+  }
+
+  var localDbPromise = null;
+  function localDb() {
+    if (!localDbPromise) localDbPromise = import('/local-file-db.js');
+    return localDbPromise;
+  }
+
+  var checkpointTimer = null;
+  var checkpointRunning = false;
+
+  function scheduleCheckpoint() {
+    if (checkpointTimer) clearTimeout(checkpointTimer);
+    checkpointTimer = setTimeout(function () {
+      checkpointTimer = null;
+      checkpointNow();
+    }, 500);
+  }
+
+  // The server keeps a scratch copy; this pulls whatever it changed back into
+  // IndexedDB, which is the copy that survives a restart.
+  function checkpointNow() {
+    if (checkpointRunning) return Promise.resolve();
+    checkpointRunning = true;
+    return api('/api/checkpoint').then(function (data) {
+      if (!data || !data.files || !data.files.length) return;
+      return localDb().then(function (db) { return db.saveFiles(data.files); });
+    }).catch(function () {}).finally(function () { checkpointRunning = false; });
+  }
+
+  // After a restart the scratch copy is gone; push the browser's copy back up.
+  function syncFromBrowser() {
+    return localDb().then(function (db) {
+      return db.loadAll().then(function (files) {
+        if (!files || Object.keys(files).length === 0) return false;
+        return api('/api/session').then(function (session) {
+          if (session && session.personal) {
+            return checkpointNow().then(function () { return false; });
+          }
+          return api('/api/hydrate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ files: files })
+          }).then(function () { return true; });
+        });
+      });
+    }).catch(function () { return false; });
   }
 
   function loadCommunityStats() {
@@ -2560,8 +2609,11 @@ ${pwaHead()}
     }
     var backupHost = document.getElementById('settings-backup');
     if (backupHost) {
+      state.publicMode = Boolean(data.workspace && data.workspace.mode === 'public');
       backupHost.innerHTML = '<h2>设备迁移</h2>' +
-        '<p class="muted">换手机或换电脑时，在这里导出全部内容，再在新设备上导入。文件包含文章、学习项、阅读进度、批注和设置。</p>' +
+        (state.publicMode
+          ? '<p class="muted">你的文章、学习项、阅读进度和批注这个浏览器里各存一份。换手机或换电脑时，先在这里导出，再在新设备上导入。</p>'
+          : '<p class="muted">换手机或换电脑时，在这里导出全部内容，再在新设备上导入。</p>') +
         '<div class="settings-actions"><button class="btn btn-primary" id="settings-backup" type="button">导出到本机</button></div>' +
         '<div class="settings-file"><input type="file" id="settings-restore-file" accept="application/json,.json">' +
         '<button class="btn" id="settings-restore-run" type="button">从文件导入</button>' +
@@ -2627,13 +2679,17 @@ ${pwaHead()}
         .finally(function () { setBusy(testButton, false); });
     });
     var backupButton = document.getElementById('settings-backup');
-    if (backupButton) backupButton.addEventListener('click', function () { downloadBackup(backupButton); });
+    if (backupButton) backupButton.addEventListener('click', function () {
+      if (state.publicMode) exportWorkspaceLocal(backupButton);
+      else downloadBackup(backupButton);
+    });
     var restoreRun = document.getElementById('settings-restore-run');
     if (restoreRun) restoreRun.addEventListener('click', function () {
       var input = document.getElementById('settings-restore-file');
       var status = document.getElementById('settings-restore-status');
       var file = input && input.files && input.files[0];
-      if (!file) { if (status) status.textContent = '先选择一个备份 JSON。'; return; }
+      if (!file) { if (status) status.textContent = '先选择一个迁移文件。'; return; }
+      if (state.publicMode) { importWorkspaceLocal(file, status, restoreRun); return; }
       if (!confirm('恢复会覆盖当前词库、学习包目录和阅读进度。确认继续？')) return;
       setBusy(restoreRun, true, '恢复中…');
       file.text().then(function (text) {
@@ -2669,6 +2725,51 @@ ${pwaHead()}
       var host = document.getElementById('settings-data');
       if (host) host.innerHTML = '<div class="muted">设置加载失败：' + escapeHtml(error.message) + '</div>';
     });
+  }
+
+  function exportWorkspaceLocal(button) {
+    if (button) setBusy(button, true, '打包中…');
+    checkpointNow()
+      .then(function () { return localDb(); })
+      .then(function (db) {
+        return db.exportText().then(function (text) {
+          var blob = new Blob([text], { type: 'application/json' });
+          var url = URL.createObjectURL(blob);
+          var link = document.createElement('a');
+          link.href = url;
+          link.download = 'closeread-' + new Date().toISOString().slice(0, 10) + '.json';
+          link.click();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+          toast('已导出 ' + Math.round(blob.size / 1024) + ' KB，在新设备上用「从文件导入」恢复');
+        });
+      })
+      .catch(function (error) { toast('导出失败：' + error.message); })
+      .finally(function () { if (button) setBusy(button, false); });
+  }
+
+  function importWorkspaceLocal(file, status, button) {
+    if (!confirm('导入会覆盖这个浏览器里的全部内容，确认继续？')) return;
+    if (button) setBusy(button, true, '导入中…');
+    if (status) status.textContent = '导入中…';
+    file.text()
+      .then(function (text) {
+        return localDb().then(function (db) {
+          return db.importText(text).then(function (result) {
+            return db.loadAll().then(function (files) {
+              return api('/api/hydrate', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ files: files })
+              }).then(function () {
+                if (status) status.textContent = '已导入 ' + result.files + ' 个文件，正在刷新…';
+                setTimeout(function () { location.reload(); }, 600);
+              });
+            });
+          });
+        });
+      })
+      .catch(function (error) { if (status) status.textContent = '导入失败：' + error.message; })
+      .finally(function () { if (button) setBusy(button, false); });
   }
 
   function downloadBackup(button) {
@@ -5075,6 +5176,22 @@ ${pwaHead()}
   loadLanStatus();
   loadCommunityStats();
   window.setInterval(loadCommunityStats, 60000);
+
+  // Keep the durable copy in this browser in sync with the server's scratch
+  // workspace. After a restart the scratch copy is gone and this pushes the
+  // browser's copy back up before the first real request.
+  localDb().then(function (db) { return db.requestPersistence(); }).catch(function () {});
+  syncFromBrowser().then(function (hydrated) {
+    if (!hydrated) return;
+    switchTab(state.tab || 'read', true);
+    loadSettings();
+  });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') checkpointNow();
+  });
+  window.setInterval(function () {
+    if (document.visibilityState === 'visible') checkpointNow();
+  }, 60000);
   if (els.selectionSize) {
     try {
       var savedSize = localStorage.getItem('learn-selection-size');

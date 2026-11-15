@@ -15,7 +15,7 @@
     "demo": "tsx src/cli.ts demo",
     "review": "tsx src/cli.ts review",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit && node --check src/review/lab.js && node --check src/review/reader.js && node --check src/review/sw.js && node --check src/review/local-store.js",
+    "lint": "tsc --noEmit && node --check src/review/lab.js && node --check src/review/reader.js && node --check src/review/sw.js && node --check src/review/local-store.js && node --check src/review/local-file-db.js",
     "format:check": "node scripts/check-format.mjs",
     "test:e2e": "tsx --test e2e/*.test.ts",
     "test": "tsx --test tests/*.test.ts",

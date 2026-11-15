@@ -1433,12 +1433,14 @@ async function handle(
     return
   }
 
-  if (method === 'GET' && (url.pathname === '/reader.js' || url.pathname === '/reader.css')) {
+  if (method === 'GET' && (url.pathname === '/reader.js' || url.pathname === '/reader.css' || url.pathname === '/local-file-db.js')) {
     const name = url.pathname.slice(1)
     try {
       const content = await fs.readFile(path.join(projectRoot, 'src', 'review', name), 'utf8')
       response.writeHead(200, {
-        'content-type': name.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/javascript; charset=utf-8',
+        'content-type': name.endsWith('.css')
+          ? 'text/css; charset=utf-8'
+          : 'text/javascript; charset=utf-8',
         'cache-control': 'no-store',
       })
       response.end(content)
@@ -1773,6 +1775,48 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
 
   if (method === 'GET' && url.pathname === '/api/public/stats') {
     sendJson(response, 200, { ...visitors.stats(), mode: publicModeEnabled() ? 'public' : 'local' })
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/session') {
+    const workspace = currentWorkspace()
+    sendJson(response, 200, {
+      id: workspace.readOnly ? '' : workspace.id,
+      personal: !workspace.readOnly,
+      public: publicModeEnabled(),
+    })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/hydrate') {
+    const workspace = currentWorkspace()
+    if (workspace.readOnly) {
+      sendJson(response, 409, { error: '演示空间不需要回灌。' })
+      return
+    }
+    try {
+      const body = await readJson(request, 80_000_000)
+      const files = body.files
+      if (!files || typeof files !== 'object' || Array.isArray(files)) {
+        sendJson(response, 400, { error: '缺少 files。' })
+        return
+      }
+      const written = await visitors.hydrate(workspace.id, files as Record<string, string>)
+      sendJson(response, 200, { ok: true, files: written })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/checkpoint') {
+    const workspace = currentWorkspace()
+    if (workspace.readOnly) {
+      sendJson(response, 200, { files: [] })
+      return
+    }
+    if (!visitors.hasSynced(workspace.id)) await visitors.capture(workspace.id)
+    sendJson(response, 200, { files: visitors.takeChanges(workspace.id) })
     return
   }
 
@@ -4882,6 +4926,21 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
         await runInWorkspace(context.workspace, () =>
           handle(request, response, context.store, lan, requireToken, visitors),
         )
+        // Any write inside the scratch workspace is captured here so the
+        // browser can pull it even when the reader page made the change.
+        const method = request.method ?? 'GET'
+        const pathname = (request.url ?? '').split('?')[0] ?? ''
+        if (
+          publicModeEnabled() &&
+          !context.workspace.readOnly &&
+          context.workspace.id !== 'local' &&
+          method !== 'GET' &&
+          method !== 'HEAD' &&
+          pathname !== '/api/hydrate' &&
+          pathname !== '/api/checkpoint'
+        ) {
+          await visitors.capture(context.workspace.id).catch(() => {})
+        }
       }
       run().catch((error: unknown) => {
         if (!response.headersSent) {
