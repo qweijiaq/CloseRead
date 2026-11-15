@@ -1164,8 +1164,9 @@ async function handle(
 
   // The local server must not become reachable through DNS rebinding.
   const host = (request.headers.host ?? '').toLowerCase()
-  const publicHost = config.publicHost
-  const trustedHost = Boolean(publicHost) && (host === publicHost || host === `${publicHost}:443`)
+  const trustedHost = config.publicHosts.some(
+    (entry) => host === entry || host === `${entry}:443`,
+  )
   if (!requireToken && !isLocalHostName(host) && !trustedHost) {
     sendJson(response, 403, { error: 'Unexpected Host header.' })
     return

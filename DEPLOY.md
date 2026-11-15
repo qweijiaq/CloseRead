@@ -39,6 +39,7 @@ chmod 600 .env
 
 - `LEARN_SECRET` 用来加密访客填写的模型 Key，**必须设置**；换掉它会让已保存的 Key 失效，请和备份一起保存。
 - `LEARN_OWNER_KEY` 可选。用一个 `https://站点/?owner=<这个值>` 打开一次，你的浏览器就会被固定成一个稳定空间，而不是普通访客。
+- 一个部署可以服务多个域名，用逗号分隔：`LEARN_PUBLIC_HOST=a.example.com,b.example.com`。
 
 启动：
 

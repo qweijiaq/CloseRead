@@ -286,8 +286,11 @@ export const config = {
   },
   /** Interface the review server binds to. Keep loopback by default. */
   host: process.env.LEARN_HOST?.trim() || '127.0.0.1',
-  /** Optional public hostname when the app sits behind a trusted reverse proxy. */
-  publicHost: process.env.LEARN_PUBLIC_HOST?.trim().toLowerCase() || '',
+  /** Optional public hostname(s) when the app sits behind a trusted reverse proxy. */
+  publicHosts: (process.env.LEARN_PUBLIC_HOST ?? '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean),
   get llm(): LlmRuntime {
     return currentWorkspace().llm
   },
@@ -308,7 +311,7 @@ export const config = {
  * so local single-user installs keep writing to their original data/ and packs/.
  */
 export function publicModeEnabled(): boolean {
-  return config.publicHost.length > 0
+  return config.publicHosts.length > 0
 }
 
 export function ensureDirs(): void {
