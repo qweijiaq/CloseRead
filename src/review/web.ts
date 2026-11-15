@@ -1489,7 +1489,7 @@ ${pwaHead()}
       </div>
       <ol class="onboarding-list">
         <li><b>内容存在这个浏览器里。</b>换手机或换电脑打开是空的，要迁移请在「设置 → 设备迁移」导出再导入。</li>
-        <li><b>需要自己的模型 Key。</b>没有 Key 时只会挑出候选词，<b>不会生成中文译文</b>，基本没法精读；填了之后才有逐段翻译、释义和练习。Key 只存在这个浏览器。</li>
+        <li><b>先看公共库，不用 Key。</b>别人公开的文章都能直接读，答案也提前生成好了。想导入自己的文章才需要模型 Key——没有 Key 生成不出中文译文。</li>
         <li><b>从一篇文章开始。</b>粘贴文本、贴一个链接，或上传 PDF / EPUB / DOCX。</li>
       </ol>
       <p class="onboarding-warning"><b>务必定期导出。</b>清浏览器数据、换设备，或在 iPhone 上超过 7 天不打开，本地内容都可能被清掉。导出文件存在你自己的电脑或网盘里，随时能导回来。</p>
@@ -2790,7 +2790,7 @@ ${pwaHead()}
       var aboutCopy = document.getElementById('settings-about-copy');
       if (aboutCopy) {
         aboutCopy.textContent = state.publicMode
-          ? '开源英语精读工具。你的文章、进度和批注存在这个浏览器里，服务器不保存；换设备用下面的「设备迁移」。'
+          ? '开源英语精读工具。没有 Key 也能读公共库；导入自己的文章才需要 Key。你的内容存在这个浏览器里，换设备用下面的「设备迁移」。'
           : '开源英语精读工具。内容存在本机的 data/ 和 packs/ 目录里，模型由你自己选择。';
       }
       backupHost.innerHTML = '<h2>设备迁移</h2>' +
@@ -3500,7 +3500,9 @@ ${pwaHead()}
               '<a class="btn btn-primary" href="' + escapeHtml(pack.url) + '">精读</a>' +
               rebuild +
               (pack.shared
-                ? '<span class="pack-shared-tag">已公开</span>'
+                ? (pack.publishedByMe
+                    ? '<button class="btn" data-unpublish-pack="' + escapeHtml(pack.id) + '">取消公开</button>'
+                    : '<span class="pack-shared-tag">已公开</span>')
                 : '<button class="btn" data-publish-pack="' + escapeHtml(pack.id) + '">公开</button>') +
               '<button class="btn danger" data-delete-pack="' + escapeHtml(pack.id) + '">删除</button>' +
             '</div>' +
@@ -3523,6 +3525,24 @@ ${pwaHead()}
             loadPacks();
           }).catch(function (error) {
             toast('公开失败：' + error.message);
+            setBusy(button, false);
+          });
+        });
+      });
+
+      els.packsList.querySelectorAll('[data-unpublish-pack]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          if (!confirm('取消公开后，其他访客就看不到这篇了。你自己的副本不受影响。')) return;
+          setBusy(button, true, '处理中…');
+          api('/api/packs/' + encodeURIComponent(button.getAttribute('data-unpublish-pack')) + '/unpublish', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{}'
+          }).then(function () {
+            toast('已从公共库移除');
+            loadPacks();
+          }).catch(function (error) {
+            toast('取消失败：' + error.message);
             setBusy(button, false);
           });
         });
@@ -3844,7 +3864,7 @@ ${pwaHead()}
     els.importMode.innerHTML = llm
       ? '当前使用 <strong>' + escapeHtml(provider || 'LLM') + '</strong> · ' + escapeHtml(model) +
         ' 分析，生成通常需要 1–3 分钟。'
-      : '<strong>还没有配置模型 Key。</strong>规则模式只能挑出候选词，不会生成中文译文，选词也不准，基本上没法精读。先在下方「模型设置」里填一个 Key（DeepSeek 最便宜）。';
+      : '<strong>还没有配置模型 Key。</strong>可以先在「公共库」读别人公开的文章。这里导入自己的文章需要 Key，否则只会挑出候选词、没有中文译文。';
   }
 
   function llmPreset(id) {

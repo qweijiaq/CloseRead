@@ -16,7 +16,7 @@
 
 **CloseRead turns an English article, PDF, EPUB, MOBI, DOCX, URL or transcript into a paragraph-by-paragraph close-reading pack: Chinese translation, notes, word cards, sentence cards, exercises, and a local reading history.**
 
-It is a reading workspace, not a chat tutor, and not a flashcard app with articles bolted on. The loop is **read → understand → keep**. There is no account, no cloud library and no analytics. A model key is required: without one CloseRead can still import and segment, but it will not generate Chinese translations or reliable vocabulary, so serious reading needs a key. The interface switches between Chinese and an English beta; generated study notes remain Chinese by default.
+It is a reading workspace, not a chat tutor, and not a flashcard app with articles bolted on. The loop is **read → understand → keep**. There is no account, no cloud library and no analytics. A model key is only needed for your own imports: without one you can still read everything in the public library, where answers are pre-generated. The interface switches between Chinese and an English beta; generated study notes remain Chinese by default.
 
 ![CloseRead reading home](assets/screenshots/home.png)
 
@@ -122,7 +122,7 @@ The desktop app keeps data under Electron's `userData` directory. Open **Setting
 
 ## Models and audio
 
-A model key is required for a readable pack. Without one, the heuristic pipeline only proposes candidate words: it does **not** produce Chinese paragraph translations, and the selection is noisy. Treat that path as an offline fallback or a debugging aid. TTS is separate and optional.
+A model key is needed to import your own material. Without one the heuristic pipeline only proposes candidate words: it does **not** produce Chinese paragraph translations. Reading the public library needs no key, because those packs ship with answers already generated. TTS is separate and optional.
 
 With a key, you can use DeepSeek, OpenAI-compatible endpoints, Anthropic, Gemini, Qwen/DashScope, GLM/Zhipu, xAI, Moonshot, OpenCode Zen, OpenCode Go or OpenDesign. Configure it in the import panel's **Model settings**, or through environment variables such as `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DASHSCOPE_API_KEY` or `GLM_API_KEY`. Keys stored in the app live in `data/llm.json`.
 

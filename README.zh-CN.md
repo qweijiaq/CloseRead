@@ -16,7 +16,7 @@
 
 **CloseRead 把一篇英文文章、PDF、EPUB、MOBI、DOCX、网页链接或演讲转录，做成一份可以逐段精读的学习包：译文、笔记、词卡、句子卡、练习，以及留在本地的阅读记录。**
 
-它是一个阅读工作台，不是聊天外教，也不是“碰巧放了几篇文章”的背单词 App。主循环是 **读 → 懂 → 留下**。没有账号、没有云端数据、没有埋点。模型 Key 是必须的：不配置也能导入和切分，但不会生成中文译文，选词也不准，没法正常精读。界面支持中文和英文 beta；生成的学习笔记默认仍是中文。
+它是一个阅读工作台，不是聊天外教，也不是“碰巧放了几篇文章”的背单词 App。主循环是 **读 → 懂 → 留下**。没有账号、没有云端数据、没有埋点。模型 Key 只有导入自己的材料时才需要：不配置也能读公共库里别人公开的文章，答案都已经预生成好了。界面支持中文和英文 beta；生成的学习笔记默认仍是中文。
 
 ![CloseRead 精读首页](assets/screenshots/home.png)
 
@@ -122,7 +122,7 @@ pnpm desktop:build:win    # Windows NSIS，请在 Windows 上运行
 
 ## 模型与语音
 
-不配置模型 Key 时，CloseRead 只能按规则挑出候选词，**不会生成中文译文**，选词也不准；这条路只适合离线应急或调试，日常精读请配置 Key。
+不配置模型 Key 时，你可以读公共库和示例文章；但**导入自己的材料需要 Key**，否则只会按规则挑出候选词，不会生成中文译文。
 
 配置 Key 后，可以使用 DeepSeek、OpenAI 兼容接口、Anthropic、Gemini、Qwen/百炼、GLM/智谱、xAI、Moonshot、OpenCode Zen、OpenCode Go 或 OpenDesign。在导入面板的 **模型设置** 里填写，或使用 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`DASHSCOPE_API_KEY`、`GLM_API_KEY` 等环境变量。本地模式下 Key 保存在 `data/llm.json`；公开部署下只存在访客自己的浏览器里。
 
@@ -255,6 +255,7 @@ CloseRead 没有账号、埋点、统计、广告或云同步。只有你主动�
 | `pnpm dev backup` / `restore` | 创建或恢复完整数据归档 |
 | `pnpm dev guests` | 查看当前进程的临时工作区（诊断用） |
 | `pnpm dev prefetch <id\|latest>` | 预生成答案；`--expand` 单词展开，`--sentences` 逐句翻译 |
+| `pnpm dev unpublish <id\|标题>` | 从公共库移除一个学习包 |
 | `pnpm dev demo` | 用示例文章跑完整流程 |
 
 `pnpm dev --help` 里还有 `--no-llm`、`--limit`、`--style`、`--audio`、`--no-source` 等生成选项。

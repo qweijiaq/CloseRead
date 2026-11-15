@@ -224,6 +224,31 @@ describe('public visitor workspaces', { concurrency: 1 }, () => {
     assert.deepEqual(shared.packs, [])
   })
 
+  it('refuses to unpublish built-in or unknown packs', async () => {
+    const visitor = cookieFrom(await fetch(`${base}/api/summary`))
+    await post({ weeklyArticleGoal: 6 }, visitor)
+    const mine = (await fetch(`${base}/api/packs`, { headers: { cookie: visitor } }).then((r) =>
+      r.json(),
+    )) as { packs: Array<{ id: string; shared?: boolean; publishedByMe?: boolean }> }
+    const packId = mine.packs[0]!.id
+    assert.equal(mine.packs[0]!.shared, true)
+    assert.equal(mine.packs[0]!.publishedByMe, false)
+
+    const seeded = await fetch(`${base}/api/packs/${encodeURIComponent(packId)}/unpublish`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: base, cookie: visitor },
+      body: '{}',
+    })
+    assert.equal(seeded.status, 403)
+
+    const unknown = await fetch(`${base}/api/packs/nope/unpublish`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: base, cookie: visitor },
+      body: '{}',
+    })
+    assert.equal(unknown.status, 404)
+  })
+
   it('reports how many visitors the site has seen', async () => {
     const stats = (await fetch(`${base}/api/public/stats`).then((response) =>
       response.json(),

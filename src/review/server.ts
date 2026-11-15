@@ -3402,7 +3402,12 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       const name = `${path.basename(pack.dir)}`
       const target = path.join(rootPacksDir, name)
       await fs.cp(pack.dir, target, { recursive: true, errorOnExist: false, force: false })
-      await shared.addPack({ ...pack, dir: target })
+      await shared.addPack({
+        ...pack,
+        dir: target,
+        publishedBy: currentWorkspace().id,
+        publishedAt: new Date().toISOString(),
+      })
       sendJson(response, 200, { ok: true, pack: { id: pack.id, title: pack.title ?? pack.id } })
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
@@ -3410,8 +3415,40 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     return
   }
 
+  const unpublishMatch = /^\/api\/packs\/([^/]+)\/unpublish$/.exec(url.pathname)
+  if (method === 'POST' && unpublishMatch) {
+    const id = decodeURIComponent(unpublishMatch[1]!)
+    try {
+      await shared.reload().catch(() => {})
+      const record = shared.findPack(id)
+      if (!record) {
+        sendJson(response, 404, { error: '公共库里没有这个学习包。' })
+        return
+      }
+      const me = currentWorkspace().id
+      if (record.publishedBy !== me) {
+        sendJson(response, 403, {
+          error: record.publishedBy
+            ? '这个学习包是别人公开的，只有作者本人能取消。'
+            : '这是内置的示例内容，不能取消公开。',
+        })
+        return
+      }
+      await shared.removePack(id)
+      if (record.dir.startsWith(rootPacksDir)) {
+        await fs.rm(record.dir, { recursive: true, force: true }).catch(() => {})
+      }
+      sendJson(response, 200, { ok: true })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   if (method === 'GET' && url.pathname === '/api/packs') {
-    const published = new Set(shared.packs().map((pack) => pack.id))
+    await shared.reload().catch(() => {})
+    const sharedById = new Map(shared.packs().map((pack) => [pack.id, pack]))
+    const me = currentWorkspace().id
     sendJson(response, 200, {
       packs: store.packs().map((pack) => {
         const issueId = pack.parentResourceId ?? pack.resourceId
@@ -3419,7 +3456,8 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         return {
           ...pack,
           ...packView(store, pack),
-          shared: published.has(pack.id),
+          shared: sharedById.has(pack.id),
+          publishedByMe: sharedById.get(pack.id)?.publishedBy === me,
           issueId,
           issueTitle: issue?.title ?? issueId,
           chapter: chapterNav(store, pack),

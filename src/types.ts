@@ -335,6 +335,9 @@ export interface PackRecord {
   title?: string
   parentResourceId?: string
   articleIndex?: number
+  /** Anonymous visitor id that published this pack to the shared library. */
+  publishedBy?: string
+  publishedAt?: string
 }
 
 export interface PackAudio {

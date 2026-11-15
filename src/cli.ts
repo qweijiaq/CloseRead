@@ -73,6 +73,7 @@ Usage:
   pnpm dev guests [--days N] [--force]  List visitor workspaces; prune idle ones
   pnpm dev prefetch <id|latest> [--expand] [--sentences]
                                       Pre-generate answers the reader would ask for
+  pnpm dev unpublish <id|title>       Remove a pack from the shared library
 
 Add options:
   --title <name>   Override the resource title
@@ -602,6 +603,24 @@ async function commandStyle(
  * Pre-generate the answers that the reader otherwise asks the model for on
  * click, so visitors without a key can still reveal them.
  */
+
+/** Remove a pack from the shared library (works for any pack, including seeds). */
+async function commandUnpublish(target: string | undefined): Promise<void> {
+  const store = await Store.open(storePath())
+  const pack = target
+    ? store.findPack(target) ?? store.packs().find((entry) => (entry.title ?? '').includes(target))
+    : store.packs()[0]
+  if (!pack) {
+    console.error('公共库里没有这个学习包。')
+    process.exitCode = 1
+    return
+  }
+  await store.removePack(pack.id)
+  await fs.rm(pack.dir, { recursive: true, force: true }).catch(() => {})
+  console.log(`已从公共库移除：${pack.title ?? pack.id}`)
+  console.log(`  ${pack.dir}`)
+}
+
 async function commandPrefetch(
   target: string | undefined,
   options: { expand: boolean; sentences: boolean } = { expand: false, sentences: false },
@@ -864,6 +883,9 @@ async function main(): Promise<void> {
       break
     case 'backup':
       await commandBackup(positionals[1] ?? values.out)
+      break
+    case 'unpublish':
+      await commandUnpublish(positionals[1])
       break
     case 'prefetch':
       await commandPrefetch(positionals[1] ?? 'latest', {
