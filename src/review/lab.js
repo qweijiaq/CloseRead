@@ -585,7 +585,7 @@
         '<div class="pet-bar"><span style="width:' + percent + '%"></span></div>' +
         '<div class="small muted">' + (pet.xp || 0) + ' / ' + (pet.nextXp || 0) + ' XP</div>' +
         '<div class="pet-stats"><span>🔥 连续 ' + (pet.streak || 0) + ' 天</span><span>🧠 ' + (pet.reviews || 0) + ' 次复习</span><span>🌱 ' + (pet.known || 0) + ' 个已掌握</span></div>' +
-        '<div class="row" style="margin-top:12px"><button class="btn primary" id="pet-say" type="button">让它说一句</button><a class="btn" href="/?tab=review">去复习喂它</a></div>' +
+        '<div class="row" style="margin-top:12px"><button class="btn primary" id="pet-say" type="button">让它说一句</button><a class="btn" href="/?tab=read">回到精读</a></div>' +
         '<div id="pet-line"></div></div></div>'
     $('#pet-say').addEventListener('click', async function () {
       if (!requireModel()) return

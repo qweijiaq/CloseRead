@@ -126,7 +126,7 @@ describe('phone access', () => {
 
     const page = await fetch(`http://127.0.0.1:${lanPort}/`, { headers: { cookie } })
     assert.equal(page.status, 200)
-    assert.match(await page.text(), /Learning Reader/)
+    assert.match(await page.text(), /精读 · CloseRead/)
 
     const api = await fetch(`http://127.0.0.1:${lanPort}/api/today`, { headers: { cookie } })
     assert.equal(api.status, 200)

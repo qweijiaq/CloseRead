@@ -49,7 +49,15 @@ export function normalizePdfText(text: string): string {
  * of sentences and sometimes in the middle of hyphenated words.
  */
 export function reflowPdfPage(text: string): string {
-  const lines = normalizePdfText(text)
+  return normalizePdfText(text)
+    .split(/\n\s*\n/)
+    .map((block) => reflowBlock(block))
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function reflowBlock(text: string): string {
+  const lines = text
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
@@ -59,18 +67,11 @@ export function reflowPdfPage(text: string): string {
 
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index]!
-    const next = lines[index + 1]
 
     if (/^#{1,6}\s/.test(line)) {
       if (current) paragraphs.push(current)
       paragraphs.push(line)
       current = ''
-      continue
-    }
-
-    // A short first line without terminal punctuation is usually the document title.
-    if (index === 0 && line.length <= 120 && !/[.!?]$/.test(line) && next && /^[A-Z0-9]/.test(next)) {
-      paragraphs.push(line)
       continue
     }
 
@@ -265,28 +266,299 @@ function outlineArticles(entries: OutlineEntry[], pages: PdfPage[]): ResourceArt
   return articles
 }
 
-export async function readPdfBuffer(buffer: Buffer, options: PdfReadOptions): Promise<PdfResult> {
-  const label = options.label ?? options.fallbackTitle
-  const { PDFParse } = await import('pdf-parse')
-  let parser: InstanceType<typeof PDFParse> | undefined
+
+interface RawTextItem {
+  str?: string
+  transform?: number[]
+  width?: number
+  height?: number
+}
+
+interface TextLine {
+  text: string
+  x: number
+  endX: number
+  y: number
+  height: number
+}
+
+interface LayoutPage {
+  page: number
+  lines: TextLine[]
+  twoColumn: boolean
+}
+
+interface LayoutExtraction {
+  pages: LayoutPage[]
+  totalPages: number
+  title: string
+}
+
+/** Group loose text runs into visual lines, keeping the horizontal gaps as spaces. */
+function groupLines(items: RawTextItem[]): TextLine[] {
+  const runs = items
+    .filter((item) => typeof item.str === 'string' && item.str.trim())
+    .map((item) => ({
+      text: item.str!.replace(/\s+/g, ' '),
+      x: item.transform?.[4] ?? 0,
+      y: item.transform?.[5] ?? 0,
+      width: item.width ?? 0,
+      height: item.height ?? 10,
+    }))
+    .sort((a, b) => b.y - a.y || a.x - b.x)
+
+  const lines: TextLine[] = []
+  let row: typeof runs = []
+  let rowY = Number.NaN
+
+  const flush = () => {
+    if (!row.length) return
+    row.sort((a, b) => a.x - b.x)
+    let text = ''
+    let cursor: number | null = null
+    for (const run of row) {
+      if (cursor !== null && run.x - cursor > Math.max(1.2, run.height * 0.14)) text += ' '
+      text += run.text
+      cursor = run.x + run.width
+    }
+    const first = row[0]!
+    const height = Math.max(...row.map((run) => run.height))
+    lines.push({ text: text.trim(), x: first.x, endX: cursor ?? first.x, y: first.y, height })
+    row = []
+  }
+
+  for (const run of runs) {
+    if (row.length && Math.abs(run.y - rowY) > Math.max(2, run.height * 0.4)) flush()
+    if (!row.length) rowY = run.y
+    row.push(run)
+  }
+  flush()
+  return lines.filter((line) => line.text)
+}
+
+/**
+ * Put a two-column page back into reading order. Full-width lines (titles,
+ * headers, figures) split the page into bands; within a band the left column
+ * is read before the right one.
+ */
+function orderColumns(lines: TextLine[], width: number): { lines: TextLine[]; twoColumn: boolean } {
+  const left: TextLine[] = []
+  const right: TextLine[] = []
+  const full = new Set<TextLine>()
+
+  for (const line of lines) {
+    if (line.x < width * 0.15 && line.endX > width * 0.85) full.add(line)
+    else if (line.endX <= width * 0.55) left.push(line)
+    else if (line.x >= width * 0.45) right.push(line)
+    else full.add(line)
+  }
+
+  if (left.length < 4 || right.length < 4) return { lines, twoColumn: false }
+  const leftTop = Math.max(...left.map((line) => line.y))
+  const leftBottom = Math.min(...left.map((line) => line.y))
+  const rightTop = Math.max(...right.map((line) => line.y))
+  const rightBottom = Math.min(...right.map((line) => line.y))
+  const overlap = Math.min(leftTop, rightTop) - Math.max(leftBottom, rightBottom)
+  if (overlap < 80) return { lines, twoColumn: false }
+
+  const all = [...lines].sort((a, b) => b.y - a.y || a.x - b.x)
+  const ordered: TextLine[] = []
+  let index = 0
+  while (index < all.length) {
+    if (full.has(all[index]!)) {
+      ordered.push(all[index]!)
+      index++
+      continue
+    }
+    const band: TextLine[] = []
+    while (index < all.length && !full.has(all[index]!)) band.push(all[index++]!)
+    const bandLeft = band.filter((line) => line.endX <= width * 0.55)
+    const bandRight = band.filter((line) => line.x >= width * 0.45)
+    ordered.push(...bandLeft, ...bandRight)
+    for (const line of band) {
+      if (!bandLeft.includes(line) && !bandRight.includes(line)) ordered.push(line)
+    }
+  }
+
+  return { lines: ordered, twoColumn: true }
+}
+
+/** Extract pages through pdf.js so multi-column layouts keep their reading order. */
+async function extractLayout(buffer: Buffer): Promise<LayoutExtraction> {
+  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs')
+  const document = await getDocument({
+    data: new Uint8Array(buffer),
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    isOffscreenCanvasSupported: false,
+    verbosity: 0,
+  }).promise
 
   try {
-    parser = new PDFParse({ data: new Uint8Array(buffer) })
-    const info = await parser.getInfo()
-    const result = await parser.getText({ pageJoiner: '' })
+    const pages: LayoutPage[] = []
+    for (let number = 1; number <= document.numPages; number++) {
+      const page = await document.getPage(number)
+      const viewport = page.getViewport({ scale: 1 })
+      const content = await page.getTextContent()
+      const lines = orderColumns(groupLines(content.items as unknown as RawTextItem[]), viewport.width)
+      pages.push({ page: number, lines: lines.lines, twoColumn: lines.twoColumn })
+      page.cleanup()
+    }
+    let title = ''
+    try {
+      const metadata = (await document.getMetadata()) as unknown as { info?: { Title?: unknown } }
+      if (typeof metadata.info?.Title === 'string') title = metadata.info.Title.trim()
+    } catch {
+      // Metadata is optional.
+    }
+    return { pages, totalPages: document.numPages, title }
+  } finally {
+    await document.destroy()
+  }
+}
 
-    const rawPages: PdfPage[] = result.pages
-      .map((page) => ({ page: page.num, text: normalizePdfText(page.text) }))
-      .filter((page) => page.text.trim().length > 0)
-    const cleanedPages = stripRunningLines(rawPages)
-    const pages: PdfPage[] = cleanedPages
+
+/** Preserve paragraph gaps as blank lines so reflow does not merge a whole page. */
+function layoutPageText(page: LayoutPage): string {
+  const heights = page.lines.map((line) => line.height).sort((a, b) => a - b)
+  const median = heights[Math.floor(heights.length / 2)] ?? 12
+  const output: string[] = []
+  let previousY: number | null = null
+  for (const line of page.lines) {
+    if (previousY !== null && previousY - line.y > median * 1.6) output.push('')
+    output.push(line.text)
+    previousY = line.y
+  }
+  return output.join('\n')
+}
+
+function lineCount(pages: PdfPage[]): number {
+  return pages.reduce((total, page) => total + page.text.split('\n').filter((line) => line.trim()).length, 0)
+}
+
+function isContentsPage(page: PdfPage): boolean {
+  const lines = page.text.split('\n').map((line) => line.trim()).filter(Boolean)
+  if (lines.length < 6) return false
+  const withPageNumbers = lines.filter((line) => /(?:\.{2,}|…{2,}|\s)\s*\d{1,4}$/.test(line)).length
+  const average = lines.reduce((total, line) => total + line.length, 0) / lines.length
+  return withPageNumbers >= Math.max(4, Math.ceil(lines.length * 0.35)) && average < 90
+}
+
+function headingOf(page: PdfPage): string {
+  const first = page.text.split('\n').map((line) => line.trim()).find(Boolean) ?? ''
+  if (!first || first.length > 80) return ''
+  if (/[.!?,;:]$/.test(first)) return ''
+  const words = first.split(/\s+/)
+  if (words.length < 1 || words.length > 11) return ''
+  if (/^(chapter|part|section|第.+[章节])/i.test(first)) return first
+  const capitalised = words.filter((word) => /^[A-Z0-9"'(]/.test(word)).length
+  if (capitalised / words.length < 0.6) return ''
+  return first
+}
+
+/** Drop front matter, tables of contents, indexes and reference lists. */
+function trimStructure(pages: PdfPage[]): { pages: PdfPage[]; skipped: number } {
+  if (pages.length < 4) return { pages, skipped: 0 }
+  let trimmed = pages.slice()
+  const frontWindow = Math.max(3, Math.ceil(trimmed.length * 0.15))
+  const contents = new Set(
+    trimmed.slice(0, frontWindow).filter(isContentsPage).map((page) => page.page),
+  )
+  trimmed = trimmed.filter((page) => !contents.has(page.page))
+
+  let cursor = 0
+  while (cursor < 2 && trimmed.length - cursor > 4) {
+    const page = trimmed[cursor]!
+    const words = page.text.trim().split(/\s+/).filter(Boolean).length
+    if (words >= 60) break
+    cursor++
+  }
+  trimmed = trimmed.slice(cursor)
+
+  const tailStart = Math.floor(trimmed.length * 0.6)
+  const backMatter = trimmed.slice(tailStart).find((page) =>
+    page.text
+      .split('\n')
+      .slice(-3)
+      .some((line) => /^(references|bibliography|works cited|works consulted|index|参考文献|参考书目)$/i.test(line.trim())),
+  )
+  if (backMatter) {
+    const position = trimmed.indexOf(backMatter)
+    if (position >= tailStart && trimmed.length - position >= 1) trimmed = trimmed.slice(0, position)
+  }
+
+  return { pages: trimmed, skipped: pages.length - trimmed.length }
+}
+
+function headingArticles(pages: PdfPage[]): ResourceArticle[] {
+  if (pages.length < 12) return []
+  const starts = pages
+    .map((page, index) => ({ page, index, heading: headingOf(page) }))
+    .filter((entry) => entry.heading)
+  if (starts.length < 3) return []
+
+  const articles: ResourceArticle[] = []
+  for (let index = 0; index < starts.length; index++) {
+    const start = starts[index]!
+    const end = index + 1 < starts.length ? starts[index + 1]!.index : pages.length
+    if (end - start.index < 2) continue
+    const slice = pages.slice(start.index, end)
+    const text = slice.map((page) => page.text).join('\n\n').trim()
+    if (text.replace(/\s/g, '').length < 200) continue
+    const segments: Segment[] = []
+    for (const page of slice) segments.push(...segmentsFromText(page.text, segments.length, page.page))
+    articles.push(makeArticle(articles.length, articleTitleFrom(text, start.heading, articles.length), text, segments))
+  }
+  return articles.length >= 2 ? articles : []
+}
+
+export async function readPdfBuffer(buffer: Buffer, options: PdfReadOptions): Promise<PdfResult> {
+  const label = options.label ?? options.fallbackTitle
+  let parser: InstanceType<(typeof import('pdf-parse'))['PDFParse']> | undefined
+
+  try {
+    let layout: LayoutExtraction | null = null
+    let layoutError: unknown = null
+    try {
+      layout = await extractLayout(buffer)
+    } catch (error) {
+      layoutError = error
+    }
+
+    let rawPages: PdfPage[]
+    let totalPages: number
+    let titleFromInfo = ''
+
+    if (layout && layout.pages.some((page) => page.lines.length > 0)) {
+      rawPages = layout.pages
+        .map((page) => ({ page: page.page, text: layoutPageText(page) }))
+        .filter((page) => page.text.trim().length > 0)
+      totalPages = layout.totalPages
+      titleFromInfo = layout.title
+    } else {
+      if (layoutError) throw layoutError
+      const { PDFParse } = await import('pdf-parse')
+      parser = new PDFParse({ data: new Uint8Array(buffer) })
+      const info = await parser.getInfo()
+      const result = await parser.getText({ pageJoiner: '' })
+      rawPages = result.pages
+        .map((page) => ({ page: page.num, text: normalizePdfText(page.text) }))
+        .filter((page) => page.text.trim().length > 0)
+      totalPages = info.total ?? rawPages.length
+      titleFromInfo = typeof info.info?.Title === 'string' ? info.info.Title.trim() : ''
+    }
+
+    const deduped = stripRunningLines(rawPages)
+    const removedLines = lineCount(rawPages) - lineCount(deduped)
+    const trimmed = trimStructure(deduped)
+    const pages: PdfPage[] = trimmed.pages
       .map((page) => ({ page: page.page, text: reflowPdfPage(page.text) }))
       .filter((page) => page.text.length > 0)
 
     const totalChars = pages.reduce((total, page) => total + page.text.length, 0)
     if (totalChars < 200) {
       throw new Error(
-        `No selectable text found in ${label} (${info.total ?? rawPages.length} pages). ` +
+        `No selectable text found in ${label} (${totalPages} pages). ` +
           'It may be a scanned PDF; OCR is not supported yet. Use a text-layer PDF or paste the text instead.',
       )
     }
@@ -303,8 +575,8 @@ export async function readPdfBuffer(buffer: Buffer, options: PdfReadOptions): Pr
     } catch {
       // Bookmark resolution is optional; text extraction still works without it.
     }
+    if (articles.length === 0) articles = headingArticles(pages)
 
-    const titleFromInfo = typeof info.info?.Title === 'string' ? info.info.Title.trim() : ''
     const firstLine = pages[0]?.text.split('\n').find((line) => line.trim())?.replace(/^#+\s*/, '').trim()
     const title =
       titleFromInfo ||
@@ -317,10 +589,13 @@ export async function readPdfBuffer(buffer: Buffer, options: PdfReadOptions): Pr
       segments,
       articles,
       metadata: {
-        pages: info.total ?? pages.length,
+        pages: totalPages,
         extractablePages: pages.length,
         articles: articles.length,
         sizeBytes: buffer.byteLength,
+        twoColumnPages: layout?.pages.filter((page) => page.twoColumn).length ?? 0,
+        removedLines,
+        skippedPages: trimmed.skipped,
       },
     }
   } catch (error) {

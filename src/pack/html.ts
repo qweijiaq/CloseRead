@@ -5,7 +5,6 @@ import { sentences } from '../analyze/tokenize.js'
 import { i18nScript } from '../i18n.js'
 import { themeBootScript } from '../theme.js'
 import type { LearningItem, LearningPack, PackAudio, ParagraphNote, SentenceRewrite } from '../types.js'
-import { collectGames } from './games.js'
 import { packReadingMinutes } from './reading-time.js'
 import { readingGuideMarkdown } from './reading-guide.js'
 import { buildStudyPoints } from './study-points.js'
@@ -208,10 +207,9 @@ function renderCompactItem(item: LearningItem, audio: PackAudio): string {
           ${item.tier === 'bonus' && item.libraryState !== 'known' ? '<span class="tag bonus">Bonus</span>' : ''}
         </div>
         <div class="item-actions">
-          ${item.tier === 'bonus' && item.libraryState !== 'known' ? `<button class="adopt" data-adopt="${escapeAttribute(item.id)}">加入复习</button>` : ''}
           <button class="practice" data-practice-word="${escapeAttribute(item.id)}" title="用这个词造句" aria-label="造句">造句</button>
           <button class="story" data-word-story="${escapeAttribute(item.id)}" title="词源小传" aria-label="词源小传">词源</button>
-          <button class="expand" data-expand-word="${escapeAttribute(item.id)}" title="AI 发散相关词" aria-label="发散相关词">发散</button>
+          <button class="expand" data-expand-word="${escapeAttribute(item.id)}" title="相关词" aria-label="发散相关词">发散</button>
           <button class="star" data-favorite="${escapeAttribute(item.id)}" title="收藏" aria-label="收藏">★</button>
           <button class="remove" data-remove="${escapeAttribute(item.id)}" title="从学习包移除并标记为已掌握" aria-label="移除">×</button>
         </div>
@@ -497,9 +495,10 @@ function renderExercises(pack: LearningPack): string {
 export function renderHtml(
   pack: LearningPack,
   audio: PackAudio = { items: {} },
-  options: { exportMode?: boolean } = {},
+  options: { exportMode?: boolean; inApp?: boolean } = {},
 ): string {
   const exportMode = options.exportMode === true
+  const inApp = options.inApp === true
   const readingGuide = readingGuideMarkdown(pack)
   const editorialLeadHtml = readingGuide ? (marked.parse(readingGuide, { async: false }) as string) : ''
   const buildNotes = (pack.build?.warnings ?? []).filter(
@@ -522,7 +521,7 @@ export function renderHtml(
   const sentenceItems = pack.items.filter((item) => item.type === 'sentence' && item.sentence)
   const sentenceHtml = sentenceItems.length
     ? `<section class="sentences" id="sentences">
-        <div class="section-head"><h2>句子卡</h2><span>从原文选句生成 · 用于回译复习</span></div>
+        <div class="section-head"><h2>句子卡</h2><span>从原文选句生成 · 用于回译练习</span></div>
         <div class="para-items">${sentenceItems.map((item) => renderSentenceItem(item)).join('')}</div>
       </section>`
     : ''
@@ -549,12 +548,12 @@ export function renderHtml(
   })
   const hasReadingNotes = (pack.reading ?? []).some((paragraph) => Boolean(paragraph.note))
   const readingMap = (pack.reading ?? []).some((paragraph) => paragraph.note?.role)
-    ? `<div class="reading-map">${(pack.reading ?? [])
+    ? `<div class="reading-map-label">全文脉络 · 点标签跳到段落</div><div class="reading-map">${(pack.reading ?? [])
         .map((paragraph) => {
           const label = String(paragraph.index + 1).padStart(2, '0')
           const role = paragraph.note?.role
           return role
-            ? `<a class="map-chip" href="#p-${label}"><b>${label}</b>${escapeHtml(role)}</a>`
+            ? `<a class="map-chip" href="#p-${label}" title="${escapeHtml(paragraph.note?.summary ?? role)}"><b>${label}</b>${escapeHtml(role)}</a>`
             : ''
         })
         .join('')}</div>`
@@ -588,8 +587,8 @@ export function renderHtml(
     : ''
   const selection = pack.selection
   const selectionNote = selection
-    ? `<div class="selection-note"><strong>选词说明：</strong>${escapeHtml(selection.reason)} ${selection.core} 项核心词进入复习，${selection.bonus} 项 Bonus 只在本页展示。${
-        selection.reused ? `${selection.reused} 项已在词库，只作巩固。` : ''
+    ? `<div class="selection-note"><strong>选词说明：</strong>${escapeHtml(selection.reason)} ${selection.core} 项核心词已标注，${selection.bonus} 项 Bonus 只在本页展示。${
+        selection.reused ? `${selection.reused} 项此前已标注，只作巩固。` : ''
       }${selection.cachedCards ? `复用 ${selection.cachedCards} 张缓存卡片。` : ''}</div>`
     : ''
   const hasBonus = pack.items.some((item) => item.tier === 'bonus')
@@ -604,35 +603,29 @@ export function renderHtml(
   const heroLeadNote = pack.frontMatter?.leadNote?.trim() ?? ''
   const heroSection = pack.frontMatter?.section?.trim() ?? ''
   const readingMinutes = packReadingMinutes(pack)
-  const games = collectGames(pack.items)
-  const hasGames = games.sentences.length > 0 || games.words.length > 0
-  const microEligible = pack.items.filter((item) => item.type !== 'sentence' && item.lemma.trim()).length >= 3
-  const theaterTargets = pack.items
-    .filter((item) => item.type !== 'sentence')
-    .slice(0, 6)
-    .map((item) => ({ lemma: item.lemma, meaning: item.definitionZh ?? item.sense }))
 
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(pack.title)} · Learning Pack</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+${inApp ? `<base href="/pack/${encodeURIComponent(pack.id)}/">` : ''}
+<title>${escapeHtml(pack.title)} · ${inApp ? '精读' : 'Learning Pack'}</title>
 ${exportMode ? '' : themeBootScript()}
 <style>
   :root {
     color-scheme: light;
-    --paper: #f6f2e8;
-    --paper-2: #efe7d7;
-    --card: #fffdf8;
-    --ink: #1c1a16;
-    --ink-70: rgba(28, 26, 22, .72);
-    --ink-45: rgba(28, 26, 22, .45);
-    --line: rgba(28, 26, 22, .12);
-    --line-strong: rgba(28, 26, 22, .22);
-    --cinnabar: #b03a2e;
-    --indigo: #3f5f7f;
-    --ochre: #a8732f;
+    --paper: #f7f6f3;
+    --paper-2: #efece6;
+    --card: #ffffff;
+    --ink: #17181a;
+    --ink-70: rgba(23, 24, 26, .72);
+    --ink-45: rgba(23, 24, 26, .45);
+    --line: rgba(23, 24, 26, .12);
+    --line-strong: rgba(23, 24, 26, .22);
+    --cinnabar: #a6453a;
+    --indigo: #243b53;
+    --ochre: #8a6a2f;
     --sans: 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --serif: 'Songti SC', 'Noto Serif SC', 'Source Han Serif SC', STSong, SimSun, serif;
     --mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
@@ -644,23 +637,24 @@ ${exportMode ? '' : themeBootScript()}
   }
   html[data-theme="dark"] {
     color-scheme: dark;
-    --paper: #141619;
-    --paper-2: #1c1f23;
-    --card: #22262b;
-    --ink: #e9e4d9;
-    --ink-70: rgba(233, 228, 217, .72);
-    --ink-45: rgba(233, 228, 217, .45);
-    --line: rgba(233, 228, 217, .13);
-    --line-strong: rgba(233, 228, 217, .24);
-    --cinnabar: #e07a6e;
-    --indigo: #8db1d6;
-    --ochre: #d3a35f;
+    --paper: #0e0f11;
+    --paper-2: #15171a;
+    --card: #1a1c20;
+    --ink: #eceae4;
+    --ink-70: rgba(236, 234, 228, .72);
+    --ink-45: rgba(236, 234, 228, .45);
+    --line: rgba(236, 234, 228, .13);
+    --line-strong: rgba(236, 234, 228, .24);
+    --cinnabar: #e08b80;
+    --indigo: #9db6c9;
+    --ochre: #d3b274;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     margin: 0;
     background: var(--paper);
+    -webkit-text-size-adjust: 100%;
     color: var(--ink);
     font-family: var(--sans);
     font-size: 14px;
@@ -676,7 +670,7 @@ ${exportMode ? '' : themeBootScript()}
     justify-content: space-between;
     gap: 16px;
     padding: 10px 28px;
-    background: rgba(246, 242, 232, .92);
+    background: rgba(247, 246, 243, .92);
     border-bottom: 1px solid var(--line);
     backdrop-filter: blur(10px);
   }
@@ -695,15 +689,15 @@ ${exportMode ? '' : themeBootScript()}
     box-shadow: 0 10px 30px rgba(28,26,22,.16);
   }
   .export-menu[hidden] { display: none; }
-  .export-menu > button {
+  .export-menu > button, .export-menu > a {
     display: block; width: 100%; border: 0; background: transparent; color: var(--ink);
     text-align: left; padding: 7px 9px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer;
   }
-  .export-menu > button:hover { background: var(--paper-2); }
+  .export-menu > button:hover, .export-menu > a:hover { background: var(--paper-2); }
   .export-label { padding: 8px 9px 3px; color: var(--ink-45); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; }
   .export-hint { max-width: 220px; padding: 7px 9px 9px; border-top: 1px solid var(--line); color: var(--ink-45); font-size: 10px; line-height: 1.55; }
   .cselect { position: relative; }
-  .cselect-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border: 1px solid var(--line); background: #fffdf8; color: var(--ink); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+  .cselect-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 12px; cursor: pointer; }
   .cselect-trigger:hover, .cselect-trigger[aria-expanded="true"] { border-color: var(--cinnabar); }
   .cselect-arrow { color: var(--ink-45); font-size: 10px; }
   .cselect-menu { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 90; max-height: 220px; overflow: auto; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); box-shadow: 0 10px 30px rgba(28,26,22,.18); }
@@ -862,7 +856,8 @@ ${exportMode ? '' : themeBootScript()}
   .reading-intro-stats { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 8px; color: var(--ink-70); font-size: 12.5px; }
   .reading-intro-stats strong { font-family: var(--serif); font-size: 20px; color: var(--ink); margin-right: 3px; }
   .reading-intro p { margin: 9px 0 0; color: var(--ink-45); font-size: 12.5px; line-height: 1.7; }
-  .reading-map { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+  .reading-map-label { margin-top: 12px; color: var(--ink-45); font-family: var(--mono); font-size: 10.5px; letter-spacing: .06em; }
+  .reading-map { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .map-chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); background: rgba(255,253,248,.72); border-radius: 999px; padding: 3px 9px; color: var(--ink-70); font-size: 11.5px; text-decoration: none; }
   .map-chip b { color: var(--cinnabar); font-family: var(--mono); font-size: 10px; font-weight: 500; }
   .map-chip:hover { border-color: var(--cinnabar); color: var(--cinnabar); }
@@ -960,7 +955,7 @@ ${exportMode ? '' : themeBootScript()}
   .sentence-variants { margin: 8px 0 0; padding-left: 18px; color: var(--ink-70); font-size: 12.5px; }
   .output-practice { margin-top: 40px; padding: 20px 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); }
   .output-question { margin: 0 0 10px; padding-left: 12px; border-left: 2px solid var(--rust); color: var(--ink-70); font-size: 14px; line-height: 1.75; }
-  .output-practice textarea { width: 100%; min-height: 110px; border: 1px solid var(--line); border-radius: 8px; background: #fffdf8; padding: 10px 12px; font: inherit; font-size: 14px; line-height: 1.7; resize: vertical; outline: none; }
+  .output-practice textarea { width: 100%; min-height: 110px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 10px 12px; font: inherit; font-size: 14px; line-height: 1.7; resize: vertical; outline: none; }
   .output-practice textarea:focus { border-color: var(--cinnabar); }
   .output-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
   .output-status { color: var(--ink-45); font-size: 12px; }
@@ -1047,7 +1042,7 @@ ${exportMode ? '' : themeBootScript()}
     font-size: 12.5px;
     line-height: 1.6;
     padding: 3px 8px;
-    border-top: 1px solid rgba(246, 242, 232, .15);
+    border-top: 1px solid rgba(236, 234, 228, .15);
   }
   .select-pop .select-annotation, .select-pop .select-examples {
     color: var(--paper);
@@ -1070,7 +1065,7 @@ ${exportMode ? '' : themeBootScript()}
     white-space: normal;
     line-height: 1.4;
   }
-  .select-pop button:hover { background: rgba(246, 242, 232, .12); }
+  .select-pop button:hover { background: rgba(236, 234, 228, .12); }
   .select-pop button:disabled { opacity: .7; cursor: default; }
   .sr-only {
     position: absolute;
@@ -1175,7 +1170,7 @@ ${exportMode ? '' : themeBootScript()}
   body.edit-modal-open { overflow: hidden; }
   .edit-modal-card { width: min(760px, 100%); background: var(--card); border-radius: 16px; box-shadow: 0 20px 60px rgba(28,26,22,.25); padding: 0 0 18px; }
   .edit-modal-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--line); color: var(--ink-45); font-size: 12px; }
-  .edit-modal-card textarea { display: block; width: calc(100% - 36px); min-height: 220px; margin: 16px 18px 0; border: 1px solid var(--line); border-radius: 10px; background: #fffdf8; padding: 12px 14px; font: inherit; font-size: 15px; line-height: 1.75; resize: vertical; outline: none; }
+  .edit-modal-card textarea { display: block; width: calc(100% - 36px); min-height: 220px; margin: 16px 18px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); padding: 12px 14px; font: inherit; font-size: 15px; line-height: 1.75; resize: vertical; outline: none; }
   .edit-modal-card textarea:focus { border-color: var(--cinnabar); }
   .edit-modal-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 18px 0; }
   .edit-modal-status { color: var(--ink-45); font-size: 12px; }
@@ -1185,17 +1180,17 @@ ${exportMode ? '' : themeBootScript()}
   .split-modal[hidden] { display: none; }
   .split-modal-card { width: min(680px, 100%); background: var(--card); border-radius: 16px; box-shadow: 0 20px 60px rgba(28,26,22,.25); padding-bottom: 16px; }
   .split-hint { margin: 14px 18px 6px; color: var(--ink-45); font-size: 12.5px; }
-  .split-modal-card textarea { display: block; width: calc(100% - 36px); min-height: 110px; margin: 0 18px; border: 1px solid var(--line); border-radius: 8px; background: #fffdf8; padding: 10px 12px; font: inherit; font-size: 14px; line-height: 1.7; resize: vertical; outline: none; }
+  .split-modal-card textarea { display: block; width: calc(100% - 36px); min-height: 110px; margin: 0 18px; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 10px 12px; font: inherit; font-size: 14px; line-height: 1.7; resize: vertical; outline: none; }
   .split-modal-card textarea:focus { border-color: var(--cinnabar); }
   .note-modal-card { width: min(760px, 100%); max-height: 88vh; overflow: auto; background: var(--card); border-radius: 16px; box-shadow: 0 20px 60px rgba(28,26,22,.25); }
   .note-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; padding: 14px 18px 4px; }
   .note-form label { display: flex; flex-direction: column; gap: 4px; color: var(--ink-45); font-size: 11px; }
-  .note-form input, .note-form textarea { border: 1px solid var(--line); border-radius: 8px; background: #fffdf8; padding: 7px 9px; font: inherit; font-size: 12.5px; line-height: 1.6; outline: none; }
+  .note-form input, .note-form textarea { border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 7px 9px; font: inherit; font-size: 12.5px; line-height: 1.6; outline: none; }
   .note-form textarea { min-height: 56px; resize: vertical; }
   .note-form label:nth-child(n+4) { grid-column: 1 / -1; }
   .note-form input:focus, .note-form textarea:focus { border-color: var(--cinnabar); }
   .note-form label:first-child { grid-column: 1 / -1; }
-  body.word-modal-open, body.note-modal-open, body.practice-modal-open, body.theater-modal-open, body.game-modal-open, body.micro-modal-open, body.audio-modal-open { overflow: hidden; }
+  body.word-modal-open, body.note-modal-open, body.practice-modal-open, body.audio-modal-open { overflow: hidden; }
   .export-mode .note-modal { display: none !important; }
   .word-modal-card { width: min(720px, 100%); max-height: 82vh; overflow: auto; background: var(--card); border-radius: 16px; box-shadow: 0 20px 60px rgba(28,26,22,.25); }
   .word-modal-bar { position: sticky; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; background: var(--card); border-bottom: 1px solid var(--line); color: var(--ink-45); font-size: 12px; }
@@ -1412,35 +1407,6 @@ ${exportMode ? '' : themeBootScript()}
   .practice-result p { margin: 8px 0; color: var(--ink-70); font-size: 13px; line-height: 1.7; }
   .practice-result p b { color: var(--ink); font-weight: 600; }
   .practice-result blockquote { margin: 9px 0; padding: 8px 12px; border-left: 1px solid var(--line-strong); font-family: var(--serif); font-size: 15px; color: var(--ink); }
-  .theater-modal { position: fixed; inset: 0; z-index: 95; background: rgba(28,26,22,.38); display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .theater-modal[hidden] { display: none; }
-  .theater-card { width: min(760px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line-strong); border-radius: 2px; box-shadow: 0 20px 60px rgba(28,26,22,.18); }
-  .theater-body { padding: 16px 22px 22px; overflow: auto; }
-  .theater-modes { display: flex; gap: 6px; }
-  .theater-mode { border: 1px solid var(--line); background: transparent; color: var(--ink-45); border-radius: 2px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
-  .theater-mode:hover, .theater-mode.active { border-color: var(--ink); color: var(--ink); }
-  .theater-hint { margin: 10px 0 0; color: var(--ink-45); font-size: 12px; line-height: 1.65; }
-  .theater-targets { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
-  .theater-target { border-bottom: 1px solid var(--line); color: var(--ink-70); font-size: 11.5px; padding: 1px 0; }
-  .theater-log { display: grid; gap: 10px; margin-top: 14px; max-height: 38vh; overflow: auto; }
-  .theater-message { padding: 8px 0; border-top: 1px solid var(--line); font-size: 13px; line-height: 1.7; }
-  .theater-message:first-child { border-top: 0; }
-  .theater-message b { display: block; margin-bottom: 3px; color: var(--ink-45); font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: .04em; text-transform: uppercase; }
-  .theater-message.user p { margin: 0; color: var(--ink-70); }
-  .theater-message.author p { margin: 0; color: var(--ink); }
-  .theater-message .theater-translation { margin-top: 4px; color: var(--ink-45); font-size: 12px; }
-  .theater-message .theater-note { margin-top: 5px; color: var(--ink-45); font-size: 11.5px; }
-  .theater-message .theater-used { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
-  .theater-message .theater-used span { color: var(--ink-45); font-size: 11px; border-bottom: 1px solid var(--line); }
-  .theater-compose { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
-  .theater-compose textarea { width: 100%; min-height: 66px; border: 1px solid var(--line); border-radius: 2px; background: transparent; padding: 8px 10px; font: inherit; font-size: 13.5px; line-height: 1.65; resize: vertical; outline: none; }
-  .theater-compose textarea:focus { border-color: var(--ink); }
-  .theater-actions { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
-  .theater-status { color: var(--ink-45); font-size: 11.5px; }
-  .theater-recap { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line-strong); color: var(--ink-70); font-size: 13px; line-height: 1.7; }
-  .theater-recap p { margin: 6px 0; }
-  .theater-recap p b { color: var(--ink); font-weight: 600; }
-  .theater-recap .theater-targets { margin-top: 4px; }
   .audio-modal { position: fixed; inset: 0; z-index: 95; background: rgba(28,26,22,.38); display: flex; align-items: center; justify-content: center; padding: 24px; }
   .audio-modal[hidden] { display: none; }
   .audio-card { width: min(760px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line-strong); border-radius: 2px; box-shadow: 0 20px 60px rgba(28,26,22,.18); }
@@ -1488,54 +1454,6 @@ ${exportMode ? '' : themeBootScript()}
     .audio-card { width: 100%; max-height: 100vh; border: 0; }
     .audio-body { padding: 16px 18px 24px; }
     .shadow-text { font-size: 20px; }
-  }
-  .micro-modal { position: fixed; inset: 0; z-index: 95; background: rgba(28,26,22,.38); display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .micro-modal[hidden] { display: none; }
-  .micro-card { width: min(720px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line-strong); border-radius: 2px; box-shadow: 0 20px 60px rgba(28,26,22,.18); }
-  .micro-body { padding: 18px 24px 24px; overflow: auto; }
-  .micro-eyebrow { color: var(--ink-45); font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
-  .micro-title { margin: 10px 0 8px; color: var(--ink); font-family: var(--serif); font-size: 24px; font-weight: 600; line-height: 1.35; }
-  .micro-text { margin: 0; color: var(--ink); font-family: var(--serif); font-size: 16.5px; line-height: 1.95; white-space: pre-wrap; }
-  .micro-translation { margin: 14px 0 0; padding-left: 12px; border-left: 1px solid var(--line-strong); color: var(--ink-70); font-size: 13px; line-height: 1.8; }
-  .micro-used { display: flex; flex-wrap: wrap; gap: 6px 10px; margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line); }
-  .micro-used span { color: var(--ink-45); font-size: 11.5px; border-bottom: 1px solid var(--line); }
-  .micro-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-  .micro-status { color: var(--ink-45); font-size: 12px; line-height: 1.6; }
-  .micro-actions .focus-tool[disabled] { opacity: .4; cursor: default; }
-  @media (max-width: 640px) {
-    .micro-modal { padding: 0; align-items: stretch; }
-    .micro-card { width: 100%; max-height: 100vh; border: 0; }
-    .micro-body { padding: 16px 18px 24px; }
-    .micro-title { font-size: 21px; }
-    .micro-text { font-size: 15.5px; }
-  }
-  .game-modal { position: fixed; inset: 0; z-index: 95; background: rgba(28,26,22,.38); display: flex; align-items: center; justify-content: center; padding: 24px; }
-  .game-modal[hidden] { display: none; }
-  .game-card { width: min(680px, 100%); max-height: 88vh; display: flex; flex-direction: column; background: var(--card); border: 1px solid var(--line-strong); border-radius: 2px; box-shadow: 0 20px 60px rgba(28,26,22,.18); }
-  .game-body { padding: 14px 22px 20px; overflow: auto; }
-  .game-tabs { display: flex; gap: 6px; }
-  .game-tab { border: 1px solid var(--line); background: transparent; color: var(--ink-45); border-radius: 2px; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; }
-  .game-tab:hover:not(:disabled), .game-tab.active { border-color: var(--ink); color: var(--ink); }
-  .game-tab:disabled { opacity: .35; cursor: default; }
-  .game-head { display: flex; align-items: baseline; justify-content: space-between; margin-top: 16px; color: var(--ink-45); font-family: var(--mono); font-size: 11px; letter-spacing: .04em; }
-  .game-timer { color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
-  .game-prompt { margin-top: 12px; }
-  .game-prompt p { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.7; }
-  .game-prompt span { display: block; margin-top: 5px; color: var(--ink-45); font-size: 12.5px; line-height: 1.65; }
-  .game-answer, .game-pool { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); min-height: 54px; align-items: center; }
-  .game-pool { border-top: 0; margin-top: 0; }
-  .game-empty { color: var(--ink-45); font-size: 12px; }
-  .game-token { border: 1px solid var(--line-strong); border-radius: 2px; background: transparent; color: var(--ink); padding: 6px 10px; font: inherit; font-size: 14px; line-height: 1.4; cursor: pointer; transition: border-color .12s ease; }
-  .game-token:hover { border-color: var(--ink); }
-  .game-answer .game-token { border-style: dashed; }
-  .game-solution { color: var(--ink); font-family: var(--serif); font-size: 16px; line-height: 1.7; }
-  .game-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
-  .game-actions .focus-tool[disabled] { opacity: .35; cursor: default; }
-  .game-status { color: var(--ink-45); font-size: 12px; }
-  @media (max-width: 640px) {
-    .game-modal { padding: 0; align-items: stretch; }
-    .game-card { width: 100%; max-height: 100vh; border: 0; }
-    .game-body { padding: 14px 18px 24px; }
   }
   .output-feedback { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; color: var(--ink-70); font-size: 13px; line-height: 1.75; }
   .output-feedback p { margin: 6px 0; }
@@ -1593,18 +1511,18 @@ ${exportMode ? '' : themeBootScript()}
   }
 
 
-  /* CloseRead 2026 tools skin: align the advanced pack page with the app shell. */
+  /* CloseRead tools skin: align the advanced pack page with the app shell. */
   :root {
-    --paper: #f3f5f1;
-    --paper-2: #e9ede7;
+    --paper: #f7f6f3;
+    --paper-2: #efece6;
     --card: #ffffff;
-    --ink: #151916;
-    --ink-70: #4f5851;
-    --ink-45: #7c857e;
-    --line: #e1e6df;
-    --line-strong: #c9d1c8;
-    --cinnabar: #1e6b4e;
-    --indigo: #1e6b4e;
+    --ink: #17181a;
+    --ink-70: #4a4b4d;
+    --ink-45: #7c7a75;
+    --line: #e4e1da;
+    --line-strong: #cfcbc2;
+    --cinnabar: #a6453a;
+    --indigo: #243b53;
     --ochre: #8a6a2f;
     --radius: 12px;
     --max: 1080px;
@@ -1612,17 +1530,17 @@ ${exportMode ? '' : themeBootScript()}
     --read: 'Iowan Old Style', Charter, 'Songti SC', 'Noto Serif SC', serif;
   }
   html[data-theme="dark"] {
-    --paper: #0c100d;
-    --paper-2: #131813;
-    --card: #161c17;
-    --ink: #edf2ec;
-    --ink-70: #b7c0b8;
-    --ink-45: #98a39a;
-    --line: #29322b;
-    --line-strong: #3b473e;
-    --cinnabar: #79d4a8;
-    --indigo: #79d4a8;
-    --ochre: #d3a35f;
+    --paper: #0e0f11;
+    --paper-2: #15171a;
+    --card: #1a1c20;
+    --ink: #eceae4;
+    --ink-70: #bdbab3;
+    --ink-45: #9a978f;
+    --line: #2a2d32;
+    --line-strong: #3d4148;
+    --cinnabar: #e08b80;
+    --indigo: #9db6c9;
+    --ochre: #d3b274;
   }
   body { background: var(--paper); color: var(--ink); font-family: var(--ui); }
   .topbar { padding: 12px 28px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 90%, transparent); backdrop-filter: blur(14px); }
@@ -1649,7 +1567,7 @@ ${exportMode ? '' : themeBootScript()}
   .paragraph:hover { background: var(--paper-2); }
   .para-marker { border-radius: 8px; }
   .focus-tool, .expand, .adopt, .reading-finish, .word-modal-close { border-radius: 9px; }
-  .word-modal-card, .game-card, .reader-settings { border-radius: 18px; background: var(--card); }
+  .word-modal-card, .reader-settings { border-radius: 18px; background: var(--card); }
   .word-modal { background: rgba(12, 16, 13, .55); }
   textarea, input, select, .cselect-trigger { border-radius: 10px; background: var(--card); color: var(--ink); }
   .original { font-family: var(--read); }
@@ -1659,14 +1577,204 @@ ${exportMode ? '' : themeBootScript()}
     .topbar { padding: 10px 14px; }
     .reading-intro, .front-matter, .study-points { padding: 14px 16px; border-radius: 14px; }
   }
+
+  .pack-more-open { display: none; }
+  @media (max-width: 760px) {
+    body { padding-bottom: env(safe-area-inset-bottom); }
+    .topbar {
+      gap: 8px;
+      min-height: 56px;
+      padding: calc(8px + env(safe-area-inset-top)) 12px 8px;
+      background: var(--paper);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .topbar-left { flex: 1 1 auto; gap: 8px; }
+    .topbar-left .brand { max-width: 34vw; font-size: 14px; }
+    #back-review { min-height: 38px; padding: 6px 9px; }
+    .topbar-right { gap: 5px; }
+    .topbar-right > .topbar-action { display: none; }
+    .topbar-action { min-height: 38px; padding: 6px 10px; border-radius: 8px; touch-action: manipulation; }
+    .pack-more-open {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 6px 11px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--card);
+      color: var(--ink);
+      font: inherit;
+      font-size: 12px;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    .pack-more {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+      background: rgba(12, 16, 13, .48);
+    }
+    .pack-more[hidden] { display: none; }
+    .pack-more-panel {
+      width: 100%;
+      max-height: 72vh;
+      max-height: 72dvh;
+      overflow: auto;
+      display: grid;
+      gap: 2px;
+      padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+      border: 1px solid var(--line);
+      border-radius: 20px 20px 14px 14px;
+      background: var(--card);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, .28);
+    }
+    .pack-more-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 4px 8px; }
+    .pack-more-head strong { font-family: var(--serif); font-size: 17px; }
+    .pack-more-close { min-width: 44px; min-height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-45); font: inherit; font-size: 12px; cursor: pointer; }
+    .pack-more-panel > button { min-height: 48px; padding: 10px 12px; border: 0; border-radius: 11px; background: transparent; color: var(--ink); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+    .pack-more-panel > button:active { background: var(--paper-2); }
+    body.pack-more-open { overflow: hidden; }
+    .export-menu {
+      position: fixed;
+      top: auto;
+      right: 8px;
+      bottom: calc(8px + env(safe-area-inset-bottom));
+      left: 8px;
+      z-index: 122;
+      max-height: 74vh;
+      max-height: 74dvh;
+      overflow: auto;
+      border-radius: 18px;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    }
+    .export-menu > button, .export-menu > a { min-height: 44px; padding: 10px 11px; font-size: 13px; }
+    .page { width: 100%; padding: 26px 14px calc(64px + env(safe-area-inset-bottom)); }
+    .hero-actions {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      margin-right: -14px;
+      padding: 2px 14px 8px 0;
+      scrollbar-width: none;
+    }
+    .hero-actions::-webkit-scrollbar { display: none; }
+    .hero-actions > * { flex: 0 0 auto; min-height: 40px; display: inline-flex; align-items: center; }
+    .reading-status { position: sticky; top: calc(58px + env(safe-area-inset-top)); z-index: 8; padding: 7px 0; background: color-mix(in srgb, var(--paper) 94%, transparent); backdrop-filter: blur(10px); }
+    .reading-intro-stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+    .reading-map { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+    .reading-map::-webkit-scrollbar { display: none; }
+    .map-chip { flex: 0 0 auto; min-height: 34px; display: inline-flex; align-items: center; }
+    .paragraph { scroll-margin-top: 96px; }
+    .para-note-head { flex-direction: column; gap: 8px; }
+    .para-tools { justify-content: flex-start; gap: 6px; margin-top: 0; flex-wrap: wrap; }
+    .para-focus, .note-answer-btn, .expand, .adopt, .reading-finish { min-height: 38px; padding: 7px 11px; touch-action: manipulation; }
+    .para-marker { width: 38px; height: 38px; touch-action: manipulation; }
+    .vocab-table, .vocab-table tbody, .vocab-table tr, .vocab-table td { display: block; width: 100%; }
+    .vocab-table thead { display: none; }
+    .vocab-table tr { margin-bottom: 9px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+    .vocab-table td { padding: 2px 0; border: 0; }
+    .vocab-table td:nth-child(3)::before { content: '搭配 · '; color: var(--ink-45); font-size: 10.5px; }
+    .vocab-table td:nth-child(4)::before { content: '段落 · '; color: var(--ink-45); font-size: 10.5px; }
+    .vocab-table .word { font-size: 18px; }
+    .vocab-table .ipa { display: inline-block; margin-left: 7px; }
+    .preface-excerpt, .editorial-body, .original, .translation, .para-note, .front-title, .front-lead, .note-summary, .note-key-note, .word-modal-def, .sentence-item, .exercise, .output-practice { overflow-wrap: anywhere; }
+    .preface-excerpt pre, .preface-excerpt table, .editorial-body pre, .editorial-body table { max-width: 100%; overflow-x: auto; }
+    .word-modal, .edit-modal, .note-modal, .split-modal, .practice-modal, .audio-modal {
+      align-items: flex-end;
+      padding: 0;
+    }
+    .word-modal-card, .edit-modal-card, .note-modal-card, .split-modal-card, .practice-card, .audio-card {
+      width: 100%;
+      max-height: 94vh;
+      max-height: calc(100dvh - 6px);
+      border-radius: 18px 18px 0 0;
+      overflow: auto;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+    .word-modal-bar, .edit-modal-bar, .audio-card .word-modal-bar {
+      padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+    }
+    .word-modal-body, .audio-body { padding: 16px 16px calc(20px + env(safe-area-inset-bottom)); }
+    .word-modal-close, .reader-settings-close { min-width: 44px; min-height: 44px; padding: 8px 10px; }
+    .edit-modal-card textarea { width: calc(100% - 32px); margin: 14px 16px 0; }
+    .edit-modal-actions { padding: 12px 16px 0; }
+    .note-form { grid-template-columns: 1fr; padding: 14px 16px 4px; }
+    .note-form label, .note-form label:first-child, .note-form label:nth-child(n+4) { grid-column: 1; }
+    .split-modal-card textarea { width: calc(100% - 32px); margin: 0 16px; }
+    .split-hint { margin: 14px 16px 6px; }
+    .reader-settings {
+      top: auto;
+      right: 8px;
+      bottom: calc(8px + env(safe-area-inset-bottom));
+      left: 8px;
+      width: auto;
+      max-height: 76vh;
+      max-height: 76dvh;
+      overflow: auto;
+      border-radius: 18px;
+    }
+    .reader-choice button { min-height: 40px; padding: 7px 12px; }
+    input:not([type="checkbox"]):not([type="radio"]), textarea, select { font-size: 16px; }
+    img, video, svg, canvas { max-width: 100%; }
+    pre, code { overflow-x: auto; }
+    .output-practice textarea, .today-output-input, .focus-tool { touch-action: manipulation; }
+    .focus-mode { overscroll-behavior: contain; }
+    .focus-bar { flex-wrap: wrap; }
+    .focus-original { font-size: clamp(24px, 8vw, 32px); }
+    .footer-actions { flex-wrap: wrap; }
+    .footer-actions .topbar-action { min-height: 40px; display: inline-flex; align-items: center; }
+    .toast { bottom: calc(20px + env(safe-area-inset-bottom)); }
+  }
+
+  .topbar { background: var(--paper); backdrop-filter: none; }
+  .topbar-action { padding: 5px 0; border: 0; border-radius: 0; background: transparent; color: var(--ink-70); }
+  .topbar-action:hover { background: transparent; color: var(--ink); text-decoration: underline; text-underline-offset: 4px; }
+  .hero .front-title, .front-title, .section-head h2, .reading-intro h2 { font-family: 'Iowan Old Style', Charter, 'Songti SC', 'Noto Serif SC', serif; font-weight: 600; letter-spacing: -.015em; }
+  .hero .front-title, .front-title.original { font-size: clamp(30px, 4vw, 42px); line-height: 1.18; }
+  .add-panel h2 { margin: 4px 0 8px; font-family: 'Iowan Old Style', Charter, 'Songti SC', 'Noto Serif SC', serif; font-size: 20px; font-weight: 600; }
+  .front-title-zh { margin-top: 8px; font-size: 16px; }
+  .front-kicker, .eyebrow, .reading-intro-kicker { font-family: var(--mono); font-weight: 500; letter-spacing: .14em; }
+  .reading-intro, .front-matter, .study-points, .reading-preface, .editorial, .add-panel {
+    margin: 22px 0 0; padding: 20px 0;
+    border: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    border-radius: 0; background: none;
+  }
+  .front-summary { margin: 12px 0 0; padding: 4px 0 4px 14px; border-left: 2px solid var(--line-strong); border-radius: 0; background: none; }
+  .paragraph { border-bottom: 1px solid var(--line); }
+  .paragraph:hover { background: transparent; }
+  .paragraph:hover .para-label { color: var(--cinnabar); }
+  .para-marker { border: 0; border-radius: 0; background: none; }
+  .para-marker.read { border: 0; background: none; }
+  .focus-tool, .expand, .adopt, .reading-finish, .word-modal-close, .para-focus, .note-answer-btn, .reader-choice button, .audio-rates button, .tts-provider, .tts-local-voice, .focus-chip, .map-chip { border-radius: 2px; }
+  .adopt { padding: 0 1px; border: 0; border-bottom: 1px solid currentColor; background: none; }
+  textarea, input, select, .cselect-trigger { border-radius: 2px; }
+  .word-modal-card, .reader-settings, .edit-modal-card, .split-modal-card, .note-modal-card, .practice-card, .audio-card { border-radius: 4px; }
+  .vocab-table tr { border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; }
+  .reading-status { background: var(--paper); backdrop-filter: none; }
+  .hero-actions { gap: 0; column-gap: 18px; }
+  .hero-actions .topbar-action { padding: 5px 0; color: var(--ink-45); }
+  .hero-actions .topbar-action:hover { color: var(--ink); }
+  .topbar-right { gap: 16px; }
+  .topbar .meta { gap: 14px; }
+  :focus-visible { outline: 2px solid var(--cinnabar); outline-offset: 2px; }
+  @media (max-width: 760px) {
+    .hero-actions { column-gap: 14px; }
+    .hero-actions > * { min-height: 44px; }
+    .hero-actions [data-feedback], .hero-actions [data-edit-front] { display: none; }
+    .reading-intro, .front-matter, .study-points, .reading-preface, .editorial, .add-panel { margin-top: 18px; padding: 16px 0; }
+  }
 </style>
 </head>
 <body${exportMode ? ' class="export-mode"' : ''}>
 <header class="topbar">
   <div class="topbar-left">
-    <a class="topbar-action" href="/read/${encodeURIComponent(pack.id)}" aria-label="返回精读模式">精读模式</a>
-    <a class="topbar-action" id="back-review" data-home href="/" aria-label="返回今日">← 今日</a>
-    <a class="brand" data-home href="/">Learning Pack</a>
+    <a class="topbar-action" id="back-review" data-home href="/" aria-label="返回文章">← 文章</a>
+    <a class="brand" data-home href="/">${inApp ? 'CloseRead' : 'Learning Pack'}</a>
     <nav class="chapter-nav" id="chapter-nav" hidden></nav>
   </div>
   <div class="topbar-right">
@@ -1684,7 +1792,7 @@ ${exportMode ? '' : themeBootScript()}
       <div class="export-menu" id="export-menu" hidden>
         ${
           exportWordTotal > 5
-            ? `<div class="export-label">导出词数 · AI 选词</div>
+            ? `<div class="export-label">导出词数</div>
               <div class="cselect export-word-cselect" data-cselect>
                 <input type="hidden" id="export-word-count" value="">
                 <button class="cselect-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
@@ -1705,13 +1813,23 @@ ${exportMode ? '' : themeBootScript()}
         <button type="button" data-export="png" data-png-width="900">手机宽 · 900</button>
         <button type="button" data-export="png" data-png-width="1200">标准 · 1200</button>
         <button type="button" data-export="png" data-png-width="900" data-png-scale="2">高清 2× · 1800</button>
-        <button type="button" data-export="png-pages">PNG 分图 · AI 智能分页</button>
+        <button type="button" data-export="png-pages">PNG 分图</button>
         <button type="button" data-export="mobi">MOBI（需 Calibre）</button>
+        ${inApp ? `<a href="/read/${encodeURIComponent(pack.id)}/notes.md">精读笔记 · Markdown</a>` : ''}
         <div class="export-hint">导出前会自动补齐缺失的派生、参考答案和练习译文；需要模型时会调用。</div>
       </div>
     </div>
+    <button class="pack-more-open" id="pack-more-open" type="button" aria-haspopup="dialog" aria-expanded="false">更多</button>
   </div>
 </header>
+<div class="pack-more" id="pack-more" hidden>
+  <div class="pack-more-panel" role="dialog" aria-modal="true" aria-label="更多操作">
+    <div class="pack-more-head"><strong>更多操作</strong><button class="pack-more-close" id="pack-more-close" type="button">关闭</button></div>
+    <button type="button" data-pack-action="jump-add">添加单词</button>
+    ${pack.reading?.length ? '<button type="button" data-pack-action="top-focus">单句精读</button><button type="button" data-pack-action="audio-open">音频跟读</button><button type="button" data-pack-action="toggle-translation">隐藏译文</button><button type="button" data-pack-action="reader-settings-open">阅读设置</button>' : ''}
+    <button type="button" data-pack-action="lang-toggle">中英切换</button>
+  </div>
+</div>
 <div class="scroll-progress" id="scroll-progress"></div>
 <main class="page">
   <section class="hero">
@@ -1737,13 +1855,11 @@ ${exportMode ? '' : themeBootScript()}
     </div>
     ${selectionNote}
     <div class="hero-actions">
-      <a class="topbar-action" data-review-pack href="/?tab=review&pack=${encodeURIComponent(pack.id)}">复习这篇</a>
+      ${inApp ? '' : `<a class="topbar-action" data-open-reader href="/read/${encodeURIComponent(pack.id)}">在应用中打开</a>`}
       ${pack.parentResourceId ? '<a class="topbar-action" data-article-list href="#">返回文章列表</a>' : ''}
       ${hasBonus ? '<button class="topbar-action" id="toggle-bonus" type="button">只看核心词</button>' : ''}
-      ${pack.reading?.length ? '<button class="topbar-action" id="focus-mode-open" type="button">单句精读</button><button class="topbar-action" id="audio-open" type="button">音频跟读</button><button class="topbar-action" id="theater-open" type="button">AI 小剧场</button><button class="topbar-action" id="toggle-translation" type="button">隐藏译文</button><button class="topbar-action" id="reader-settings-open" type="button" aria-label="阅读设置">Aa</button>' : ''}
-      ${hasGames ? '<button class="topbar-action" id="game-open" type="button">60 秒挑战</button>' : ''}
-      ${microEligible ? '<button class="topbar-action" id="micro-story-open" type="button">微故事</button>' : ''}
-      <button class="topbar-action" data-feedback="less" type="button">词太多</button>
+      ${pack.reading?.length ? '<button class="topbar-action" id="focus-mode-open" type="button">单句精读</button><button class="topbar-action" id="audio-open" type="button">音频跟读</button><button class="topbar-action" id="toggle-translation" type="button">隐藏译文</button><button class="topbar-action" id="reader-settings-open" type="button" aria-label="阅读设置">Aa</button>' : ''}
+                  <button class="topbar-action" data-feedback="less" type="button">词太多</button>
       <button class="topbar-action" data-feedback="more" type="button">词太少</button>
       <button class="topbar-action" data-edit-front="title" type="button">编辑标题</button>
       ${heroLead ? '<button class="topbar-action" data-edit-front="lead" type="button">编辑导语</button>' : ''}
@@ -1763,7 +1879,7 @@ ${exportMode ? '' : themeBootScript()}
   ${buildWarningHtml}
 
   <section class="add-panel" id="add-panel">
-    <div class="eyebrow">ADD WORDS</div>
+    <div class="eyebrow">添加生词</div>
     <h2>选中即加词 / 加句</h2>
     <p>在下面原文中选中 1–8 个词，页面会浮出“添加”按钮，直接生成学习卡；选中一整句，可以生成用于回译的句子卡。没有出现在原文里的词会放进“补充词汇”。</p>
     <details class="manual-add">
@@ -1837,7 +1953,7 @@ ${exportMode ? '' : themeBootScript()}
   <footer>
     <div class="footer-actions">
       <a class="topbar-action" data-home href="/">← 返回今日</a>
-      <a class="topbar-action" data-review-pack href="/?tab=review&pack=${encodeURIComponent(pack.id)}">复习这篇</a>
+      ${inApp ? '' : `<a class="topbar-action" data-open-reader href="/read/${encodeURIComponent(pack.id)}">在应用中打开</a>`}
       ${pack.parentResourceId ? '<a class="topbar-action" data-article-list href="#">返回文章列表</a>' : ''}
       <button class="topbar-action" id="jump-top" type="button">回到顶部</button>
     </div>
@@ -1877,7 +1993,7 @@ ${exportMode ? '' : themeBootScript()}
 <div class="word-modal" id="word-modal" hidden>
   <div class="word-modal-card" role="dialog" aria-modal="true" aria-label="词汇发散">
     <div class="word-modal-bar">
-      <span id="word-modal-title">词汇发散 · AI 相关词</span>
+      <span id="word-modal-title">词汇发散 · 相关词</span>
       <button class="word-modal-close" id="word-modal-close" type="button">关闭</button>
     </div>
     <div class="word-modal-body" id="word-modal-body"></div>
@@ -1894,37 +2010,10 @@ ${exportMode ? '' : themeBootScript()}
       <div class="practice-scenes" id="practice-scenes"></div>
       <textarea id="practice-text" placeholder="用这个表达写一句英文…"></textarea>
       <div class="practice-actions">
-        <button class="focus-tool primary" id="practice-submit" type="button">让 AI 看看</button>
+        <button class="focus-tool primary" id="practice-submit" type="button">提交批改</button>
         <span class="practice-status" id="practice-status"></span>
       </div>
       <div class="practice-result" id="practice-result"></div>
-    </div>
-  </div>
-</div>
-<div class="game-modal" id="game-modal" hidden>
-  <div class="game-card" role="dialog" aria-modal="true" aria-label="60 秒挑战">
-    <div class="word-modal-bar">
-      <span id="game-title">60 秒挑战</span>
-      <button class="word-modal-close" id="game-close" type="button">关闭</button>
-    </div>
-    <div class="game-body">
-      <div class="game-tabs" id="game-tabs">
-        <button type="button" class="game-tab active" data-game-mode="sentence">金句拼图</button>
-        <button type="button" class="game-tab" data-game-mode="word">词根拼装</button>
-      </div>
-      <div class="game-head">
-        <span id="game-counter"></span>
-        <span id="game-timer">60s</span>
-      </div>
-      <div class="game-prompt" id="game-prompt"></div>
-      <div class="game-answer" id="game-answer"></div>
-      <div class="game-pool" id="game-pool"></div>
-      <div class="game-actions">
-        <button class="focus-tool primary" id="game-check" type="button">检查</button>
-        <button class="focus-tool" id="game-reset" type="button">重来</button>
-        <button class="focus-tool" id="game-next" type="button" hidden>下一题</button>
-        <span class="game-status" id="game-status"></span>
-      </div>
     </div>
   </div>
 </div>
@@ -1998,50 +2087,6 @@ ${exportMode ? '' : themeBootScript()}
     </div>
   </div>
 </div>
-<div class="micro-modal" id="micro-story-modal" hidden>
-  <div class="micro-card" role="dialog" aria-modal="true" aria-label="微故事">
-    <div class="word-modal-bar">
-      <span>微故事</span>
-      <button class="word-modal-close" id="micro-story-close" type="button">关闭</button>
-    </div>
-    <div class="micro-body">
-      <div class="micro-eyebrow">用这篇的词，写一个短故事</div>
-      <h3 class="micro-title" id="micro-story-title"></h3>
-      <p class="micro-text" id="micro-story-text"></p>
-      <p class="micro-translation" id="micro-story-translation"></p>
-      <div class="micro-used" id="micro-story-used"></div>
-      <div class="micro-actions">
-        <button class="focus-tool primary" id="micro-story-generate" type="button">写一个</button>
-        <span class="micro-status" id="micro-story-status"></span>
-      </div>
-    </div>
-  </div>
-</div>
-<div class="theater-modal" id="theater-modal" hidden>
-  <div class="theater-card" role="dialog" aria-modal="true" aria-label="AI 小剧场">
-    <div class="word-modal-bar">
-      <span id="theater-title">AI 小剧场</span>
-      <button class="word-modal-close" id="theater-close" type="button">关闭</button>
-    </div>
-    <div class="theater-body">
-      <div class="theater-modes" id="theater-modes">
-        <button type="button" class="theater-mode active" data-theater-mode="interview">三句话采访作者</button>
-        <button type="button" class="theater-mode" data-theater-mode="debate">反驳 AI</button>
-      </div>
-      <p class="theater-hint" id="theater-hint">用文章里的表达，向作者提三个问题。最多三轮。</p>
-      <div class="theater-targets" id="theater-targets"></div>
-      <div class="theater-log" id="theater-log"></div>
-      <div class="theater-compose" id="theater-compose">
-        <textarea id="theater-input" placeholder="写下你的问题或反驳…"></textarea>
-        <div class="theater-actions">
-          <button class="focus-tool primary" id="theater-send" type="button">发送</button>
-          <span class="theater-status" id="theater-status">第 1 / 3 轮</span>
-        </div>
-      </div>
-      <div class="theater-recap" id="theater-recap" hidden></div>
-    </div>
-  </div>
-</div>
 <div class="edit-modal" id="edit-modal" hidden>
   <div class="edit-modal-card" role="dialog" aria-modal="true" aria-label="编辑精读内容">
     <div class="edit-modal-bar">
@@ -2088,7 +2133,7 @@ ${exportMode ? '' : themeBootScript()}
     </div>
     <div class="edit-modal-actions">
       <button class="focus-tool primary" id="note-modal-save" type="button">保存笔记</button>
-      <button class="focus-tool" id="note-modal-regenerate" type="button">AI 重新生成本段笔记</button>
+      <button class="focus-tool" id="note-modal-regenerate" type="button">重新生成本段笔记</button>
       <button class="focus-tool" id="note-modal-answer" type="button">重新生成答案</button>
       <span class="edit-modal-status" id="note-modal-status"></span>
     </div>
@@ -2128,7 +2173,6 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
     try { favorites = new Set(JSON.parse(localStorage.getItem(storageKey) || '[]')); } catch (error) {}
     var PACK_ID = ${JSON.stringify(pack.id)};
     var PACK_TITLE = ${jsonForScript(pack.title)};
-    var MICRO_STORY = ${jsonForScript(pack.microStory ?? null)};
     var PARENT_RESOURCE = ${JSON.stringify(pack.parentResourceId ?? null)};
     var ARTICLE_INDEX = ${JSON.stringify(pack.articleIndex ?? null)};
     var editable = location.protocol !== 'file:';
@@ -2155,9 +2199,6 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
     var FOCUS_PARAGRAPHS = ${jsonForScript(focusData)};
     var READING_AUDIO = ${jsonForScript(audio.reading ?? '')};
     var OUTPUT_PROMPT = ${jsonForScript(discussion?.question ?? '')};
-    var THEATER_TARGETS = ${jsonForScript(theaterTargets)};
-    var GAME_SENTENCES = ${jsonForScript(games.sentences)};
-    var GAME_WORDS = ${jsonForScript(games.words)};
     var OUTPUT_ANSWER = ${jsonForScript(discussion?.answer ?? '')};
     var readingState = { read: [], last: 0, lastSentence: 0, finished: false, started: false };
     var readingSaveTimer;
@@ -2175,9 +2216,9 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
       if (location.protocol === 'file:') link.setAttribute('title', '先运行 pnpm dev review 启动复习服务');
     });
     var reviewBase = location.protocol === 'file:' ? 'http://127.0.0.1:4317' : '';
-    document.querySelectorAll('[data-review-pack]').forEach(function (link) {
-      link.setAttribute('href', reviewBase + '/?tab=review&pack=' + encodeURIComponent(PACK_ID));
-      if (location.protocol === 'file:') link.setAttribute('title', '先运行 pnpm dev review 启动复习服务');
+    document.querySelectorAll('[data-open-reader]').forEach(function (link) {
+      link.setAttribute('href', reviewBase + '/read/' + encodeURIComponent(PACK_ID));
+      if (location.protocol === 'file:') link.setAttribute('title', '先运行 pnpm dev review 启动精读服务');
     });
     if (PARENT_RESOURCE) {
       var articleBase = location.protocol === 'file:' ? 'http://127.0.0.1:4317' : '';
@@ -2548,7 +2589,7 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
         : format === 'png'
           ? '正在生成 PNG 长图（' + width + (scale > 1 ? ' · ' + scale + '×' : '') + '）' + selectionLabel
           : format === 'png-pages'
-            ? '正在用 AI 规划分页，并生成多张 PNG' + selectionLabel
+            ? '正在规划分页，并生成多张 PNG' + selectionLabel
             : '正在补全发散、答案和译文，然后导出' + selectionLabel;
       beginExport(label);
       fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/export/' + format + query).then(function (response) {
@@ -2658,47 +2699,6 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
     var practiceStatus = document.getElementById('practice-status');
     var practiceResult = document.getElementById('practice-result');
     var practiceClose = document.getElementById('practice-close');
-    var theaterModal = document.getElementById('theater-modal');
-    var theaterClose = document.getElementById('theater-close');
-    var theaterHint = document.getElementById('theater-hint');
-    var theaterTargetsEl = document.getElementById('theater-targets');
-    var theaterLog = document.getElementById('theater-log');
-    var theaterInput = document.getElementById('theater-input');
-    var theaterSend = document.getElementById('theater-send');
-    var theaterStatus = document.getElementById('theater-status');
-    var theaterRecap = document.getElementById('theater-recap');
-    var theaterMode = 'interview';
-    var theaterTurn = 0;
-    var theaterMessages = [];
-    var gameModal = document.getElementById('game-modal');
-    var gameClose = document.getElementById('game-close');
-    var gameTabs = document.getElementById('game-tabs');
-    var gameCounter = document.getElementById('game-counter');
-    var gameTimer = document.getElementById('game-timer');
-    var gamePrompt = document.getElementById('game-prompt');
-    var gameAnswer = document.getElementById('game-answer');
-    var gamePool = document.getElementById('game-pool');
-    var gameCheck = document.getElementById('game-check');
-    var gameReset = document.getElementById('game-reset');
-    var gameNext = document.getElementById('game-next');
-    var gameStatus = document.getElementById('game-status');
-    var gameMode = 'sentence';
-    var gameIndex = 0;
-    var gameSelected = [];
-    var gamePoolTokens = [];
-    var gameSeconds = 60;
-    var gameInterval = null;
-    var gameStartedAt = 0;
-    var microStoryModal = document.getElementById('micro-story-modal');
-    var microStoryClose = document.getElementById('micro-story-close');
-    var microStoryTitle = document.getElementById('micro-story-title');
-    var microStoryText = document.getElementById('micro-story-text');
-    var microStoryTranslation = document.getElementById('micro-story-translation');
-    var microStoryUsed = document.getElementById('micro-story-used');
-    var microStoryGenerate = document.getElementById('micro-story-generate');
-    var microStoryStatus = document.getElementById('micro-story-status');
-    var microStory = MICRO_STORY;
-    var microStoryLoading = false;
     var audioModal = document.getElementById('audio-modal');
     var audioClose = document.getElementById('audio-close');
     var audioListenPane = document.getElementById('audio-listen-pane');
@@ -2891,7 +2891,7 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
         slot.appendChild(heading);
         var loading = document.createElement('p');
         loading.className = 'word-modal-empty';
-        loading.textContent = 'AI 正在生成派生图…';
+        loading.textContent = '正在生成派生图…';
         slot.appendChild(loading);
       }
       wordModalBody.appendChild(slot);
@@ -2924,7 +2924,7 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
 
     function renderWordExpansion(item) {
       if (!wordModalBody) return;
-      if (wordModalTitle) wordModalTitle.textContent = '词汇发散 · AI 相关词';
+      if (wordModalTitle) wordModalTitle.textContent = '词汇发散 · 相关词';
       wordModalBody.innerHTML = '';
       var head = document.createElement('div');
       head.className = 'word-modal-head';
@@ -2972,7 +2972,7 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
       if (!hasContent) {
         var empty = document.createElement('p');
         empty.className = 'word-modal-empty';
-        empty.textContent = 'AI 这次没有返回更多关联词，可以稍后重试。';
+        empty.textContent = '这次没有返回更多关联词，可以稍后重试。';
         wordModalBody.appendChild(empty);
       }
       addDerivationSlot(item);
@@ -2989,7 +2989,7 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
       wordModalBody.innerHTML = '';
       var loading = document.createElement('p');
       loading.className = 'word-modal-empty';
-      loading.textContent = 'AI 正在发散相关词，通常需要 20–40 秒…';
+      loading.textContent = '正在发散相关词，通常需要 20–40 秒…';
       wordModalBody.appendChild(loading);
       fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/items/' + encodeURIComponent(itemId) + '/expand', {
         method: 'POST',
@@ -3055,7 +3055,7 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
       wordModalBody.innerHTML = '';
       var loading = document.createElement('p');
       loading.className = 'word-modal-empty';
-      loading.textContent = 'AI 正在整理词源，通常需要 10–20 秒…';
+      loading.textContent = '正在整理词源，通常需要 10–20 秒…';
       wordModalBody.appendChild(loading);
       fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/items/' + encodeURIComponent(itemId) + '/story', {
         method: 'POST',
@@ -3100,184 +3100,6 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
       details.appendChild(summary);
       details.appendChild(list);
       itemElement.appendChild(details);
-    }
-
-    function theaterHintText() {
-      return theaterMode === 'interview'
-        ? '用文章里的表达，向作者提三个问题。最多三轮。'
-        : 'AI 扮演文章作者，你用文章里的表达反驳他。最多三轮。';
-    }
-
-    function renderTheaterTargets() {
-      if (!theaterTargetsEl) return;
-      theaterTargetsEl.innerHTML = '';
-      THEATER_TARGETS.forEach(function (target) {
-        var chip = document.createElement('span');
-        chip.className = 'theater-target';
-        chip.textContent = target.lemma + ' · ' + target.meaning;
-        chip.title = target.meaning;
-        theaterTargetsEl.appendChild(chip);
-      });
-    }
-
-    function updateTheaterModes() {
-      document.querySelectorAll('[data-theater-mode]').forEach(function (button) {
-        button.classList.toggle('active', button.getAttribute('data-theater-mode') === theaterMode);
-      });
-      if (theaterHint) theaterHint.textContent = theaterHintText();
-    }
-
-    function resetTheater() {
-      theaterTurn = 0;
-      theaterMessages = [];
-      if (theaterLog) theaterLog.innerHTML = '';
-      if (theaterInput) {
-        theaterInput.value = '';
-        theaterInput.disabled = false;
-      }
-      if (theaterSend) {
-        theaterSend.disabled = false;
-        theaterSend.textContent = '发送';
-      }
-      if (theaterStatus) theaterStatus.textContent = '第 1 / 3 轮';
-      if (theaterRecap) {
-        theaterRecap.hidden = true;
-        theaterRecap.innerHTML = '';
-      }
-      updateTheaterModes();
-      renderTheaterTargets();
-    }
-
-    function appendTheaterMessage(entry) {
-      if (!theaterLog) return;
-      var message = document.createElement('div');
-      message.className = 'theater-message ' + entry.role;
-      var label = document.createElement('b');
-      label.textContent = entry.role === 'user' ? '你' : '作者';
-      message.appendChild(label);
-      var text = document.createElement('p');
-      text.textContent = entry.content;
-      message.appendChild(text);
-      if (entry.translation) {
-        var translation = document.createElement('div');
-        translation.className = 'theater-translation';
-        translation.textContent = entry.translation;
-        message.appendChild(translation);
-      }
-      if (entry.note) {
-        var note = document.createElement('div');
-        note.className = 'theater-note';
-        note.textContent = entry.note;
-        message.appendChild(note);
-      }
-      if (entry.used && entry.used.length) {
-        var used = document.createElement('div');
-        used.className = 'theater-used';
-        entry.used.forEach(function (value) {
-          var chip = document.createElement('span');
-          chip.textContent = value;
-          used.appendChild(chip);
-        });
-        message.appendChild(used);
-      }
-      theaterLog.appendChild(message);
-      theaterLog.scrollTop = theaterLog.scrollHeight;
-    }
-
-    function renderTheaterRecap(recap) {
-      if (!theaterRecap || !recap) return;
-      theaterRecap.hidden = false;
-      theaterRecap.innerHTML = '';
-      var summary = document.createElement('p');
-      summary.textContent = recap.summary;
-      theaterRecap.appendChild(summary);
-      if (recap.used && recap.used.length) {
-        var usedLabel = document.createElement('p');
-        usedLabel.innerHTML = '<b>用上了</b> ';
-        usedLabel.appendChild(document.createTextNode(recap.used.join(' · ')));
-        theaterRecap.appendChild(usedLabel);
-      }
-      if (recap.missed && recap.missed.length) {
-        var missedLabel = document.createElement('p');
-        missedLabel.innerHTML = '<b>还没用上</b> ';
-        missedLabel.appendChild(document.createTextNode(recap.missed.join(' · ')));
-        theaterRecap.appendChild(missedLabel);
-      }
-      if (recap.suggestion) {
-        var suggestion = document.createElement('p');
-        suggestion.innerHTML = '<b>下一句可以试</b> ';
-        suggestion.appendChild(document.createTextNode(recap.suggestion));
-        theaterRecap.appendChild(suggestion);
-      }
-    }
-
-    function openTheater() {
-      if (!editable) {
-        showToast('请通过 pnpm dev review 打开学习包后再进入小剧场');
-        return;
-      }
-      if (!theaterModal) return;
-      resetTheater();
-      theaterModal.hidden = false;
-      document.body.classList.add('theater-modal-open');
-      if (theaterInput) theaterInput.focus();
-    }
-
-    function closeTheater() {
-      if (!theaterModal) return;
-      theaterModal.hidden = true;
-      document.body.classList.remove('theater-modal-open');
-    }
-
-    function sendTheater() {
-      if (!theaterInput || !theaterSend || theaterTurn >= 3) return;
-      var text = theaterInput.value.trim();
-      if (!text) {
-        if (theaterStatus) theaterStatus.textContent = '先写一句英文';
-        theaterInput.focus();
-        return;
-      }
-      theaterMessages.push({ role: 'user', content: text });
-      appendTheaterMessage({ role: 'user', content: text });
-      theaterInput.value = '';
-      theaterInput.disabled = true;
-      theaterSend.disabled = true;
-      theaterSend.textContent = '作者正在回应…';
-      if (theaterStatus) theaterStatus.textContent = 'AI 正在回应…';
-      fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/theater', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ mode: theaterMode, messages: theaterMessages }),
-      }).then(function (response) {
-        return response.json().then(function (data) {
-          if (!response.ok) throw new Error(data.error || '小剧场失败');
-          theaterTurn = data.turn;
-          theaterMessages.push({ role: 'assistant', content: data.reply });
-          appendTheaterMessage({
-            role: 'assistant',
-            content: data.reply,
-            translation: data.translation,
-            note: data.note,
-            used: data.used,
-          });
-          theaterSend.textContent = '发送';
-          theaterSend.disabled = theaterTurn >= 3;
-          theaterInput.disabled = theaterTurn >= 3;
-          if (theaterStatus) {
-            theaterStatus.textContent = theaterTurn >= 3 ? '本局结束 · 可切换模式重新开始' : '第 ' + (theaterTurn + 1) + ' / 3 轮';
-          }
-          if (data.recap) renderTheaterRecap(data.recap);
-          if (theaterTurn < 3) theaterInput.focus();
-        });
-      }).catch(function (error) {
-        theaterMessages.pop();
-        var last = theaterLog && theaterLog.lastElementChild;
-        if (last) last.remove();
-        theaterInput.disabled = false;
-        theaterSend.disabled = false;
-        theaterSend.textContent = '发送';
-        if (theaterStatus) theaterStatus.textContent = error.message;
-      });
     }
 
     function setAudioRate(rate) {
@@ -3867,285 +3689,6 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
       document.body.classList.remove('audio-modal-open');
     }
 
-    function renderMicroStory(story) {
-      if (!story) return;
-      microStoryTitle.textContent = String(story.title || '').replace(/\\*\\*?/g, '');
-      microStoryText.textContent = String(story.text || '').replace(/\\*\\*?/g, '');
-      microStoryTranslation.textContent = String(story.translation || '').replace(/\\*\\*?/g, '');
-      microStoryTranslation.hidden = !story.translation;
-      microStoryUsed.innerHTML = '';
-      (story.used || []).forEach(function (word) {
-        var chip = document.createElement('span');
-        chip.textContent = word;
-        microStoryUsed.appendChild(chip);
-      });
-      microStoryUsed.hidden = !(story.used && story.used.length);
-      microStoryGenerate.textContent = '换一个';
-      microStoryGenerate.disabled = false;
-    }
-
-    function requestMicroStory(regenerate) {
-      if (microStoryLoading) return;
-      microStoryLoading = true;
-      microStoryGenerate.disabled = true;
-      microStoryStatus.textContent = '正在写一个短故事…';
-      fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/micro-story', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ regenerate: Boolean(regenerate) })
-      }).then(function (response) {
-        return response.json().catch(function () { return {}; }).then(function (data) {
-          if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
-          return data;
-        });
-      }).then(function (data) {
-        microStory = data.story;
-        renderMicroStory(microStory);
-        microStoryStatus.textContent = data.cached ? '这是上次写的故事' : '';
-      }).catch(function (error) {
-        var message = error.message === 'No LLM API key configured.'
-          ? '还没有配置模型，先到首页「模型设置」填入 API Key。'
-          : error.message;
-        microStoryStatus.textContent = message;
-        microStoryGenerate.textContent = microStory ? '换一个' : '再试一次';
-        microStoryGenerate.disabled = false;
-      }).finally(function () {
-        microStoryLoading = false;
-      });
-    }
-
-    function openMicroStory() {
-      if (!microStoryModal) return;
-      microStoryModal.hidden = false;
-      document.body.classList.add('micro-modal-open');
-      if (microStory) {
-        renderMicroStory(microStory);
-        microStoryStatus.textContent = '';
-      } else {
-        requestMicroStory(false);
-      }
-    }
-
-    function closeMicroStory() {
-      if (!microStoryModal) return;
-      microStoryModal.hidden = true;
-      document.body.classList.remove('micro-modal-open');
-    }
-
-    function gameItems(mode) {
-      return mode === 'word' ? GAME_WORDS : GAME_SENTENCES;
-    }
-
-    function shuffleGame(values) {
-      var copy = values.slice();
-      for (var i = copy.length - 1; i > 0; i--) {
-        var j = Math.floor(Math.random() * (i + 1));
-        var tmp = copy[i];
-        copy[i] = copy[j];
-        copy[j] = tmp;
-      }
-      return copy;
-    }
-
-    function stopGameTimer() {
-      if (gameInterval) clearInterval(gameInterval);
-      gameInterval = null;
-    }
-
-    function updateGameTimer() {
-      if (gameTimer) gameTimer.textContent = gameSeconds + 's';
-    }
-
-    function startGameTimer() {
-      stopGameTimer();
-      gameSeconds = 60;
-      gameStartedAt = Date.now();
-      updateGameTimer();
-      gameInterval = setInterval(function () {
-        gameSeconds -= 1;
-        updateGameTimer();
-        if (gameSeconds <= 0) {
-          stopGameTimer();
-          if (gameStatus) gameStatus.textContent = '时间到，点「重来」再试';
-        }
-      }, 1000);
-    }
-
-    function gameData() {
-      return gameItems(gameMode)[gameIndex];
-    }
-
-    function renderGame() {
-      var data = gameData();
-      if (!data) {
-        if (gameCounter) gameCounter.textContent = '';
-        if (gamePrompt) gamePrompt.textContent = '这里还没有可玩的卡片。';
-        if (gamePool) gamePool.innerHTML = '';
-        if (gameAnswer) gameAnswer.innerHTML = '';
-        if (gameCheck) gameCheck.disabled = true;
-        return;
-      }
-      var list = gameItems(gameMode);
-      if (gameCounter) {
-        gameCounter.textContent = '第 ' + (gameIndex + 1) + ' / ' + list.length + ' 题 · ' +
-          (gameMode === 'word' ? '词根拼装' : '金句拼图');
-      }
-      if (gamePrompt) {
-        gamePrompt.innerHTML = '';
-        var prompt = document.createElement('p');
-        prompt.textContent = gameMode === 'word'
-          ? '按前缀 / 词根 / 后缀的顺序拼出「' + data.lemma + '」'
-          : '把下面的片段拼回原文';
-        gamePrompt.appendChild(prompt);
-        var hint = document.createElement('span');
-        hint.textContent = gameMode === 'word' ? data.meaning : data.translation;
-        gamePrompt.appendChild(hint);
-      }
-      if (gameAnswer) {
-        gameAnswer.innerHTML = '';
-        if (gameSelected.length === 0) {
-          var empty = document.createElement('span');
-          empty.className = 'game-empty';
-          empty.textContent = '点下面的片段开始拼';
-          gameAnswer.appendChild(empty);
-        }
-        gameSelected.forEach(function (token, index) {
-          var button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'game-token';
-          button.textContent = token;
-          button.title = '点击移回';
-          button.addEventListener('click', function () {
-            gameSelected.splice(index, 1);
-            gamePoolTokens.push(token);
-            renderGame();
-          });
-          gameAnswer.appendChild(button);
-        });
-      }
-      if (gamePool) {
-        gamePool.innerHTML = '';
-        gamePoolTokens.forEach(function (token, index) {
-          var button = document.createElement('button');
-          button.type = 'button';
-          button.className = 'game-token';
-          button.textContent = token;
-          if (gameMode === 'word' && data.hints && data.hints[token]) button.title = data.hints[token];
-          button.addEventListener('click', function () {
-            gamePoolTokens.splice(index, 1);
-            gameSelected.push(token);
-            renderGame();
-          });
-          gamePool.appendChild(button);
-        });
-      }
-      if (gameCheck) gameCheck.disabled = false;
-      if (gameNext) gameNext.hidden = true;
-    }
-
-    function beginGame(mode) {
-      var list = gameItems(mode);
-      if (!list.length) return;
-      gameMode = mode;
-      gameIndex = 0;
-      gameSelected = [];
-      gamePoolTokens = shuffleGame(list[0].answer);
-      if (gameStatus) gameStatus.textContent = '';
-      Array.from(document.querySelectorAll('[data-game-mode]')).forEach(function (button) {
-        button.classList.toggle('active', button.getAttribute('data-game-mode') === mode);
-      });
-      startGameTimer();
-      renderGame();
-    }
-
-    function switchGameMode(mode) {
-      if (!gameItems(mode).length) return;
-      beginGame(mode);
-    }
-
-    function checkGame() {
-      var data = gameData();
-      if (!data) return;
-      var correct = gameSelected.length === data.answer.length &&
-        gameSelected.every(function (token, index) { return token === data.answer[index]; });
-      if (!correct) {
-        if (gameStatus) gameStatus.textContent = '还差一点，再看看顺序';
-        return;
-      }
-      stopGameTimer();
-      var used = Math.max(0, Math.round((Date.now() - gameStartedAt) / 1000));
-      if (gameStatus) gameStatus.textContent = '拼好了 · ' + used + ' 秒';
-      if (gameNext) {
-        gameNext.hidden = false;
-        gameNext.textContent = gameIndex + 1 < gameItems(gameMode).length ? '下一题' : '再来一轮';
-      }
-      if (gameCheck) gameCheck.disabled = true;
-      if (gameAnswer) {
-        gameAnswer.innerHTML = '';
-        var solution = document.createElement('div');
-        solution.className = 'game-solution';
-        solution.textContent = gameMode === 'word' ? data.lemma : data.answer.join(' ');
-        gameAnswer.appendChild(solution);
-      }
-    }
-
-    function resetGame() {
-      var data = gameData();
-      if (!data) return;
-      gameSelected = [];
-      gamePoolTokens = shuffleGame(data.answer);
-      if (gameStatus) gameStatus.textContent = '';
-      if (gameNext) gameNext.hidden = true;
-      if (gameCheck) gameCheck.disabled = false;
-      startGameTimer();
-      renderGame();
-    }
-
-    function nextGame() {
-      var list = gameItems(gameMode);
-      gameIndex = (gameIndex + 1) % list.length;
-      gameSelected = [];
-      gamePoolTokens = shuffleGame(list[gameIndex].answer);
-      if (gameStatus) gameStatus.textContent = '';
-      if (gameNext) gameNext.hidden = true;
-      if (gameCheck) gameCheck.disabled = false;
-      startGameTimer();
-      renderGame();
-    }
-
-    function updateGameTabs() {
-      Array.from(document.querySelectorAll('[data-game-mode]')).forEach(function (button) {
-        var mode = button.getAttribute('data-game-mode') === 'word' ? 'word' : 'sentence';
-        button.disabled = gameItems(mode).length === 0;
-        button.classList.toggle('active', mode === gameMode);
-      });
-    }
-
-    function openGame() {
-      if (!gameModal) return;
-      gameMode = GAME_SENTENCES.length ? 'sentence' : 'word';
-      gameIndex = 0;
-      gameSelected = [];
-      var list = gameItems(gameMode);
-      if (!list.length) return;
-      gamePoolTokens = shuffleGame(list[0].answer);
-      if (gameStatus) gameStatus.textContent = '';
-      if (gameNext) gameNext.hidden = true;
-      if (gameCheck) gameCheck.disabled = false;
-      updateGameTabs();
-      startGameTimer();
-      renderGame();
-      gameModal.hidden = false;
-      document.body.classList.add('game-modal-open');
-    }
-
-    function closeGame() {
-      stopGameTimer();
-      if (!gameModal) return;
-      gameModal.hidden = true;
-      document.body.classList.remove('game-modal-open');
-    }
-
     function closePractice() {
       if (!practiceModal) return;
       practiceModal.hidden = true;
@@ -4199,7 +3742,7 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
       if (practiceResult) practiceResult.innerHTML = '';
       if (practiceSubmit) {
         practiceSubmit.disabled = false;
-        practiceSubmit.textContent = '让 AI 看看';
+        practiceSubmit.textContent = '提交批改';
       }
       renderPracticeScenes();
       practiceModal.hidden = false;
@@ -4243,7 +3786,7 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
         practiceSubmit.disabled = true;
         practiceSubmit.textContent = '生成中…';
       }
-      if (practiceStatus) practiceStatus.textContent = 'AI 正在看你的句子…';
+      if (practiceStatus) practiceStatus.textContent = '正在看你的句子…';
       fetch('/api/pack/' + encodeURIComponent(PACK_ID) + '/items/' + encodeURIComponent(practiceItemId) + '/practice', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -4252,14 +3795,14 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
         return response.json().then(function (data) {
           if (!response.ok) throw new Error(data.error || '生成失败');
           renderPracticeResult(data.feedback);
-          if (practiceStatus) practiceStatus.textContent = '可以继续改一版，再让 AI 看看。';
+          if (practiceStatus) practiceStatus.textContent = '可以继续改一版，再提交批改。';
         });
       }).catch(function (error) {
         if (practiceStatus) practiceStatus.textContent = error.message;
       }).finally(function () {
         if (practiceSubmit) {
           practiceSubmit.disabled = false;
-          practiceSubmit.textContent = '让 AI 看看';
+          practiceSubmit.textContent = '提交批改';
         }
       });
     }
@@ -4273,34 +3816,6 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
     if (practiceSubmit) practiceSubmit.addEventListener('click', submitPractice);
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape' && practiceModal && !practiceModal.hidden) closePractice();
-    });
-
-    var theaterOpen = document.getElementById('theater-open');
-    if (theaterOpen) theaterOpen.addEventListener('click', openTheater);
-    if (theaterClose) theaterClose.addEventListener('click', closeTheater);
-    if (theaterModal) {
-      theaterModal.addEventListener('click', function (event) {
-        if (event.target === theaterModal) closeTheater();
-      });
-    }
-    if (theaterSend) theaterSend.addEventListener('click', sendTheater);
-    if (theaterInput) {
-      theaterInput.addEventListener('keydown', function (event) {
-        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-          event.preventDefault();
-          sendTheater();
-        }
-      });
-    }
-    document.querySelectorAll('[data-theater-mode]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        theaterMode = button.getAttribute('data-theater-mode') === 'debate' ? 'debate' : 'interview';
-        resetTheater();
-        if (theaterInput) theaterInput.focus();
-      });
-    });
-    document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && theaterModal && !theaterModal.hidden) closeTheater();
     });
 
     var audioOpen = document.getElementById('audio-open');
@@ -4336,43 +3851,6 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
     if (shadowNext) shadowNext.addEventListener('click', function () { moveShadow(1); });
     document.addEventListener('keydown', function (event) {
       if (event.key === 'Escape' && audioModal && !audioModal.hidden) closeAudio();
-    });
-
-    var microStoryOpen = document.getElementById('micro-story-open');
-    if (microStoryOpen) microStoryOpen.addEventListener('click', openMicroStory);
-    if (microStoryClose) microStoryClose.addEventListener('click', closeMicroStory);
-    if (microStoryGenerate) {
-      microStoryGenerate.addEventListener('click', function () {
-        requestMicroStory(Boolean(microStory));
-      });
-    }
-    if (microStoryModal) {
-      microStoryModal.addEventListener('click', function (event) {
-        if (event.target === microStoryModal) closeMicroStory();
-      });
-    }
-    document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && microStoryModal && !microStoryModal.hidden) closeMicroStory();
-    });
-
-    var gameOpen = document.getElementById('game-open');
-    if (gameOpen) gameOpen.addEventListener('click', openGame);
-    if (gameClose) gameClose.addEventListener('click', closeGame);
-    if (gameModal) {
-      gameModal.addEventListener('click', function (event) {
-        if (event.target === gameModal) closeGame();
-      });
-    }
-    document.querySelectorAll('[data-game-mode]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        switchGameMode(button.getAttribute('data-game-mode') === 'word' ? 'word' : 'sentence');
-      });
-    });
-    if (gameCheck) gameCheck.addEventListener('click', checkGame);
-    if (gameReset) gameReset.addEventListener('click', resetGame);
-    if (gameNext) gameNext.addEventListener('click', nextGame);
-    document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape' && gameModal && !gameModal.hidden) closeGame();
     });
 
     function renderOutputFeedback(feedback) {
@@ -4773,7 +4251,7 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
           location.reload();
         });
       }).catch(function (error) {
-        if (noteModalRegenerate) { noteModalRegenerate.disabled = false; noteModalRegenerate.textContent = 'AI 重新生成本段笔记'; }
+        if (noteModalRegenerate) { noteModalRegenerate.disabled = false; noteModalRegenerate.textContent = '重新生成本段笔记'; }
         if (noteModalStatus) noteModalStatus.textContent = error.message;
       });
     }
@@ -5889,6 +5367,44 @@ ${exportMode ? '' : `<div class="reader-settings" id="reader-settings" hidden>
   })();
 </script>
 ${exportMode ? '' : i18nScript('pack')}
+
+<script>
+(function () {
+  var openButton = document.getElementById('pack-more-open');
+  var sheet = document.getElementById('pack-more');
+  var closeButton = document.getElementById('pack-more-close');
+  if (!openButton || !sheet) return;
+  function syncLabels() {
+    var toggle = document.getElementById('toggle-translation');
+    var mirror = sheet.querySelector('[data-pack-action="toggle-translation"]');
+    if (toggle && mirror) mirror.textContent = toggle.textContent;
+  }
+  function openSheet() {
+    syncLabels();
+    sheet.hidden = false;
+    document.body.classList.add('pack-more-open');
+    openButton.setAttribute('aria-expanded', 'true');
+  }
+  function closeSheet() {
+    sheet.hidden = true;
+    document.body.classList.remove('pack-more-open');
+    openButton.setAttribute('aria-expanded', 'false');
+  }
+  openButton.addEventListener('click', openSheet);
+  if (closeButton) closeButton.addEventListener('click', closeSheet);
+  sheet.addEventListener('click', function (event) {
+    if (event.target === sheet) closeSheet();
+    var action = event.target.closest ? event.target.closest('[data-pack-action]') : null;
+    if (!action) return;
+    var target = document.getElementById(action.getAttribute('data-pack-action'));
+    if (target) target.click();
+    closeSheet();
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape' && !sheet.hidden) closeSheet();
+  });
+})();
+</script>
 </body>
 </html>`
 }

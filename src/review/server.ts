@@ -22,8 +22,6 @@ import type { ExerciseKind } from '../analyze/exercise-translation.js'
 import { generateSentenceCard, sentenceIdentity } from '../analyze/sentence-card.js'
 import { generateSentenceRewrites } from '../analyze/sentence-rewrites.js'
 import { generatePracticeFeedback } from '../analyze/sentence-practice.js'
-import { generateTheaterTurn } from '../analyze/theater.js'
-import type { TheaterMessage, TheaterMode } from '../analyze/theater.js'
 import { sentences } from '../analyze/tokenize.js'
 import { translateSentence } from '../analyze/sentence-translation.js'
 import { generateWordCard, enrichWordRelations } from '../analyze/word-card.js'
@@ -37,8 +35,6 @@ import { petState } from '../lab/pet.js'
 import { enrollWordbook, getWordbook, listWordbooks, wordbookView } from '../wordbooks/index.js'
 import { generateAdventureFeedback, generateArgumentMap, generateDictationHint, generateDubbing, generateDungeonFlavor, generateLifeExamples, generateNewsShort, generatePetLine, generatePodcast, generateQuoteInsight, generateRegisterRemix, generateSubtitleHunter } from '../lab/generators.js'
 import { renderLabApp } from './lab.js'
-import { renderReaderApp } from './reader.js'
-import { generateMicroStory } from '../analyze/micro-story.js'
 import { config, ensureDirs, hasLlm, llmProviderOptions, llmStatus, projectRoot, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
 import { listProviderModels } from '../llm/models.js'
 import { buildWordGraph } from '../graph/build.js'
@@ -85,6 +81,7 @@ import { listTrash, purgeTrash, restoreTrash, trashPack, trashResource } from '.
 import { listStyleProfiles, loadStyleProfile, resolveDefaultStyle } from '../style/profile.js'
 import type { LearningPack, PackRecord, Resource, ResourceArticle, StoredItem } from '../types.js'
 import { accessCookie, accessTokenMatches, isLocalHostName, isLoopbackAddress, issueAccessToken, phoneUrls, requestAccessToken, withoutAccessToken } from './lan.js'
+import { selectDailyWords } from './daily-words.js'
 import { reviewHistory } from './history.js'
 import { parseKnownWords } from './known-import.js'
 import { appIconPng, pwaManifest } from './pwa.js'
@@ -94,7 +91,7 @@ import { isDue, isLeech, isNew, stateLabel } from './scheduler.js'
 import { weeklyMarkdown } from './weekly-report.js'
 import type { Grade } from './scheduler.js'
 import { achievementPayload } from './achievements.js'
-import { DIAGNOSIS_WORDS, computeDiagnosisLevel } from './diagnosis.js'
+import { DIAGNOSIS_WORDS, computeDiagnosisLevel, sampleDiagnosisWords } from './diagnosis.js'
 import { weeklyPayload } from './weekly.js'
 import { renderReviewApp } from './web.js'
 
@@ -226,6 +223,57 @@ async function readJson(request: http.IncomingMessage, maxBytes = 5_000_000): Pr
   }
 }
 
+
+function readingNotesMarkdown(contents: LearningPack, progress: ReturnType<typeof readingSummary>): string {
+  const title = contents.frontMatter?.title ?? contents.title
+  const lines: string[] = []
+  lines.push(`# ${title}`)
+  if (contents.frontMatter?.titleZh) lines.push('', contents.frontMatter.titleZh)
+  lines.push(
+    '',
+    `- 难度：${contents.difficulty.cefr}`,
+    `- 词数：${contents.stats.wordCount}`,
+    `- 进度：${progress.read} / ${progress.total} 段${progress.finishedAt ? '（已完成）' : ''}`,
+    '',
+  )
+  const annotations = progress.annotations ?? []
+  lines.push('## 我的批注', '')
+  if (!annotations.length) {
+    lines.push('_还没有批注。_', '')
+  } else {
+    for (const entry of annotations) {
+      lines.push(`### 第 ${entry.paragraph + 1} 段`, '', `> ${entry.quote.replace(/\n+/g, ' ')}`, '')
+      if (entry.note) lines.push(entry.note, '')
+    }
+  }
+  const sentenceItems = contents.items.filter((item) => item.type === 'sentence' && item.sentence)
+  lines.push('## 句子卡', '')
+  if (!sentenceItems.length) {
+    lines.push('_还没有句子卡。_', '')
+  } else {
+    for (const item of sentenceItems) {
+      const sentence = item.sentence!
+      lines.push(`- ${sentence.original}`)
+      if (sentence.translation) lines.push(`  - ${sentence.translation}`)
+      if (sentence.pattern) lines.push(`  - 句型：${sentence.pattern}`)
+    }
+    lines.push('')
+  }
+  const words = contents.items.filter((item) => item.type !== 'sentence')
+  lines.push('## 本篇词汇', '')
+  if (!words.length) {
+    lines.push('_还没有词汇卡。_', '')
+  } else {
+    for (const item of words) {
+      const meaning = item.definitionZh || item.definition || item.sense
+      lines.push(`- **${item.lemma}**${item.ipa ? ` /${item.ipa}/` : ''} — ${meaning}`)
+    }
+    lines.push('')
+  }
+  lines.push('---', `由 CloseRead 导出于 ${new Date().toISOString().slice(0, 10)}`, '')
+  return lines.join('\n')
+}
+
 function packUrl(packId: string): string {
   return `/read/${encodeURIComponent(packId)}`
 }
@@ -340,6 +388,13 @@ function resourceView(resource: Resource, store: Store) {
     aiRemoved: Number(resource.metadata.aiRemoved ?? 0),
     aiCleanSkipped: resource.metadata.aiCleanSkipped === 1,
     aiCleanError: resource.metadata.aiCleanError === 1,
+    document: {
+      pages: Number(resource.metadata.pages ?? 0),
+      extractablePages: Number(resource.metadata.extractablePages ?? 0),
+      twoColumnPages: Number(resource.metadata.twoColumnPages ?? 0),
+      removedLines: Number(resource.metadata.removedLines ?? 0),
+      skippedPages: Number(resource.metadata.skippedPages ?? 0),
+    },
     packs,
     pack: packs[0] ?? null,
   }
@@ -1024,6 +1079,7 @@ const PHONE_WRITE_EXACT = new Set([
   '/api/status',
   '/api/items/bulk',
   '/api/vocab/known',
+  '/api/vocab/select',
   '/api/preferences',
   '/api/diagnosis',
   '/api/today/output',
@@ -1042,8 +1098,6 @@ const PHONE_WRITE_PATTERNS = [
   /^\/api\/pack\/[^/]+\/analyze-selection$/,
   /^\/api\/pack\/[^/]+\/audio$/,
   /^\/api\/pack\/[^/]+\/sentence-audio$/,
-  /^\/api\/pack\/[^/]+\/micro-story$/,
-  /^\/api\/pack\/[^/]+\/theater$/,
   /^\/api\/pack\/[^/]+\/translate-sentence$/,
   /^\/api\/pack\/[^/]+\/reading\/answer$/,
   /^\/api\/pack\/[^/]+\/items\/[^/]+\/(?:derivation|story|rewrites|practice|expand)$/,
@@ -1189,6 +1243,33 @@ async function handle(
     return
   }
 
+
+  const notesMatch = /^\/read\/([^/]+)\/notes\.md$/.exec(url.pathname)
+  if (method === 'GET' && notesMatch) {
+    const packId = decodeURIComponent(notesMatch[1] ?? '')
+    const pack = store.findPack(packId)
+    if (!pack) {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Pack not found')
+      return
+    }
+    try {
+      const contents = await loadPack(pack.dir)
+      const progress = await loadReadingProgress(pack.dir, pack.id, contents.reading?.length ?? 0)
+      const markdown = readingNotesMarkdown(contents, readingSummary(progress))
+      response.writeHead(200, {
+        'content-type': 'text/markdown; charset=utf-8',
+        'content-disposition': `attachment; filename="reading-notes.md"; filename*=UTF-8''${encodeURIComponent(`${contents.title}-精读笔记.md`)}`,
+        'cache-control': 'no-store',
+      })
+      response.end(markdown)
+    } catch (error) {
+      response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end(error instanceof Error ? error.message : String(error))
+    }
+    return
+  }
+
   if (method === 'GET' && url.pathname.startsWith('/read/')) {
     const packId = decodeURIComponent(url.pathname.slice('/read/'.length).split('/')[0] ?? '')
     const pack = store.findPack(packId)
@@ -1199,9 +1280,9 @@ async function handle(
     }
     try {
       const contents = await loadPack(pack.dir)
-      const progress = await loadReadingProgress(pack.dir, pack.id, contents.reading?.length ?? 0)
+      const html = renderHtml(contents, contents.audio ?? { items: {} }, { inApp: true })
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
-      response.end(renderReaderApp(contents, progress, pack, chapterNav(store, pack)))
+      response.end(html)
     } catch (error) {
       response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
       response.end(error instanceof Error ? error.message : String(error))
@@ -1660,7 +1741,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
   if (url.pathname === '/api/diagnosis') {
     if (method === 'GET') {
       sendJson(response, 200, {
-        words: DIAGNOSIS_WORDS,
+        words: sampleDiagnosisWords(),
         diagnosis: store.preferences().diagnosis ?? null,
       })
       return
@@ -1668,7 +1749,20 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     if (method === 'POST') {
       try {
         const body = await readJson(request)
-        const valid = new Set(DIAGNOSIS_WORDS.map((word) => word.lemma))
+        const bank = new Map(DIAGNOSIS_WORDS.map((word) => [word.lemma, word]))
+        const submitted = Array.isArray(body.words)
+          ? [
+              ...new Set(
+                body.words
+                  .map((lemma) => String(lemma).toLowerCase().trim())
+                  .filter((lemma) => bank.has(lemma)),
+              ),
+            ]
+          : []
+        const words = submitted.length > 0
+          ? submitted.map((lemma) => bank.get(lemma)!)
+          : DIAGNOSIS_WORDS
+        const valid = new Set(words.map((word) => word.lemma))
         const known = Array.isArray(body.known)
           ? [
               ...new Set(
@@ -1678,8 +1772,8 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
               ),
             ]
           : []
-        const level = computeDiagnosisLevel(known)
-        const diagnosis = await store.saveDiagnosis(level, known, DIAGNOSIS_WORDS.length)
+        const level = computeDiagnosisLevel(known, words)
+        const diagnosis = await store.saveDiagnosis(level, known, words.length)
         config.level = diagnosis.level
         sendJson(response, 200, { diagnosis })
       } catch (error) {
@@ -1891,31 +1985,6 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     return
   }
 
-  const microStoryMatch = /^\/api\/pack\/([^/]+)\/micro-story$/.exec(url.pathname)
-  if (method === 'POST' && microStoryMatch) {
-    try {
-      const body = (await readJson(request).catch(() => ({}))) as Record<string, unknown>
-      const pack = store.findPack(decodeURIComponent(microStoryMatch[1]!))
-      if (!pack) {
-        sendJson(response, 404, { error: 'Pack not found' })
-        return
-      }
-      const contents = await loadPack(pack.dir)
-      if (!body.regenerate && contents.microStory) {
-        sendJson(response, 200, { ok: true, story: contents.microStory, cached: true })
-        return
-      }
-      if (requireLlm(response)) return
-      const story = await generateMicroStory(contents)
-      contents.microStory = story
-      await savePackFiles(contents, pack.dir)
-      sendJson(response, 200, { ok: true, story })
-    } catch (error) {
-      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
-    }
-    return
-  }
-
   const wordStoryMatch = /^\/api\/pack\/([^/]+)\/items\/([^/]+)\/story$/.exec(url.pathname)
   if (method === 'POST' && wordStoryMatch) {
     try {
@@ -2017,54 +2086,6 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       const scene = typeof body.scene === 'string' ? body.scene : 'daily'
       const feedback = await generatePracticeFeedback(item, sentence, scene)
       sendJson(response, 200, { ok: true, feedback })
-    } catch (error) {
-      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
-    }
-    return
-  }
-
-  const theaterMatch = /^\/api\/pack\/([^/]+)\/theater$/.exec(url.pathname)
-  if (method === 'POST' && theaterMatch) {
-    if (requireLlm(response)) return
-    try {
-      const pack = store.findPack(decodeURIComponent(theaterMatch[1]!))
-      if (!pack) {
-        sendJson(response, 404, { error: 'Pack not found' })
-        return
-      }
-      const body = await readJson(request)
-      const mode: TheaterMode = body.mode === 'debate' ? 'debate' : 'interview'
-      const rawMessages = Array.isArray(body.messages) ? body.messages : []
-      if (rawMessages.length === 0 || rawMessages.length > 5) {
-        sendJson(response, 400, { error: '这一局最多三轮，请重新开始。' })
-        return
-      }
-      const messages: TheaterMessage[] = []
-      for (const [index, entry] of rawMessages.entries()) {
-        if (!entry || typeof entry !== 'object') continue
-        const role = (entry as { role?: unknown }).role === 'assistant' ? 'assistant' : 'user'
-        const content = typeof (entry as { content?: unknown }).content === 'string'
-          ? (entry as { content: string }).content.trim()
-          : ''
-        if (!content) continue
-        const expected = index % 2 === 0 ? 'user' : 'assistant'
-        if (role !== expected) {
-          sendJson(response, 400, { error: '对话顺序不正确。' })
-          return
-        }
-        messages.push({ role, content: content.slice(0, 1000) })
-      }
-      if (messages.length === 0 || messages[messages.length - 1]?.role !== 'user') {
-        sendJson(response, 400, { error: '先写下你的问题或反驳。' })
-        return
-      }
-      if (messages.filter((message) => message.role === 'user').length > 3) {
-        sendJson(response, 400, { error: '这一局已经结束，请重新开始。' })
-        return
-      }
-      const contents = await loadPack(pack.dir)
-      const { result, turn } = await generateTheaterTurn(contents, mode, messages)
-      sendJson(response, 200, { ok: true, turn, ...result })
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
     }
@@ -2525,7 +2546,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
   if (method === 'GET' && url.pathname === '/api/queue') {
     const queuePrefs = store.preferences()
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get('limit') ?? 30)))
-    const newLimit = Math.max(0, Math.min(50, Number(url.searchParams.get('newLimit') ?? queuePrefs.dailyNewTarget)))
+    const newLimit = Math.max(0, Math.min(100, Number(url.searchParams.get('newLimit') ?? queuePrefs.dailyNewTarget)))
     const reviewLimit = Math.max(0, Math.min(100, Number(url.searchParams.get('reviewLimit') ?? queuePrefs.dailyReviewTarget)))
     const scope = url.searchParams.get('scope') ?? 'all'
     const book = url.searchParams.get('book') ?? ''
@@ -2648,6 +2669,21 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     }
   }
 
+  if (method === 'POST' && url.pathname === '/api/vocab/select') {
+    try {
+      const body = await readJson(request)
+      const count = Math.max(1, Math.min(120, Number(body.count ?? 20)))
+      const selection = await selectDailyWords(store, count, { force: body.force === true })
+      sendJson(response, 200, {
+        ...selection,
+        selection: store.dailyWordSelection(),
+      })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   if (method === 'GET' && url.pathname === '/api/vocab') {
     const q = url.searchParams.get('q')?.trim() ?? ''
     const group = url.searchParams.get('group') ?? 'all'
@@ -2736,6 +2772,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       hasMore: offset + page.length < total,
       sources,
       cefrs,
+      dailySelection: store.dailyWordSelection(now),
       summary: store.stats(now),
     })
     return
@@ -2985,7 +3022,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     sendJson(response, 200, {
       dataDir: config.dataDir,
       packsDir: config.packsDir,
-      counts: store.stats(),
+      counts: { ...store.stats(), packs: store.packs().length },
       preferences: {
         desiredRetention: preferences.desiredRetention,
         dailyNewTarget: preferences.dailyNewTarget,

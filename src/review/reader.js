@@ -442,7 +442,7 @@
           return '<span class="analysis-part">' + escapeText(part.text) + '</span>'
         }).join(''))
       }
-      selectAnalysis.innerHTML = lines.join('<br>') || '没有额外的释义；可以直接加入词卡，或到工具模式查看完整卡片。'
+      selectAnalysis.innerHTML = lines.join('<br>') || '没有额外的释义；可以直接加入词卡，或展开词卡查看完整释义。'
       selectAnalysis.hidden = false
     } catch (error) {
       selectAnalysis.innerHTML = '分析失败：' + escapeText(error.message)
@@ -559,6 +559,13 @@
   document.addEventListener('keydown', function (event) {
     var tag = (event.target && event.target.tagName) || ''
     if (/INPUT|TEXTAREA|SELECT/.test(tag) || event.metaKey || event.ctrlKey || event.altKey) return
+    if (event.key === '?') {
+      event.preventDefault()
+      setPanel('outline', false)
+      setPanel('type', false)
+      setPanel('help', true)
+      return
+    }
     if (event.key === 't' || event.key === 'T') {
       event.preventDefault()
       toggleNearestTranslation()
@@ -632,6 +639,110 @@
   var readerMore = document.getElementById('reader-mobile-more')
   if (readerMore) readerMore.addEventListener('click', function (event) {
     if (event.target === readerMore) closeReaderMore()
+  })
+
+  var focusButton = document.getElementById('reader-focus')
+  function applyFocus(on) {
+    document.body.classList.toggle('reader-focus', on)
+    if (focusButton) {
+      focusButton.textContent = on ? '显示侧栏' : '专注'
+      focusButton.setAttribute('aria-pressed', on ? 'true' : 'false')
+    }
+  }
+  var focusOn = false
+  try { focusOn = localStorage.getItem('closeread-reader-focus') === '1' } catch (error) {}
+  applyFocus(focusOn)
+  if (focusButton) focusButton.addEventListener('click', function () {
+    focusOn = !document.body.classList.contains('reader-focus')
+    applyFocus(focusOn)
+    try { localStorage.setItem('closeread-reader-focus', focusOn ? '1' : '0') } catch (error) {}
+  })
+
+
+  var typeState = { size: 'md', width: 'md', face: 'serif' }
+  try {
+    var savedType = JSON.parse(localStorage.getItem('closeread-reader-type') || '{}')
+    if (savedType && typeof savedType === 'object') {
+      if (savedType.size === 'sm' || savedType.size === 'md' || savedType.size === 'lg') typeState.size = savedType.size
+      if (savedType.width === 'sm' || savedType.width === 'md' || savedType.width === 'lg') typeState.width = savedType.width
+      if (savedType.face === 'serif' || savedType.face === 'sans') typeState.face = savedType.face
+    }
+  } catch (error) {}
+  function applyType() {
+    document.body.classList.remove('type-size-sm', 'type-size-md', 'type-size-lg')
+    document.body.classList.remove('type-width-sm', 'type-width-md', 'type-width-lg')
+    document.body.classList.remove('type-face-serif', 'type-face-sans')
+    document.body.classList.add('type-size-' + typeState.size)
+    document.body.classList.add('type-width-' + typeState.width)
+    document.body.classList.add('type-face-' + typeState.face)
+    document.querySelectorAll('[data-type-size]').forEach(function (button) {
+      button.classList.toggle('active', button.getAttribute('data-type-size') === typeState.size)
+    })
+    document.querySelectorAll('[data-type-width]').forEach(function (button) {
+      button.classList.toggle('active', button.getAttribute('data-type-width') === typeState.width)
+    })
+    document.querySelectorAll('[data-type-face]').forEach(function (button) {
+      button.classList.toggle('active', button.getAttribute('data-type-face') === typeState.face)
+    })
+    try { localStorage.setItem('closeread-reader-type', JSON.stringify(typeState)) } catch (error) {}
+  }
+  applyType()
+  document.querySelectorAll('[data-type-size]').forEach(function (button) {
+    button.addEventListener('click', function () { typeState.size = button.getAttribute('data-type-size'); applyType() })
+  })
+  document.querySelectorAll('[data-type-width]').forEach(function (button) {
+    button.addEventListener('click', function () { typeState.width = button.getAttribute('data-type-width'); applyType() })
+  })
+  document.querySelectorAll('[data-type-face]').forEach(function (button) {
+    button.addEventListener('click', function () { typeState.face = button.getAttribute('data-type-face'); applyType() })
+  })
+
+  var outlinePanel = document.getElementById('reader-outline-panel')
+  var typePanel = document.getElementById('reader-type-panel')
+  var helpPanel = document.getElementById('reader-help-panel')
+  var outlineButton = document.getElementById('reader-outline')
+  var typeButton = document.getElementById('reader-type')
+  var helpButton = document.getElementById('reader-help')
+  function setPanel(name, open) {
+    if (name === 'outline' && outlinePanel) outlinePanel.hidden = !open
+    if (name === 'type' && typePanel) typePanel.hidden = !open
+    if (name === 'help' && helpPanel) helpPanel.hidden = !open
+    if (outlineButton) outlineButton.setAttribute('aria-expanded', outlinePanel && !outlinePanel.hidden ? 'true' : 'false')
+    if (typeButton) typeButton.setAttribute('aria-expanded', typePanel && !typePanel.hidden ? 'true' : 'false')
+    if (helpButton) helpButton.setAttribute('aria-expanded', helpPanel && !helpPanel.hidden ? 'true' : 'false')
+  }
+  if (outlineButton) outlineButton.addEventListener('click', function () {
+    var open = outlinePanel && outlinePanel.hidden
+    setPanel('type', false)
+    setPanel('help', false)
+    setPanel('outline', open)
+  })
+  if (typeButton) typeButton.addEventListener('click', function () {
+    var open = typePanel && typePanel.hidden
+    setPanel('outline', false)
+    setPanel('help', false)
+    setPanel('type', open)
+  })
+  if (helpButton) helpButton.addEventListener('click', function () {
+    var open = helpPanel && helpPanel.hidden
+    setPanel('outline', false)
+    setPanel('type', false)
+    setPanel('help', open)
+  })
+  document.querySelectorAll('[data-panel-close]').forEach(function (button) {
+    button.addEventListener('click', function () { setPanel(button.getAttribute('data-panel-close'), false) })
+  })
+  document.querySelectorAll('[data-outline-link]').forEach(function (link) {
+    link.addEventListener('click', function () { setPanel('outline', false) })
+  })
+  document.addEventListener('click', function (event) {
+    if (event.target.closest && event.target.closest('.reader-outline-panel, .reader-type-panel, .reader-help-panel, #reader-outline, #reader-type, #reader-help')) return
+    setPanel('outline', false)
+    setPanel('type', false)
+    setPanel('help', false)
+  })
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') { setPanel('outline', false); setPanel('type', false); setPanel('help', false) }
   })
 
   applyTheme(themeChoice())

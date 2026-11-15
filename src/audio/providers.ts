@@ -1,4 +1,13 @@
-export type TtsProviderId = 'local' | 'edge' | 'glm' | 'gemini' | 'minimax' | 'elevenlabs' | 'openai' | 'custom'
+export type TtsProviderId =
+  | 'local'
+  | 'edge'
+  | 'bailian'
+  | 'glm'
+  | 'gemini'
+  | 'minimax'
+  | 'elevenlabs'
+  | 'openai'
+  | 'custom'
 
 export interface TtsProviderPreset {
   id: TtsProviderId
@@ -40,6 +49,16 @@ export const TTS_PROVIDERS: TtsProviderPreset[] = [
     ],
     instructions: false,
     hint: '免 Key，在线调用 Microsoft Edge 朗读服务；需要联网，文本会发送到 Microsoft。',
+  },
+  {
+    id: 'bailian',
+    label: '阿里云百炼 Qwen-TTS',
+    baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+    model: 'qwen3-tts-flash',
+    voice: 'Cherry',
+    voices: ['Cherry', 'Serena', 'Ethan', 'Chelsie', 'Dylan', 'Jada', 'Sunny'],
+    instructions: false,
+    hint: '阿里云百炼（DashScope）API Key；音色可填 Cherry、Serena、Ethan 等，北京或新加坡地域需使用对应 Key。',
   },
   {
     id: 'glm',
@@ -109,5 +128,5 @@ export function normalizeTtsProvider(value: unknown): TtsProviderId {
 }
 
 export function ttsProviderPreset(id: TtsProviderId): TtsProviderPreset {
-  return TTS_PROVIDERS.find((provider) => provider.id === id) ?? TTS_PROVIDERS[4]!
+  return TTS_PROVIDERS.find((provider) => provider.id === id) ?? TTS_PROVIDERS[0]!
 }

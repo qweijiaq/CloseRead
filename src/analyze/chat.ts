@@ -3,20 +3,91 @@ import { z } from 'zod'
 import { config } from '../config.js'
 import { recordUsage } from './usage.js'
 
+/** Escape raw newlines/tabs that some models leave inside JSON strings. */
+function escapeControlChars(text: string): string {
+  let result = ''
+  let inString = false
+  let escaped = false
+  for (const char of text) {
+    if (escaped) {
+      result += char
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      result += char
+      escaped = true
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      result += char
+      continue
+    }
+    if (inString && char === '\n') result += '\\n'
+    else if (inString && char === '\r') result += '\\r'
+    else if (inString && char === '\t') result += '\\t'
+    else result += char
+  }
+  return result
+}
+
+function repairJson(text: string): string {
+  return escapeControlChars(text.replace(/,\s*([}\]])/g, '$1'))
+}
+
+/**
+ * Escape unescaped ASCII quotes inside string values, guided by the position
+ * reported by the failing JSON.parse. Models often quote a word directly,
+ * e.g. `"他说"你好"了"`, which closes the string too early.
+ */
+function repairInnerQuotes(text: string): string | undefined {
+  let current = text
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      JSON.parse(current)
+      return current
+    } catch (error) {
+      const message = error instanceof Error ? error.message : ''
+      const match = /at position (\d+)/.exec(message)
+      if (!match) return undefined
+      let position = Number(match[1]) - 1
+      while (position > 0 && /\s/.test(current[position]!)) position -= 1
+      if (current[position] !== '"') return undefined
+      current = `${current.slice(0, position)}\\"${current.slice(position + 1)}`
+    }
+  }
+  return undefined
+}
+
 /** Extract the first JSON object from an LLM reply, including fenced blocks. */
 export function parseJson(content: string): unknown {
-  let text = content.trim()
-  const fenced = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(text)
-  if (fenced) text = fenced[1]!
+  let text = content.trim().replace(/^\uFEFF/, '')
+  const fenced = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(text)
+  if (fenced) text = fenced[1]!.trim()
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start >= 0 && end > start) text = text.slice(start, end + 1)
   try {
     return JSON.parse(text)
-  } catch {
-    const start = text.indexOf('{')
-    const end = text.lastIndexOf('}')
-    if (start >= 0 && end > start) return JSON.parse(text.slice(start, end + 1))
-    throw new Error('LLM response was not valid JSON.')
+  } catch (error) {
+    const repaired = repairJson(text)
+    try {
+      return JSON.parse(repaired)
+    } catch {
+      const fixed = repairInnerQuotes(repaired)
+      if (fixed !== undefined) return JSON.parse(fixed)
+      throw new Error(
+        `LLM response was not valid JSON (${error instanceof Error ? error.message : String(error)}).`,
+      )
+    }
   }
 }
+
+const JSON_REPAIR_INSTRUCTION =
+  'Your previous reply was not valid JSON. Reply again with the same content as one strict JSON object only. ' +
+  'Escape every ASCII double quote inside string values as \\", or use Chinese quotation marks 「」 for quoted words. ' +
+  'Include every comma between fields, remove trailing commas, and add no Markdown fences or prose.'
 
 const RETRYABLE_STATUS = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529])
 
@@ -45,9 +116,14 @@ async function request(body: Record<string, unknown>, signal?: AbortSignal): Pro
   })
 }
 
+interface ChatMessage {
+  role: string
+  content: string
+}
+
 async function requestAnthropic(
   system: string,
-  user: string,
+  messages: ChatMessage[],
   options: ChatOptions,
 ): Promise<Response> {
   const timeout = AbortSignal.timeout(180_000)
@@ -63,10 +139,27 @@ async function requestAnthropic(
       max_tokens: options.maxTokens ?? 4096,
       temperature: options.temperature ?? 0.2,
       system,
-      messages: [{ role: 'user', content: user }],
+      messages,
     }),
     signal: options.signal ? AbortSignal.any([timeout, options.signal]) : timeout,
   })
+}
+
+class InvalidJsonError extends Error {}
+
+function parseWithSchema<T>(schema: z.ZodType<T>, content: string, label: string): T {
+  let value: unknown
+  try {
+    value = parseJson(content)
+  } catch (error) {
+    throw new InvalidJsonError(error instanceof Error ? error.message : String(error))
+  }
+  const parsed = schema.safeParse(value)
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')
+    throw new Error(`${label} returned an invalid shape: ${issues}`)
+  }
+  return parsed.data
 }
 
 function contentText(content: unknown): string {
@@ -99,24 +192,42 @@ export async function chatJson<T>(
   if (!config.llm.apiKey.trim()) throw new Error('No LLM API key configured.')
 
   if (config.llm.provider === 'anthropic') {
-    let content = ''
+    const messages: ChatMessage[] = [{ role: 'user', content: user }]
+    let repairLeft = 1
+    let lastError: unknown
     for (let attempt = 0; attempt <= 2; attempt++) {
       if (attempt > 0) await sleep(retryDelay(attempt - 1))
       if (options.signal?.aborted) throw new Error('Request cancelled.')
-      const response = await requestAnthropic(system, user, options)
+      const response = await requestAnthropic(system, messages, options)
       if (response.ok) {
         const data = (await response.json()) as {
           content?: unknown
+          stop_reason?: string
           usage?: { input_tokens?: number; output_tokens?: number }
         }
         recordUsage(config.llm.model, {
           prompt: data.usage?.input_tokens,
           completion: data.usage?.output_tokens,
         })
-        content = contentText(data.content)
-        if (content.trim()) break
-        if (attempt === 2) throw new Error('Anthropic returned an empty response.')
-        continue
+        if (data.stop_reason === 'max_tokens') {
+          throw new Error('LLM reply was cut off by the output limit.')
+        }
+        const content = contentText(data.content)
+        if (!content.trim()) {
+          if (attempt === 2) throw new Error('Anthropic returned an empty response.')
+          continue
+        }
+        try {
+          return parseWithSchema(schema, content, 'Anthropic')
+        } catch (error) {
+          lastError = error
+          if (options.signal?.aborted) throw error
+          if (!(error instanceof InvalidJsonError) || repairLeft <= 0 || attempt === 2) break
+          repairLeft -= 1
+          messages.push({ role: 'assistant', content })
+          messages.push({ role: 'user', content: JSON_REPAIR_INSTRUCTION })
+          continue
+        }
       }
       if (canRetry(response.status, attempt)) {
         await response.text().catch(() => {})
@@ -125,27 +236,24 @@ export async function chatJson<T>(
       const detail = await response.text()
       throw new Error(`Anthropic request failed (${response.status}): ${detail.slice(0, 500)}`)
     }
-    const parsed = schema.safeParse(parseJson(content))
-    if (!parsed.success) {
-      const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')
-      throw new Error(`Anthropic returned an invalid shape: ${issues}`)
-    }
-    return parsed.data
+    throw lastError ?? new Error('Anthropic returned an invalid response.')
   }
 
+  const messages: ChatMessage[] = [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ]
   const body: Record<string, unknown> = {
     model: config.llm.model,
     temperature: options.temperature ?? 0.2,
-    messages: [
-      { role: 'system', content: system },
-      { role: 'user', content: user },
-    ],
+    messages,
     response_format: { type: 'json_object' },
   }
   if (options.maxTokens) body.max_tokens = options.maxTokens
 
   let triedWithoutFormat = false
-  let content = ''
+  let repairLeft = 1
+  let lastError: unknown
   for (let attempt = 0; attempt <= 2; attempt++) {
     if (attempt > 0) await sleep(retryDelay(attempt - 1))
     if (options.signal?.aborted) throw new Error('Request cancelled.')
@@ -158,7 +266,7 @@ export async function chatJson<T>(
     }
     if (response.ok) {
       const data = (await response.json()) as {
-        choices?: Array<{ message?: { content?: unknown } }>
+        choices?: Array<{ message?: { content?: unknown }; finish_reason?: string }>
         usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
       }
       recordUsage(config.llm.model, {
@@ -166,10 +274,25 @@ export async function chatJson<T>(
         completion: data.usage?.completion_tokens,
         total: data.usage?.total_tokens,
       })
-      content = contentText(data.choices?.[0]?.message?.content)
-      if (content.trim()) break
-      if (attempt === 2) throw new Error('LLM returned an empty response.')
-      continue
+      if (data.choices?.[0]?.finish_reason === 'length') {
+        throw new Error('LLM reply was cut off by the output limit.')
+      }
+      const content = contentText(data.choices?.[0]?.message?.content)
+      if (!content.trim()) {
+        if (attempt === 2) throw new Error('LLM returned an empty response.')
+        continue
+      }
+      try {
+        return parseWithSchema(schema, content, 'LLM')
+      } catch (error) {
+        lastError = error
+        if (options.signal?.aborted) throw error
+        if (!(error instanceof InvalidJsonError) || repairLeft <= 0 || attempt === 2) break
+        repairLeft -= 1
+        messages.push({ role: 'assistant', content })
+        messages.push({ role: 'user', content: JSON_REPAIR_INSTRUCTION })
+        continue
+      }
     }
     if (canRetry(response.status, attempt)) {
       await response.text().catch(() => {})
@@ -178,11 +301,5 @@ export async function chatJson<T>(
     const detail = await response.text()
     throw new Error(`LLM request failed (${response.status}): ${detail.slice(0, 500)}`)
   }
-
-  const parsed = schema.safeParse(parseJson(content))
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ')
-    throw new Error(`LLM returned an invalid shape: ${issues}`)
-  }
-  return parsed.data
+  throw lastError ?? new Error('LLM returned an invalid response.')
 }

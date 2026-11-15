@@ -6,7 +6,7 @@ export function renderLabApp(): string {
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>实验室 · CloseRead</title>
 ${themeBootScript()}
 ${pwaHead()}
@@ -20,15 +20,17 @@ ${pwaHead()}
     <a class="side-import" href="/?tab=import">＋ 导入文章</a>
     <div class="side-label">学习</div>
     <nav class="side-nav">
-      <a class="nav-link" href="/?tab=home"><span class="nav-icon">◉</span><span>今日</span></a>
-      <a class="nav-link" href="/?tab=packs"><span class="nav-icon">▤</span><span>阅读</span></a>
-      <a class="nav-link" href="/?tab=library"><span class="nav-icon">▦</span><span>词库</span></a>
-      <a class="nav-link active" href="/lab"><span class="nav-icon">✦</span><span>练习</span></a>
+      <a class="nav-link" href="/?tab=read"><span class="nav-icon">◉</span><span>精读</span></a>
+      <a class="nav-link" href="/?tab=packs"><span class="nav-icon">▦</span><span>文章</span></a>
     </nav>
-    <div class="side-label">成长</div>
-    <nav class="side-nav">
-      <a class="nav-link" href="/?tab=passport"><span class="nav-icon">◈</span><span>成长</span></a>
-    </nav>
+    <details class="side-more" open>
+      <summary>更多</summary>
+      <nav class="side-nav side-more-list">
+        <a class="nav-link active" href="/lab"><span class="nav-icon">✦</span><span>练习</span></a>
+        <a class="nav-link" href="/?tab=passport"><span class="nav-icon">◈</span><span>成长</span></a>
+        <a class="nav-link" href="/?tab=insights"><span class="nav-icon">▥</span><span>复盘</span></a>
+      </nav>
+    </details>
     <div class="sidebar-spacer"></div>
     <div class="side-note">一次只练一个能力。<br>读完再回来。</div>
   </aside>
@@ -65,11 +67,9 @@ ${pwaHead()}
     </main>
   </div>
   <nav class="mobile-nav" aria-label="移动导航">
-    <a href="/?tab=home"><span>◉</span>今日</a>
-    <a href="/?tab=packs"><span>▤</span>阅读</a>
-    <a href="/?tab=library"><span>▦</span>词库</a>
+    <a href="/?tab=read"><span>◉</span>精读</a>
+    <a href="/?tab=packs"><span>▦</span>文章</a>
     <a class="active" href="/lab"><span>✦</span>练习</a>
-    <a href="/?tab=passport"><span>◈</span>成长</a>
   </nav>
 </div>
 <audio id="lab-player" class="lab-player" controls hidden></audio>

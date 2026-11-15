@@ -110,6 +110,7 @@ function speechEndpoint(baseUrl: string): string {
 
 function providerChunkLimit(provider: TtsProviderId): number {
   if (provider === 'edge') return 6000
+  if (provider === 'bailian') return 580
   if (provider === 'glm') return 900
   if (provider === 'gemini') return 2500
   if (provider === 'minimax') return 3000
@@ -150,6 +151,49 @@ async function openAiPart(text: string, signal?: AbortSignal): Promise<SpeechPar
   }
   if (!response.ok) throw new Error(`神经语音请求失败 (${response.status}): ${await readError(response)}`)
   return audioPart(Buffer.from(await response.arrayBuffer()), SAMPLE_RATE)
+}
+
+function bailianEndpoint(baseUrl: string): string {
+  const base = baseUrl.replace(/\/+$/, '')
+  return /\/generation$/i.test(base) ? base : `${base}/services/aigc/multimodal-generation/generation`
+}
+
+async function bailianPart(text: string, signal?: AbortSignal): Promise<SpeechPart> {
+  const timeout = AbortSignal.timeout(180_000)
+  const send = (input: Record<string, unknown>) =>
+    fetch(bailianEndpoint(config.tts.baseUrl), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${config.tts.apiKey}`,
+      },
+      body: JSON.stringify({ model: config.tts.model, input }),
+      signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
+    })
+  let response = await send({ text, voice: config.tts.voice, language_type: 'English' })
+  if (!response.ok && (response.status === 400 || response.status === 422)) {
+    // Older Qwen-TTS snapshots do not accept language_type.
+    response = await send({ text, voice: config.tts.voice })
+  }
+  if (!response.ok) throw new Error(`百炼语音请求失败 (${response.status}): ${await readError(response)}`)
+  const data = (await response.json()) as {
+    status_code?: number
+    code?: string
+    message?: string
+    output?: { audio?: { data?: string; url?: string } }
+  }
+  if (data.status_code && data.status_code !== 200) {
+    throw new Error(`百炼语音失败 (${data.status_code}): ${data.message ?? data.code ?? ''}`)
+  }
+  const audio = data.output?.audio
+  const encoded = audio?.data?.trim()
+  if (encoded) return audioPart(Buffer.from(encoded, 'base64'), SAMPLE_RATE)
+  const url = audio?.url?.trim()
+  if (!url) throw new Error('百炼语音没有返回音频。')
+  const href = /^https?:\/\//i.test(url) ? url : `https://${url}`
+  const download = await fetch(href, { signal: signal ? AbortSignal.any([timeout, signal]) : timeout })
+  if (!download.ok) throw new Error(`百炼音频下载失败 (${download.status}): ${await readError(download)}`)
+  return audioPart(Buffer.from(await download.arrayBuffer()), SAMPLE_RATE)
 }
 
 async function glmPart(text: string, signal?: AbortSignal): Promise<SpeechPart> {
@@ -329,11 +373,32 @@ async function edgeMp3(text: string): Promise<Buffer> {
 }
 
 async function requestPart(provider: TtsProviderId, text: string, signal?: AbortSignal): Promise<SpeechPart> {
+  if (provider === 'bailian') return bailianPart(text, signal)
   if (provider === 'glm') return glmPart(text, signal)
   if (provider === 'gemini') return geminiPart(text, signal)
   if (provider === 'minimax') return minimaxPart(text, signal)
   if (provider === 'elevenlabs') return elevenLabsPart(text, signal)
   return openAiPart(text, signal)
+}
+
+/** Request chunks in order, allowing a little parallelism for short-input providers. */
+async function requestSpeechParts(
+  chunks: string[],
+  provider: TtsProviderId,
+  signal?: AbortSignal,
+): Promise<SpeechPart[]> {
+  const results = new Array<SpeechPart>(chunks.length)
+  const limit = provider === 'bailian' ? 2 : 1
+  let cursor = 0
+  async function worker(): Promise<void> {
+    while (true) {
+      const index = cursor++
+      if (index >= chunks.length) return
+      results[index] = await requestPart(provider, chunks[index]!, signal)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, chunks.length) }, () => worker()))
+  return results
 }
 
 /** Generate one WAV file through the configured neural speech provider. */
@@ -356,10 +421,7 @@ export async function generateNeuralSpeech(
     await fs.rename(temp, output)
     return
   }
-  const parts: SpeechPart[] = []
-  for (const chunk of chunks) {
-    parts.push(await requestPart(config.tts.provider, chunk, signal))
-  }
+  const parts = await requestSpeechParts(chunks, config.tts.provider, signal)
   if (!parts.length) throw new Error('神经语音没有返回音频。')
   const sampleRate = parts[0]?.sampleRate ?? SAMPLE_RATE
   const pause = Buffer.alloc(Math.round(sampleRate * 2 * 0.2))

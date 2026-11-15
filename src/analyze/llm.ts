@@ -13,8 +13,8 @@ import { itemId } from './item-id.js'
 import { promptKnownLemmas } from './known.js'
 import { rawItemSchema, normalizeWordFormation } from './item-schema.js'
 import type { RawItem } from './item-schema.js'
-import { normalizeSourceParagraphs } from '../pack/paragraph-merge.js'
-import { fallbackReading, groundParagraph } from './reading.js'
+import { isSourceHeader, normalizeSourceParagraphs } from '../pack/paragraph-merge.js'
+import { fallbackReading } from './reading.js'
 import { paragraphNoteSchema, toParagraphNote } from './reading-note-schema.js'
 import { extractStandfirst, splitDatedBody } from './reading-frontmatter.js'
 import { estimateDifficulty, findContextSentence, sentences } from './tokenize.js'
@@ -73,19 +73,23 @@ const frontMatterSchema = z.object({
   section: z.string().nullable().optional(),
 })
 
-const readingSchema = z.object({
-  frontMatter: frontMatterSchema.optional(),
-  paragraphs: z
-    .array(
-      z.object({
-        original: z.string().min(1),
-        translation: z.string().min(1),
-        itemIndices: z.array(z.number().int().min(0)).default([]),
-        note: paragraphNoteSchema.optional(),
-      }),
-    )
-    .default([]),
+const readingParagraphSchema = z.object({
+  index: z.number().int().min(0),
+  translation: z.string().min(1),
+  itemIndices: z.array(z.number().int().min(0)).default([]),
+  note: paragraphNoteSchema.optional(),
 })
+
+const readingBatchSchema = z.object({
+  paragraphs: z.array(readingParagraphSchema).default([]),
+})
+
+interface GeneratedReadingParagraph {
+  index: number
+  translation: string
+  itemIndices: number[]
+  note?: z.input<typeof paragraphNoteSchema>
+}
 
 const editorialSchema = z.object({
   editorial: z.string().min(1),
@@ -218,7 +222,7 @@ async function generateCards(
   }
 
   let completed = 0
-  await mapLimit(batches, 2, async (batch) => {
+  await mapLimit(batches, 3, async (batch) => {
     checkAbort(signal)
     const list = batch
       .map(
@@ -280,6 +284,67 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: nu
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()))
   return results
+}
+
+const READING_BATCH_SIZE = 4
+const READING_BATCH_CHARS = 5000
+
+function paragraphBatches(paragraphs: string[]): string[][] {
+  const batches: string[][] = []
+  let current: string[] = []
+  let chars = 0
+  for (const paragraph of paragraphs) {
+    const tooMany = current.length >= READING_BATCH_SIZE
+    const tooLong = current.length > 0 && chars + paragraph.length > READING_BATCH_CHARS
+    if (tooMany || tooLong) {
+      batches.push(current)
+      current = []
+      chars = 0
+    }
+    current.push(paragraph)
+    chars += paragraph.length
+  }
+  if (current.length > 0) batches.push(current)
+  return batches
+}
+
+async function requestReadingBatch(
+  batch: string[],
+  offset: number,
+  title: string,
+  itemList: string,
+  signal: AbortSignal | undefined,
+  notes: string[],
+): Promise<GeneratedReadingParagraph[]> {
+  const numbered = batch.map((paragraph, index) => `[${offset + index}] ${paragraph}`).join('\n\n')
+  try {
+    const generated = await chatJson(
+      readingBatchSchema,
+      READING_BATCH_SYSTEM,
+      `Article title: ${title}\n\nNumbered paragraphs:\n${numbered}\n\nTarget items (use these contextual glosses consistently):\n${itemList}\n\nReturn JSON only.`,
+      { maxTokens: 4000, signal },
+    )
+    return (generated.paragraphs ?? [])
+      .filter((paragraph) => paragraph.index >= offset && paragraph.index < offset + batch.length)
+      .map((paragraph) => ({ ...paragraph, itemIndices: paragraph.itemIndices ?? [] }))
+  } catch (error) {
+    if (signal?.aborted) throw new Error('Build cancelled')
+    if (batch.length > 1) {
+      const middle = Math.ceil(batch.length / 2)
+      const left = await requestReadingBatch(batch.slice(0, middle), offset, title, itemList, signal, notes)
+      const right = await requestReadingBatch(
+        batch.slice(middle),
+        offset + middle,
+        title,
+        itemList,
+        signal,
+        notes,
+      )
+      return [...left, ...right]
+    }
+    notes.push(`Reading notes skipped for one paragraph: ${error instanceof Error ? error.message : String(error)}`)
+    return []
+  }
 }
 
 function groundedSentence(resource: Resource, candidate: string, lemma: string): string {
@@ -368,12 +433,22 @@ Return JSON only:
   "comprehension":[{"question":"...","answer":"..."}],
   "discussion":[{"question":"...","answer":"..."}]
 }
-Rules: cloze sentences must come from the text; comprehension answers must be supported by the text; discussion questions should invite an opinion or personal response, and each answer must be a 1-3 sentence reference answer, not just a hint.`
+Rules:
+- cloze: 6-10 items taken from the text; each blank tests a collocation, register choice or logical connector, not an obscure word.
+- comprehension: 4-6 items mixing fact, inference, main idea and "why did the author use this word/phrase"; every answer must be supported by a specific part of the text.
+- discussion: 2-4 questions that connect the article's argument to the learner's experience; each answer is a 1-3 sentence reference response with a view AND a reason, not just a hint.
+- Cover the article's main thread; do not ask about trivial details.`
 
-const READING_SYSTEM = `You are preparing a paragraph-by-paragraph bilingual intensive-reading page for a Chinese learner.
-Split the source into its natural body paragraphs. Skip title and heading lines; do not include them as paragraphs. Keep the original order and copy each paragraph verbatim.
-If a paragraph ends with an article, preposition, conjunction, or no terminal punctuation, merge it with the following paragraph and translate the merged paragraph as one unit.
-Also return frontMatter for the article head:
+const READING_RULES = `Style rules:
+- Keep the Chinese natural and learner-friendly, never word-for-word.
+- Translate titles, headings, idioms and figurative phrases by their contextual meaning, never word-for-word. When a target item is listed with a Chinese gloss, reuse that sense consistently wherever the item appears, including titleZh and leadZh (for example, "lose the plot" means 迷失方向/乱了阵脚, never 失去剧情).
+- Keep every note field to one short Chinese sentence (roughly 40 characters or fewer); connectors at most 3; background and question may be "".
+JSON rules:
+- Every string must be valid JSON. Escape ASCII double quotes as \\", and inside Chinese text use 「」 or “” instead of raw ASCII double quotes. No trailing commas, no Markdown fences, no prose outside the object.
+- Do not invent quotations or facts.`
+
+const READING_HEAD_SYSTEM = `You are preparing the head of a bilingual intensive-reading page for a Chinese learner.
+Return frontMatter for the article head:
 - titleZh: natural Chinese translation of the article title
 - titleNote: one concise Chinese note on the title's wording, image, or stance
 - summaryZh: a 2-3 sentence Chinese summary of the article
@@ -381,8 +456,13 @@ Also return frontMatter for the article head:
 - leadZh: natural Chinese translation of lead
 - leadNote: one concise Chinese note on the lead's structure or rhetorical job
 - section: the magazine section/column if evident, otherwise ""
-For each paragraph return:
-- original: the exact paragraph
+${READING_RULES}
+Return JSON only: {"titleZh":"...","titleNote":"...","summaryZh":"...","lead":"...","leadZh":"...","leadNote":"...","section":"..."}`
+
+const READING_BATCH_SYSTEM = `You are preparing a paragraph-by-paragraph bilingual intensive-reading page for a Chinese learner.
+You receive one numbered batch of article paragraphs. Treat each bracketed number as one finished paragraph: do not merge, split, reorder, or add paragraphs.
+For each numbered paragraph return:
+- index: the bracketed number, unchanged
 - translation: natural Chinese translation
 - itemIndices: 0-based indices of the target items that appear in this paragraph (an item may appear in more than one paragraph)
 - note: a compact intensive-reading annotation:
@@ -394,9 +474,9 @@ For each paragraph return:
   - connectors: 0-3 discourse connectors with {"text":"...","usage":"中文作用"}
   - background: optional one-sentence Chinese background or cultural note (or "")
   - question: one short Chinese comprehension or reflection question (or "")
-
-Do not invent quotations or facts. Keep the Chinese natural and learner-friendly, never word-for-word. Do not merge paragraphs.
-Return JSON only: {"frontMatter":{"titleZh":"...","titleNote":"...","summaryZh":"...","lead":"...","leadZh":"...","leadNote":"...","section":"..."},"paragraphs":[{"original":"...","translation":"...","itemIndices":[0,3],"note":{"summary":"...","role":"论点","keySentence":"...","keySentenceNote":"...","grammar":"...","connectors":[{"text":"Instead","usage":"转折"}],"background":"","question":"..."}}]}`
+Return exactly one entry per numbered paragraph, in the same order.
+${READING_RULES}
+Return JSON only: {"paragraphs":[{"index":0,"translation":"...","itemIndices":[0,3],"note":{"summary":"...","role":"论点","keySentence":"...","keySentenceNote":"...","grammar":"...","connectors":[{"text":"Instead","usage":"转折"}],"background":"","question":"..."}}]}`
 
 const EDITORIAL_SYSTEM = (style: StyleProfile) => `You are a Chinese English-learning writer. Write a long-form Chinese learning note in the style described below.
 
@@ -566,63 +646,112 @@ export async function analyzeWithLlm(
     }
   })
 
-  let summary = simpleSummary(resource.text)
-  let difficulty = estimateDifficulty(resource.text)
   checkAbort(signal)
-  progress('Writing summary and difficulty…')
-  try {
-    const summaryResult = await chatJson(
-      summarySchema,
-      SUMMARY_SYSTEM(),
-      `Text:\n"""\n${resource.text.slice(0, 14_000)}\n"""\n\nReturn JSON only.`,
-      { signal },
-    )
-    summary = summaryResult.summary
-    difficulty = { cefr: summaryResult.cefr, reason: summaryResult.difficultyReason }
-  } catch (error) {
-    notes.push(`Summary failed: ${error instanceof Error ? error.message : String(error)}`)
-  }
+  progress('Writing the summary, exercises and bilingual reading in parallel…')
 
-  let exercises: PackExercises = fallbackExercises(items)
-  checkAbort(signal)
-  progress('Writing exercises and discussion questions…')
-  try {
-    const generated = await chatJson(
-      exercisesSchema,
-      EXERCISES_SYSTEM(),
-      `Target items:\n${items
-        .map((item) => `- ${item.lemma}: ${item.sense}`)
-        .join('\n')}\n\nText excerpt:\n"""\n${resource.text.slice(0, 12_000)}\n"""\n\nReturn JSON only.`,
-      { signal },
-    )
-    exercises = {
-      cloze: generated.cloze ?? [],
-      comprehension: generated.comprehension ?? [],
-      discussion: generated.discussion ?? [],
+  const summaryTask = (async () => {
+    let summary = simpleSummary(resource.text)
+    let difficulty = estimateDifficulty(resource.text)
+    checkAbort(signal)
+    try {
+      const summaryResult = await chatJson(
+        summarySchema,
+        SUMMARY_SYSTEM(),
+        `Text:\n"""\n${resource.text.slice(0, 14_000)}\n"""\n\nReturn JSON only.`,
+        { signal },
+      )
+      summary = summaryResult.summary
+      difficulty = { cefr: summaryResult.cefr, reason: summaryResult.difficultyReason }
+    } catch (error) {
+      notes.push(`Summary failed: ${error instanceof Error ? error.message : String(error)}`)
     }
-  } catch (error) {
-    notes.push(`Exercises failed: ${error instanceof Error ? error.message : String(error)}`)
-  }
+    return { summary, difficulty }
+  })()
 
-  let reading = fallbackReading(resource, items)
-  let frontMatter: PackFrontMatter | undefined
-  checkAbort(signal)
-  progress('Writing the bilingual paragraph reading…')
-  const readingSource = normalizeSourceParagraphs(splitDatedBody(resource.text, resource.title), resource.title)
-  const readingText = readingSource.length > 18_000 ? readingSource.slice(0, 18_000) : readingSource
-  if (readingText.length < readingSource.length) {
-    notes.push('Reading generation used the first part of a long document.')
-  }
-  try {
-    const itemList = items.map((item, index) => `${index}. ${item.lemma} — ${item.sense}`).join('\n')
-    const generated = await chatJson(
-      readingSchema,
-      READING_SYSTEM,
-      `Text:\n"""\n${readingText}\n"""\n\nTarget items:\n${itemList}\n\nReturn JSON only.`,
-      { maxTokens: 9000, signal },
-    )
-    const generatedFrontMatter = generated.frontMatter
+  const exercisesTask = (async () => {
+    let exercises: PackExercises = fallbackExercises(items)
+    checkAbort(signal)
+    try {
+      const generated = await chatJson(
+        exercisesSchema,
+        EXERCISES_SYSTEM(),
+        `Target items:\n${items
+          .map((item) => `- ${item.lemma}: ${item.sense}`)
+          .join('\n')}\n\nText excerpt:\n"""\n${resource.text.slice(0, 12_000)}\n"""\n\nReturn JSON only.`,
+        { signal },
+      )
+      exercises = {
+        cloze: generated.cloze ?? [],
+        comprehension: generated.comprehension ?? [],
+        discussion: generated.discussion ?? [],
+      }
+    } catch (error) {
+      notes.push(`Exercises failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    return exercises
+  })()
+
+  const readingTask = (async () => {
+    let reading = fallbackReading(resource, items)
+    let frontMatter: PackFrontMatter | undefined
+    checkAbort(signal)
+    const readingSource = normalizeSourceParagraphs(splitDatedBody(resource.text, resource.title), resource.title)
+    const allParagraphs = readingSource
+      .split(/\n{2,}/)
+      .map((paragraph) => paragraph.trim())
+      .filter(
+        (paragraph) =>
+          paragraph &&
+          !/^#{1,6}\s/.test(paragraph) &&
+          !isSourceHeader(paragraph, resource.title),
+      )
+    const sourceParagraphs: string[] = []
+    let usedChars = 0
+    for (const paragraph of allParagraphs) {
+      if (usedChars + paragraph.length + 2 > 18_000 && sourceParagraphs.length > 0) break
+      sourceParagraphs.push(paragraph)
+      usedChars += paragraph.length + 2
+    }
+    if (sourceParagraphs.length < allParagraphs.length) {
+      notes.push('Reading generation used the first part of a long document.')
+    }
     const standfirst = extractStandfirst(resource.text, resource.title)
+    const headTask = (async () => {
+      try {
+        return await chatJson(
+          frontMatterSchema,
+          READING_HEAD_SYSTEM,
+          `Article title: ${resource.title}\n\nStandfirst: ${standfirst ?? '(none)'}\n\nOpening excerpt:\n"""\n${resource.text.slice(0, 2000)}\n"""\n\nReturn JSON only.`,
+          { maxTokens: 1500, signal },
+        )
+      } catch (error) {
+        notes.push(`Reading head failed: ${error instanceof Error ? error.message : String(error)}`)
+        return undefined
+      }
+    })()
+
+    const itemList = items
+      .map(
+        (item, index) =>
+          `${index}. ${item.lemma} — ${item.sense}${item.definitionZh ? `（${item.definitionZh}）` : ''}`,
+      )
+      .join('\n')
+    let offset = 0
+    const batchRanges = paragraphBatches(sourceParagraphs).map((batch) => {
+      const start = offset
+      offset += batch.length
+      return { batch, offset: start }
+    })
+    const generated =
+      batchRanges.length > 0
+        ? (
+            await mapLimit(batchRanges, 2, (range) =>
+              requestReadingBatch(range.batch, range.offset, resource.title, itemList, signal, notes),
+            )
+          ).flat()
+        : []
+
+    const generatedFrontMatter = await headTask
     if (generatedFrontMatter) {
       const generatedLead = generatedFrontMatter.lead?.replace(/\s+/g, ' ').trim() ?? ''
       const leadMatches =
@@ -645,12 +774,10 @@ export async function analyzeWithLlm(
         itemIds: [],
       }
     }
-    const paragraphs = (generated.paragraphs ?? []).filter(
-      (paragraph) => !/^#{1,6}\s/.test(paragraph.original.trim()),
-    )
-    if (paragraphs.length > 0) {
-      reading = paragraphs.map((paragraph, index) => {
-        const original = groundParagraph(resource, paragraph.original, index)
+    const byIndex = new Map(generated.map((paragraph) => [paragraph.index, paragraph]))
+    if (sourceParagraphs.length > 0) {
+      reading = sourceParagraphs.map((original, index) => {
+        const paragraph = byIndex.get(index)
         const sourceSegment =
           resource.segments.find((segment) => segment.text.includes(original)) ?? resource.segments[index]
         return {
@@ -658,33 +785,21 @@ export async function analyzeWithLlm(
           original,
           ...(typeof sourceSegment?.page === 'number' ? { page: sourceSegment.page } : {}),
           ...(sourceSegment?.timestamp ? { timestamp: sourceSegment.timestamp } : {}),
-          translation: paragraph.translation,
-          itemIds: (paragraph.itemIndices ?? [])
+          ...(paragraph?.translation ? { translation: paragraph.translation } : {}),
+          itemIds: (paragraph?.itemIndices ?? [])
             .map((itemIndex) => items[itemIndex]?.id)
             .filter((id): id is string => Boolean(id)),
-          ...(paragraph.note ? { note: toParagraphNote(paragraph.note, original) } : {}),
+          ...(paragraph?.note ? { note: toParagraphNote(paragraph.note, original) } : {}),
         }
       })
     }
-  } catch (error) {
-    notes.push(`Reading failed: ${error instanceof Error ? error.message : String(error)}`)
-  }
+    return { reading, frontMatter }
+  })()
 
-  const frontLead = frontMatter?.lead
-  if (
-    frontLead &&
-    reading.some((paragraph) =>
-      paragraph.original.replace(/\s+/g, ' ').toLowerCase().includes(frontLead.toLowerCase()),
-    )
-  ) {
-    const { lead, leadZh, leadNote, ...rest } = frontMatter!
-    frontMatter = rest
-  }
-
-  let editorial: string | undefined
-  if (style) {
+  const editorialTask = (async () => {
+    if (!style) return undefined
+    const { summary } = await summaryTask
     checkAbort(signal)
-    progress('Writing the styled editorial…')
     try {
       const editorialItems = items.slice(0, 10).map((item) => ({
         lemma: item.lemma,
@@ -705,10 +820,33 @@ export async function analyzeWithLlm(
         )}\n\nSource excerpt:\n"""\n${resource.text.slice(0, 8000)}\n"""\n\nReturn JSON only.`,
         { signal },
       )
-      editorial = generated.editorial
+      return generated.editorial
     } catch (error) {
       notes.push(`Editorial failed: ${error instanceof Error ? error.message : String(error)}`)
+      return undefined
     }
+  })()
+
+  const [summaryResult, exercises, readingResult, editorial] = await Promise.all([
+    summaryTask,
+    exercisesTask,
+    readingTask,
+    editorialTask,
+  ])
+  const summary = summaryResult.summary
+  const difficulty = summaryResult.difficulty
+  const reading = readingResult.reading
+  let frontMatter = readingResult.frontMatter
+
+  const frontLead = frontMatter?.lead
+  if (
+    frontLead &&
+    reading.some((paragraph) =>
+      paragraph.original.replace(/\s+/g, ' ').toLowerCase().includes(frontLead.toLowerCase()),
+    )
+  ) {
+    const { lead, leadZh, leadNote, ...rest } = frontMatter!
+    frontMatter = rest
   }
 
   return { summary, difficulty, items, exercises, reading, notes, editorial, frontMatter, cachedCards: cachedByKey.size }

@@ -7,227 +7,224 @@
 <p align="center">
   <a href="https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-2ea44f"></a>
+  <a href="package.json"><img alt="node" src="https://img.shields.io/badge/node-22%2B-43853d"></a>
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> · <strong>简体中文</strong> · <a href="https://qweijiaq.github.io/CloseRead/">在线演示</a>
+  <a href="README.md">English</a> · <strong>简体中文</strong>
 </p>
 
-**CloseRead 把一个 PDF、EPUB、MOBI、DOCX、网页链接、文本文件或演讲转录，做成一份可以逐段精读的学习包：译文、笔记、词卡、句子卡，以及留在本地的复习库。**
+**CloseRead 把一篇英文文章、PDF、EPUB、MOBI、DOCX、网页链接或演讲转录，做成一份可以逐段精读的学习包：译文、笔记、词卡、句子卡、练习，以及留在本地的阅读记录。**
 
-它不是聊天外教，也不是一个“碰巧放了几篇文章”的背单词 App。主循环是 **读 → 懂 → 收 → 少量复习**。界面支持中英切换，英文为 beta；AI 生成的学习内容仍以中文为主。
+它是一个阅读工作台，不是聊天外教，也不是“碰巧放了几篇文章”的背单词 App。主循环是 **读 → 懂 → 留下**。没有账号、没有云端词库、没有埋点。模型 Key 是可选的：不配置也能导入、切分、生成学习包、阅读和批注。界面支持中文和英文 beta；生成的学习笔记默认仍是中文。
 
-![CloseRead 精读界面](assets/reader.png)
+![CloseRead 精读首页](assets/screenshots/home.png)
 
-*实际界面：文章头、逐段译文、精读笔记和折叠的词卡。*
+*精读首页：继续读当前文章，查看阅读统计和最近的学习包。*
 
-## 为什么不是 ChatGPT / 背单词 App？
+## 为什么还需要一个阅读工具？
 
-| | ChatGPT | 背单词 App | CloseRead |
-| --- | --- | --- | --- |
-| 真实文章 | 能读，但每次都要重新提问 | 通常没有完整文章 | PDF / EPUB / MOBI / DOCX / 网页 / 文本 / 转录 |
-| 结构化产出 | 需要自己整理 | 只有词表 | 逐段译文、笔记、语法、词卡、句子卡 |
-| 保留语境 | 留在对话里 | 卡片离开原文 | 卡片跟着来源段落走 |
-| 复习 | 没有内置队列 | 有 | 单词和句子卡的 FSRS 队列，可导出 Anki CSV |
-| 数据在哪 | 云端账号 | 通常也在云端 | 原文、学习包、进度和词库都在本机 |
+| | 常见的问题 | CloseRead 的做法 |
+| --- | --- | --- |
+| 真实文本 | 聊天回答散在对话里；背单词 App 里通常没有这篇文章 | 一篇文章一个学习包，保留完整原文、段落顺序和页码/时间戳 |
+| 语境 | 词卡离开原句，只剩一个孤立的词 | 每张卡都跟着来源段落走，原句和上下文一起保留 |
+| 产出 | 译文、笔记、练习还要自己整理 | 译文、结构图、段落笔记、词卡、完形、阅读理解和讨论都在同一页 |
+| 归属 | 进度和词库留在别人的账号里 | 原文、学习包、阅读进度和备份都是你磁盘上的文件 |
 
-## 快速开始
+## 学习包里有什么
 
-需要 **Node.js 22+** 和 **pnpm 10+**（仓库通过 `packageManager` 固定 pnpm 11.9）。
+### 读
+
+- 支持带文字层的 PDF、EPUB、MOBI/AZW/AZW3、DOCX、文章链接、RSS/Atom 订阅、粘贴文本/Markdown 和带时间戳的转录。
+- 双语阅读页：英文标题、中文标题、导语和逐段译文。
+- 读前导读：文章地图、作者立场、语言线索和一个具体的阅读策略。
+- 每段精读笔记：作用、关键句、语法、连接词、背景，以及一个把你送回原文的问题。
+- 单句精读：放大原文、按需翻译、发音、前后切换、合并/拆分句子边界、标记本段已读。
+- 选中 1–8 个词或一整句，就能看释义并加卡，不必离开正文。
+- 四档字号、三档行高、三档版心，以及纸色/夜间/跟随系统主题，按浏览器记住。
+- PDF 使用 pdf.js 并做双栏还原、重复页眉页脚清理，跳过前置页、目录、索引和参考文献；书签或标题会把长 PDF 拆成章节。
+
+### 懂
+
+- 词卡包含语境、中文释义、词源、词根词缀、派生图、词族、同反义、易混词、搭配和例句。
+- 句子卡保留完整原句、译文、意群、句型、语法、替换表达和三种语域改写，适合回译。
+- 完形填空、阅读理解（事实、推断、主旨、选词）和讨论题，参考答案可以展开。
+- 24 个词的词汇诊断，用来校准文章难度和生词标注；结果只留在本机。
+
+### 留下
+
+- 段落批注、收藏和“已掌握”状态，跟着学习包一起保留。
+- 读完后写三句英文，可以让编辑给反馈；每次改写单独保存，前后版本可以对照。
+- 每篇文章记录已读段落和完成度；阅读护照、成就和 12 周阅读日历都从已有记录派生，不额外存数据。
+- 每周复盘：读完文章、阅读词数、写作输出和学习天数，可导出 Markdown 周报。
+- 整篇音频和逐句跟读，支持本地录音回放。音色可以用 macOS `say`、浏览器朗读，或配置神经语音。
+
+![阅读护照](assets/screenshots/growth.png)
+
+*阅读护照、每周复盘和成就都从已有阅读记录派生。*
+
+### 导出
+
+- 交互式 HTML、EPUB、PDF（舒适/紧凑）和 PNG（单张长图或分页 ZIP）。
+- Anki CSV、独立学习包 Markdown，以及包含批注、句子卡和词汇的精读笔记 Markdown。
+- 安装 Calibre 后可导出 MOBI；PDF/PNG 渲染使用本机 Chrome。
+- 完整备份归档：词库、导入材料、学习包目录、阅读进度、缓存音频和本机金句墙。
+
+![CloseRead 阅读页](assets/screenshots/reader.png)
+
+*文章、译文、段落笔记和结构图在同一条阅读流里。*
+
+## 从源码安装
+
+CloseRead 目前 **只提供源码**：没有 npm 包，也没有签名的安装包。需要：
+
+- **Node.js 22+**
+- **pnpm**（仓库通过 `packageManager` 固定 `pnpm@11.9.0`）
+- 支持 macOS、Linux 和 Windows
+- 可选：Chrome 用于 PDF/PNG 导出，Calibre 用于 MOBI 导出，macOS `say` 用于离线音频
 
 ```bash
+git clone https://github.com/qweijiaq/CloseRead.git
+cd CloseRead
 pnpm install
-pnpm dev demo          # 用示例文章生成一个学习包
-pnpm dev review        # 打开本地阅读界面：http://127.0.0.1:4317
+pnpm dev demo
+pnpm dev review
 ```
 
-`demo` 会对 `samples/sample-article.md` 跑完整流程：生成学习包、把卡片加入复习库；macOS 有 `say` 时会顺带生成音频。`review` 打开「今日」阅读首页，「复习」是单独的卡片标签页。
+`demo` 会把仓库里的示例文章跑成学习包，写到 `packs/`；`review` 在 <http://127.0.0.1:4317> 启动本地服务。
 
-导入自己的材料：
+导入自己的材料，可以用界面里的导入面板，也可以用 CLI：
 
 ```bash
-pnpm dev add ./article.pdf
-pnpm dev add ./book.epub
+pnpm dev add ./article.pdf --build --open
+pnpm dev add ./book.epub --build
 pnpm dev add https://example.com/article --build --open
 pnpm dev add --clipboard --build
 ```
 
-任意文章页都可以从 `/bookmarklet` 安装本地书签；点一下就会打开导入表单并填好当前链接。
+粘贴文本和网页文章可以选择 **清理正文**：只删除导航、Cookie 提示、订阅推广、相关推荐和页脚等整段样板内容，不改写正文。想保留原始提取结果时用 `--no-ai-clean`。PDF 和 EPUB 默认跳过这一步，避免破坏页码和书的结构。
 
-目前还是源码运行：没有 npm 包，也没有签名的安装包。仓库里有一个轻量 Electron 桌面壳：
+任意文章页都可以从 `/bookmarklet` 安装本地书签；点一下会用当前网页地址打开导入表单。
+
+### 桌面版
+
+仓库里有一个轻量 Electron 壳，但不是签名或公证过的发行版：
 
 ```bash
-pnpm desktop        # 从源码运行桌面版
-pnpm desktop:pack   # 生成未打包的桌面应用，输出到 desktop-dist/
-pnpm desktop:build:mac  # 生成未签名的 macOS dmg
-pnpm desktop:build:win  # Windows NSIS，请在 Windows 上运行
+pnpm desktop              # 从源码运行
+pnpm desktop:pack         # 生成未打包应用，输出到 desktop-dist/
+pnpm desktop:build:mac    # 未签名的 macOS dmg
+pnpm desktop:build:win    # Windows NSIS，请在 Windows 上运行
 ```
 
-打包说明见 [desktop/README.md](desktop/README.md)。仓库里还有一份只读静态演示 [`demo/index.html`](demo/index.html)，附带 GitHub Pages 工作流。阅读首页和学习包顶栏都有 `EN` 切换。
+桌面版把数据放在 Electron 的 `userData` 目录。打开 **设置 → 数据与学习包** 可以看到确切路径。打包说明见 [desktop/README.md](desktop/README.md)。
+
+## 模型与语音（可选）
+
+不配置模型 Key 时，CloseRead 用规则流程生成结构、笔记、词卡和练习；中文释义和短译文来自公开词典/机器翻译接口，质量会浅一些，也会有文本离开本机。
+
+配置 Key 后，可以使用 DeepSeek、OpenAI 兼容接口、Anthropic、Gemini、Qwen/百炼、GLM/智谱、xAI 或 Moonshot。在导入面板的 **模型设置** 里填写，或使用 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`DASHSCOPE_API_KEY`、`GLM_API_KEY` 等环境变量。保存在应用里的 Key 位于 `data/llm.json`。
+
+语音是另一项可选配置，支持 macOS 系统语音、Microsoft Edge 在线语音、阿里云百炼 `qwen3-tts-flash`、GLM-TTS、Gemini TTS、MiniMax、ElevenLabs 和 OpenAI 兼容的 `/audio/speech` 接口。
 
 ## 数据在哪里
 
-`pnpm dev` 把词库放在仓库的 `data/`，学习包放在 `packs/`。桌面版使用系统应用数据目录：macOS 是 `~/Library/Application Support/closeread/`，Windows 是 `%APPDATA%\closeread`，Linux 是 `~/.config/closeread`。设置 `LEARN_DATA_DIR` 和 `LEARN_PACKS_DIR` 可以让两者指向同一个文件夹；桌面版从终端启动时（例如 `LEARN_DATA_DIR=... pnpm desktop`）也会使用这两个变量。
+`pnpm dev` 会把所有内容放在仓库下的两个文件夹：
 
-词库是单个 `store.json`，加上每份导入材料一个 JSON 文件。CloseRead 会原子写入，并保留：
+```text
+data/
+  store.json              词库、学习包、卡片状态、输出和偏好
+  store.json.bak          上一份可用的词库
+  store.json.corrupt-*    无法解析的文件会移到隔离位置，不会被覆盖
+  backups/                每日词库快照，保留 7 份
+  resources/              每份导入材料一个 JSON
+  trash/                  删除的学习包和材料
+  llm.json, tts.json      服务商设置和 API Key
+  cache/                  词典、翻译和模型缓存
+packs/<id>/
+  pack.json, meta.json, pack.md, notes.md, anki.csv, index.html
+  reading.json            段落进度和批注
+```
 
-- `store.json.bak` — 上一份可用的版本；
-- `data/backups/store-YYYY-MM-DD.json` — 每天一份快照，保留 7 天；
-- `store.json.corrupt-<timestamp>` — 无法解析的文件会被移到隔离位置，并在界面顶部提示，而不是被静默覆盖。
+设置 `LEARN_DATA_DIR` 和 `LEARN_PACKS_DIR` 可以把这两个文件夹移到别处，例如从终端启动桌面版时。
 
-恢复时先停掉服务，把选中的快照复制回 `store.json` 即可。自动每日快照只覆盖词库 store。`pnpm dev backup` 生成的可迁移归档会包含 store、导入材料、学习包目录（含 `reading.json` 和缓存音频）以及本机金句墙；`data/lab/audio/` 属于可再生成的缓存，不放进归档。
+CloseRead 会原子写入，并保留上一份可用词库；但它是单用户应用，**同一个数据目录只运行一个服务**。两个服务同时写 `store.json` 会互相覆盖。
 
-需要一份可迁移的词库副本时：
+### 备份与恢复
+
+每日自动快照只覆盖 `store.json`。要一份包含原文、学习包、`reading.json`、缓存音频和金句的可迁移副本，用 **设置 → 下载完整备份**，或：
 
 ```bash
 pnpm dev backup                  # 写入 data/backups/library-<timestamp>.json
 pnpm dev restore <file> --force  # 先停掉服务
 ```
 
-手动恢复会先留一份 `store.json.pre-restore-<timestamp>`，并且只覆盖备份里包含的记录。学习包目录会重新映射到当前的 `LEARN_PACKS_DIR`。成长页也提供 **下载完整备份**，通过本地服务生成同一份归档。
+恢复会先留一份 `store.json.pre-restore-<timestamp>`，并把学习包目录重新映射到当前的 `LEARN_PACKS_DIR`。删除学习包或材料时会先进 `data/trash/`；打开 **设置 → 回收站** 可以恢复或彻底删除。
 
-删除学习包或材料时会先进 `data/trash/`；打开 **设置 → 回收站** 可以恢复或彻底删除。回收站会保留学习包记录、词条复习状态和上传文件。
+## 隐私
+
+CloseRead 没有账号、埋点、统计、广告或云同步。只有你主动操作时才会发起网络请求：
+
+- **网页/RSS 导入**：直接抓取目标页面。
+- **模型笔记和翻译**：把你选中的文章文本发给你配置的服务商。
+- **不配置模型时**：单词和短文本查询会访问 `api.dictionaryapi.dev`、`api.datamuse.com`、`dict.youdao.com` 和 `api.mymemory.translated.net`。
+- **在线语音**：把要朗读的文本发给你选择的语音服务；本机系统语音不会。
+- **手机访问**：在局域网内用普通 HTTP 提供应用，并用 HttpOnly Cookie 里的随机令牌保护。只在可信网络使用。
+
+`data/llm.json` 和 `data/tts.json` 里的 Key 是明文 JSON；在系统支持时会以仅本人可读的权限写入。备份和导出的学习包都是未加密的阅读材料副本。
+
+本地服务绑定 `127.0.0.1`，没有登录鉴权，不要暴露到公网。
+
+## 导出格式
+
+| 输出 | 用途 |
+| --- | --- |
+| HTML | 带学习包样式的独立阅读页 |
+| EPUB | 可重排的电子书 |
+| PDF | 可打印学习包，舒适或紧凑排版 |
+| PNG | 单张长图，或分页 ZIP |
+| MOBI | Kindle，需要 Calibre |
+| Anki CSV | 导入 Anki 的卡片 |
+| Markdown | 独立学习包，或给 Obsidian 等编辑器的精读笔记 |
+| 周报 | 最近 7 天的 Markdown 复盘 |
+| 备份 JSON | 迁移或恢复整个本地词库 |
+
+学习包目录里也保留 `pack.json`、`meta.json`、`pack.md`、`notes.md`、`anki.csv` 和 `index.html`，不依赖应用也能检查或迁移。`meta.json` 记录输入 hash、模式、服务商/模型、prompt 版本、生成时间和警告，但不含 API Key。
 
 ## 手机访问
 
-主服务只绑定 `127.0.0.1`。要在同一 Wi-Fi 下的手机或平板上阅读、复习：
+主服务只监听 `127.0.0.1`。要在同一 Wi-Fi 下的手机或平板上阅读：
 
-- 打开应用里的 **手机** 面板，点 **开启手机访问**；或者运行 `pnpm dev review --lan`。
-- 开启后直接用手机相机扫描面板里的二维码即可打开带令牌的链接；二维码在本机生成，不经过第三方服务。
-- 在手机浏览器里选择“添加到主屏幕”，或在电脑浏览器里安装 CloseRead，可以像独立应用一样打开；数据和令牌仍只在本机。
-- 在手机上打开一次带令牌的链接。令牌会写入 HttpOnly Cookie，并从地址栏去掉；之后应用内的相对链接和 API 会自动带上它。
-- 手机令牌是学习令牌：可以阅读、复习、加词/加句、写输出和使用练习；导入、删除、重新生成学习包、修改模型/语音设置只能在电脑上操作。
-- 手机访问使用独立的随机局域网端口，并且每个请求都需要令牌。关闭会停掉这个监听端口；下次开启会轮换令牌（除非用 `LEARN_ACCESS_TOKEN` 固定）。
-- 只在可信网络使用：局域网连接是 HTTP，不是 HTTPS；不要在公共 Wi-Fi 开启。手机打不开时，先检查系统防火墙和路由器的 AP 隔离。
-- `LEARN_ACCESS_TOKEN` 可以固定令牌（适合自动化）；否则每次开启手机访问都会生成新令牌。
+- 打开 **手机** 面板，点 **开启手机访问**；或运行 `pnpm dev review --lan`。
+- 用手机相机扫描面板里的二维码，或直接打开面板里的令牌链接。二维码在本机生成。
+- 令牌会写入 HttpOnly Cookie，并从地址栏去掉。手机访问使用独立的随机局域网端口，可以随时关闭。
+- 手机可以阅读、批注、加词/加句、写输出；导入、删除、重新生成学习包和修改模型/语音设置仍在电脑上。
+- 可以把 CloseRead 添加到手机主屏幕，像独立应用一样打开。局域网连接是 HTTP，不是 HTTPS；手机打不开时先检查系统防火墙和路由器的 AP 隔离。
 
-## 更安静的工作台
+<p align="center">
+  <img src="assets/screenshots/reader-dark.png" width="82%" alt="CloseRead 夜间阅读">
+</p>
 
-现在全站只有两个主入口：**精读** 和 **背单词**。桌面左侧栏和移动端底部导航都只保留这两个动作，练习、成长、复盘和写作输出收进“更多”；词网已从界面移除。精读首页只负责继续读、导入和文章列表；背单词首页先显示今天要复习的卡。默认阅读页是 `/read/:id`：选中一个词或一句话即可加入词卡或句子卡；旧的 `/pack/:id` 保留为 **工具模式**，从“更多阅读工具”进入。
+<p align="center">
+  <img src="assets/screenshots/mobile.png" width="30%" alt="CloseRead 手机界面">
+</p>
 
-![今日工作台](docs/review/ui-home.png)
+## CLI
 
-![统一阅读页](docs/review/ui-reader.png)
-
-
-### 导入时 AI 清理正文
-
-粘贴文本和网页文章在入库前可以过一遍模型。配置了模型 Key 时，导入表单里的 **AI 清理正文** 默认开启。模型只拿到编号段落，**只能删除导航、Cookie 提示、订阅/Newsletter、相关推荐、广告、页脚等样板段落**，不能改写正文。模型失败或想删掉超过 60% 的段落时，会保留原文并给出警告。
-
-CLI 可以用 `pnpm dev add --no-ai-clean` 保留原始提取文本。PDF/EPUB 目前有意跳过这一步，避免破坏页码和书的结构。
-
-![导入时 AI 清理正文](docs/review/import-ai-clean.png)
-
-
-### 可以真正背起来的词库
-
-词库不再只是列表：按 **新词 / 到期 / 易忘 / 已掌握** 分组，按来源、词书或 CEFR 过滤，并可按到期、最近添加、字母、CEFR、词频或易忘次数排序；点开完整词卡（语境、搭配、例句、关系、词源、笔记），然后开始「今日背词」：**默认 10 个新词 + 到期复习**。复习队列是唯一的学习入口，和全站共用同一套 FSRS 调度。
-
-「词书库」可以一键加入四级（4,544）、六级（3,991）、托福（10,367）和雅思（7,298）；加入后会进入同一套 FSRS 词库，和文章里收集的词一起复习。来源与许可写在 [src/wordbooks/ATTRIBUTION.md](src/wordbooks/ATTRIBUTION.md)：四六级/托福词表来自 BSD-3-Clause 的 KyleBing/english-vocabulary，雅思来自 CC BY 4.0 的 Word Atlas，音标来自 MIT 的 ECDICT。内置雅思是 7,298 词的第三方数据集，不是官方完整词表。
-
-词库现在有**每日预算**：默认到期复习最多 10 个、新词最多 10 个，可在设置中心调整；词书加入后先进入**待学池**，每天按新词目标释放。复习页和两个「背词」入口共用同一个队列，一次加入一万个托福词也不会再把待复习数变成一万。
-
-没有真实例句的词会标记为**无例句**，练习会跳过；在词库的提示条里可以按 5 或 10 个一批生成例句。每个词会调用一次模型，所以不做隐藏的全量任务。
-
-![词库](docs/review/vocab-library.png)
-
-### 更多：练习
-
-打开 `/lab`，或点侧栏的 **练习**。3 个任务都从你的**学习词库**取词，不再绑定某一篇文章；先选范围（全部 / 新词 / 到期 / 易忘 / 收藏），题目优先使用带真实例句的词。
-
-- **听写诊所**：听词库例句，逐词写下来对照。
-- **影子跟读**：听、跟、录、回放；录音只在本机。
-- **生活例句**：把一个目标词放进工作、旅行、爱好或日常，由 AI 写三句。
-
-只有「生活例句」需要模型 Key；听写和影子跟读没有 Key 也能用。AI 结果缓存在 `data/cache/lab/`，任务音频缓存在 `data/lab/audio/`。
-
-![实验室](docs/review/lab.png)
-
-
-1. **导入**真实材料。带书签的 PDF 或 EPUB 会先拆成文章，目录、广告、漫画和新闻摘要可以过滤掉。
-2. **生成**其中一篇。得到双语阅读页、逐段译文、文章结构图和精读笔记。
-3. **阅读**时按段落推进。选中一个词或一整句，先看语境译文和注释，再决定要不要加卡。
-4. **深入**：词源、词族发散、单句精读、AI 小剧场、微故事和 60 秒小游戏。
-5. **复习**你真正想留下的内容。核心卡进入 FSRS，Bonus 卡留在学习包里；需要时导出 Anki 或 Markdown。
-
-## 学习包产物
-
-每个学习包都是一个可以自己保存、检查、迁移的文件夹：
-
-`pack.json` · `meta.json` · `pack.md` · `anki.csv` · `index.html` · `reading.json`
-
-`meta.json` 记录输入 hash、模式、模型、prompt 版本、生成时间和警告，不包含 API Key；以后换模型或改 prompt 时可以对比和复现。
-
-## 主要功能
-
-### 阅读
-
-- 支持 PDF（需要文字层）、EPUB、MOBI/AZW/AZW3、DOCX、网页链接、RSS/Atom 订阅、粘贴文本和时间戳转录。
-- 英文标题、中文标题、导语/摘要和逐段译文。
-- 文章结构图、每段精读笔记（作用、关键句、语法、背景、想一想）和阅读进度条；默认阅读页可直接展开每段笔记，不必切到工具模式。
-- 书籍分篇后的上一章/下一章导航；默认阅读页支持选中看释义和本地批注。
-- 默认阅读页支持逐句听读：点任意句子或“逐句听”，当前句会高亮并自动滚动到视野内。
-- 每篇末尾的“接下来读”会按 CEFR、篇幅、同书和阅读状态推荐下一篇。
-- 可以编辑或删除段落；保存后会重新翻译该段，并同步单词卡和句子卡。
-- 深色 / 纸色 / 跟随系统主题，以及字号、行高、版心三组阅读设置，会记在本机。
-
-### 理解
-
-- 单句精读：放大原文、按需翻译、发音、前后切换、合并/拆分句子边界、标记本段已读。
-- 句子卡保留完整原句、译文、意群、句型和替换表达，适合回译。
-- AI 小剧场：三句话采访作者，或反驳 AI；结束后回看用过和漏掉的表达。
-- 微故事和 60 秒金句拼图/词根拼装，直接用包里已有的卡片生成。
-
-### 收集
-
-- 选中 1–8 个词或一整句，卡片会留在来源段落，不会全堆到页面底部。
-- 添加前就能看到语境译文和简短注释。
-- 词卡包含词源、词根词缀、派生图、词族、同反义、易混词、搭配和例句。
-- 词库详情可以编辑义项、中英释义、记忆钩子、搭配和笔记；修改会同步到该词所在的学习包。
-- 句子卡保留原句、译文、意群和句型。
-
-### 复习
-
-- 单词卡和句子卡都使用 FSRS 排期，目标记忆率可以在 85%–95% 之间调整。
-- 背单词采用翻卡流程：正面是单词、发音和原文语境，点击卡片或按空格翻面；背面显示释义、搭配、例句和来源，再用 Again / Hard / Good / Easy 评分（快捷键 1–4）。
-- 每日新词可选 5/10/15/20/30/50；开始复习时可以开启「AI 选相关词」，每天从到期和新词中选一组同主题词并缓存当天，无模型 Key 时按来源/语境分组兜底。
-- 首次作答正确率单独统计，重复复习不会把正确率刷高。
-- 队列上方显示未来 7 天到期负载；可以用按钮或 `U` / `Cmd/Ctrl+Z` 撤销上一次评分；连续遗忘 4 次以上的卡会标为“易忘”，提示暂停或改写。
-- 核心卡进入每日队列；Bonus 卡只在学习包中展示。
-- 词库支持多选：勾选任意单词卡或句子卡，直接开始一轮自定义复习，也可以批量暂停、标记掌握、恢复或收藏。
-- 已有一份“我认识的词”列表时，可以直接粘贴或上传 CSV/TXT；匹配到的词会标记为已掌握，不新增卡片。
-- 支持 Anki CSV、Obsidian/打印用 Markdown，以及 HTML/EPUB/PDF/PNG 导出；MOBI 导出需要 Calibre。
-
-### 更多：写作
-
-- 读完文章后写三句英文，保存到本机输出记录。
-- 可以让编辑给一次反馈，也可以基于反馈继续“改写一版”；每一版单独保存、单独获取反馈，方便比较自己改了什么。
-
-### 更多：统计与实验
-
-- 24 个词的词汇诊断，用来建立初始水平和已知词表，避免第一篇文章从零开始猜。
-- 阅读成就和 12 周阅读日历（连续天数、复习、输出、夜猫子/早起鸟），全部从已有记录派生，不新增存储。
-- AI 语境侦探：从复习卡生成一个小场景和三句用法，其中只有一句最自然；答完给中文解释，并记录连对。需要配置模型 Key。
-- **成长** 包含阅读护照和每周复盘（最近 7 天：读完文章、复习正确率、错得最多的词和下周建议），可导出 Markdown 周报；复盘页还显示最近 14 天复习曲线、按来源/CEFR 的留存率，以及每周文章/学习天数目标进度。
-- 阅读护照和 3:4 分享卡。
-- 整篇音频和逐句跟读，支持本地录音回放。
-- 音频可以使用 macOS `say`、浏览器朗读，或配置神经语音（Edge 在线语音、智谱 GLM-TTS、Gemini TTS、MiniMax、ElevenLabs、OpenAI 兼容接口）。
-
-## 输入与输出
-
-`PDF` `EPUB` `MOBI` `AZW/AZW3` `DOCX` `网页` `RSS/Atom` `文本` `SRT/VTT` · `HTML 阅读页` `Markdown` `Anki CSV` `EPUB` `PDF` `PNG` `MOBI`
-
-| | |
+| 命令 | 作用 |
 | --- | --- |
-| **输入** | 带文字层的 PDF、EPUB/MOBI/AZW/AZW3、DOCX、文章 URL、RSS/Atom 订阅、粘贴文本/Markdown、演讲转录。订阅会导入最新一篇。音视频需要同时提供转录文本。 |
-| **输出** | 交互式 HTML 阅读页、Obsidian/打印用 Markdown、Anki CSV；界面还可以导出 EPUB、PDF、PNG，以及通过 Calibre 导出 MOBI。 |
-| **平台** | Node 22+，支持 macOS、Linux、Windows。PDF/PNG 导出使用本机 Chrome；MOBI 导出需要安装 Calibre。 |
-| **模型** | 不填模型 Key 也可以使用规则模式；填入 DeepSeek/OpenAI/GLM 等兼容 Key 后，可以使用 AI 笔记、翻译、词卡发散和选词。 |
-| **音频** | 可选。macOS `say` 可离线使用；其他系统可以用浏览器朗读或配置神经语音接口。 |
+| `pnpm dev add <文件或链接>` | 导入 PDF、EPUB、MOBI、DOCX、网页、文本或转录 |
+| `pnpm dev build <id\|latest>` | 从已导入的材料生成学习包 |
+| `pnpm dev review` | 启动本地阅读界面 |
+| `pnpm dev list` | 列出已导入的材料 |
+| `pnpm dev doctor` | 检查环境和词库 |
+| `pnpm dev export <id\|latest>` | 导出学习包的 Anki CSV |
+| `pnpm dev audio <id\|latest>` | 用 macOS `say` 生成音频 |
+| `pnpm dev resplit <id> <file>` | 重新把一份材料拆成文章 |
+| `pnpm dev backup` / `restore` | 创建或恢复完整词库归档 |
+| `pnpm dev demo` | 用示例文章跑完整流程 |
 
-## 适合谁
-
-适合想慢慢读真实英文、并留下有用表达的人：考研、雅思托福、外刊精读、长期积累词汇。只想一键总结、不想配置模型 Key，或者需要扫描版 PDF OCR 的人，可能不适合。
+`pnpm dev --help` 里还有 `--no-llm`、`--limit`、`--style`、`--audio`、`--no-source` 等生成选项。
 
 ## 限制
 
@@ -235,8 +232,9 @@ CLI 可以用 `pnpm dev add --no-ai-clean` 保留原始提取文本。PDF/EPUB �
 - DRM 加密的 EPUB、MOBI、AZW 无法解密，请使用无 DRM 的文件。
 - 不绕过付费墙、登录墙或机器人验证。
 - 不内置音视频转录，需要自带转录文本。
-- 规则模式下的中文释义来自词典/翻译接口，不是结合语境的改写；LLM 模式的释义更贴近上下文。
-- 复习服务只监听 `127.0.0.1`，没有登录鉴权，不要暴露到公网。
+- 规则模式的中文释义来自词典或机器翻译，不是结合语境的改写；模型模式的义项更贴近上下文。
+- 面向一台电脑上的一个读者，没有多用户登录、文件锁或云同步。
+- 桌面版尚未签名，也还没有 npm 包或自动更新。
 - 版权：仅供个人学习，不要重新分发包含完整原文的学习包。
 
 ## 开发
@@ -245,11 +243,17 @@ CLI 可以用 `pnpm dev add --no-ai-clean` 保留原始提取文本。PDF/EPUB �
 pnpm typecheck
 pnpm lint            # tsc + noUnusedLocals / noUnusedParameters
 pnpm format:check    # 空白、换行和 tab 检查
-pnpm test
-pnpm test:e2e        # Chrome 浏览器流程（可用 CHROME_PATH 指定）
+pnpm test            # Node 内置测试运行器跑单元/集成测试
+pnpm test:e2e        # Chrome 流程：导入、阅读、设置、导出
 ```
 
-测试使用 Node 内置测试运行器和 `tsx`。`pnpm test` 跑单元/集成测试和几个小型 Chrome 冒烟；`pnpm test:e2e` 跑一条种子数据浏览器流程（导入 → 阅读 → 设置 → 复习/撤销 → 诊断 → 导出）。两者都使用本机 Chrome，也可以用 `CHROME_PATH` 指定。CLI 直接从源码运行，没有单独的构建步骤。Agent/CLI 调用说明见 [AGENTS.md](AGENTS.md)。
+测试使用 Node 内置测试运行器和 `tsx`。`pnpm test:e2e` 使用本机 Chrome，也可以用 `CHROME_PATH` 指定。CLI 直接从源码运行，没有单独的构建步骤。
+
+代码分布：`src/ingest` 解析来源，`src/analyze` 生成学习层，`src/pack` 渲染和导出学习包，`src/review` 提供本地界面，`desktop/` 是 Electron 壳。Agent/CLI 说明见 [AGENTS.md](AGENTS.md)。
+
+## 贡献
+
+欢迎在 <https://github.com/qweijiaq/CloseRead> 提 Issue、报 Bug 或提交 Pull Request。如果这个项目对你有用，点亮 Star 或分享你用 CloseRead 做的学习包，就是最直接的帮助。
 
 ## 许可
 

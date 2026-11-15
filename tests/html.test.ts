@@ -2,7 +2,6 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import { renderHtml } from '../src/pack/html.js'
-import { renderReviewApp } from '../src/review/web.js'
 import type { LearningItem, LearningPack } from '../src/types.js'
 
 function makePack(): LearningPack {
@@ -76,6 +75,17 @@ describe('pack html', () => {
     assert.ok(html.includes('var READER_INTERACTIVE = false;'))
   })
 
+  it('serves the full pack as the in-app reading page', () => {
+    const html = renderHtml(makePack(), { items: {} }, { inApp: true })
+    assert.ok(html.includes('<base href="/pack/pack-html-test/">'))
+    assert.ok(html.includes('CloseRead'))
+    assert.ok(html.includes('id="reading"'))
+    assert.ok(html.includes('精读笔记 · Markdown'))
+    assert.ok(!html.includes('完整学习包'))
+    assert.ok(!html.includes('精读模式'))
+    assert.ok(!html.includes('在应用中打开'))
+  })
+
   it('keeps the mobile reading grid shrinkable and long tokens wrappable', () => {
     const html = renderHtml(makePack(), { items: {} })
     assert.ok(html.includes('grid-template-columns: minmax(0, 1fr)'))
@@ -143,7 +153,7 @@ describe('pack html', () => {
     assert.ok(!html.includes('部分降级'))
   })
 
-  it('shows the adaptive selection rationale and review link', () => {
+  it('shows the adaptive selection rationale and reader link', () => {
     const pack = makePack()
     pack.selection = {
       mode: 'auto',
@@ -157,9 +167,9 @@ describe('pack html', () => {
     }
     const html = renderHtml(pack, { items: {} })
     assert.ok(html.includes('选词说明'))
-    assert.ok(html.includes('7 项核心词进入复习'))
-    assert.ok(html.includes('2 项已在词库'))
-    assert.ok(html.includes('data-review-pack'))
+    assert.ok(html.includes('7 项核心词已标注'))
+    assert.ok(html.includes('2 项此前已标注'))
+    assert.ok(html.includes('data-open-reader'))
   })
 
   it('collects pack-level selection feedback', () => {
@@ -430,76 +440,12 @@ describe('pack html', () => {
     assert.ok(html.includes('data-word-story="story-word"'))
     assert.ok(html.includes('data-practice-word="story-word"'))
     assert.ok(html.includes('id="practice-modal"'))
-    assert.ok(html.includes('id="theater-modal"'))
-    assert.ok(html.includes('id="theater-open"'))
-    assert.ok(html.includes('data-theater-mode="interview"'))
-    assert.ok(html.includes('data-theater-mode="debate"'))
     assert.ok(html.includes('词源小传'))
     assert.ok(html.includes('一起吃面包的人'))
     assert.ok(html.includes('sentence-rewrites'))
     assert.ok(html.includes('一句三写'))
     assert.ok(html.includes('正式'))
     assert.ok(html.includes('简短有力'))
-  })
-
-  it('offers the 60-second puzzles only when playable cards exist', () => {
-    const empty = renderHtml(makePack(), { items: {} })
-    assert.ok(!empty.includes('id="game-open"'))
-
-    const pack = makePack()
-    const now = new Date().toISOString()
-    pack.items = [
-      {
-        id: 'game-sentence',
-        type: 'sentence',
-        lemma: 'The rivalry is not so much a strategy as a reflex.',
-        sense: '这场竞争与其说是战略，不如说是条件反射。',
-        definition: 'not so much A as B',
-        contexts: [],
-        collocations: [],
-        examples: [],
-        relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
-        sentence: {
-          original: 'The rivalry is not so much a strategy as a reflex.',
-          translation: '这场竞争与其说是战略，不如说是条件反射。',
-          chunks: [],
-          variants: [],
-        },
-        tags: ['sentence'],
-        sourceRef: 'Resource',
-        createdAt: now,
-        updatedAt: now,
-      },
-      {
-        id: 'game-word',
-        type: 'word_sense',
-        lemma: 'unbelievable',
-        sense: 'hard to believe',
-        definition: 'hard to believe',
-        contexts: [],
-        collocations: [],
-        examples: [],
-        relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
-        wordFormation: {
-          prefixes: [{ form: 'un-', meaning: '不', examples: [] }],
-          roots: [{ form: 'believe', meaning: '相信', examples: [] }],
-          suffixes: [{ form: '-able', meaning: '可以……的', examples: [] }],
-        },
-        tags: [],
-        sourceRef: 'Resource',
-        createdAt: now,
-        updatedAt: now,
-      },
-    ]
-    const html = renderHtml(pack, { items: {} })
-    assert.ok(html.includes('id="game-open"'))
-    assert.ok(html.includes('id="game-modal"'))
-    assert.ok(html.includes('data-game-mode="sentence"'))
-    assert.ok(html.includes('data-game-mode="word"'))
-    assert.ok(html.includes('id="game-check"'))
-    assert.ok(html.includes('GAME_SENTENCES = [{\"id\":\"game-sentence\"'))
-    assert.ok(html.includes('GAME_WORDS = [{\"id\":\"game-word\"'))
-    assert.ok(html.includes('function checkGame()'))
   })
 
   it('includes the audio player, shadowing recorder and cached reading audio', () => {
@@ -533,201 +479,4 @@ describe('pack html', () => {
     pack.reading = []
     const noReading = renderHtml(pack, pack.audio)
     assert.ok(!noReading.includes('id="audio-open"'))
-  })
-
-  it('shows the cached micro story and its trigger only for word-rich packs', () => {
-    const pack = makePack()
-    const now = new Date().toISOString()
-    const word = (id: string, lemma: string): LearningItem => ({
-      id,
-      type: 'word_sense',
-      lemma,
-      sense: 'test sense',
-      definition: 'test definition',
-      contexts: [],
-      collocations: [],
-      examples: [],
-      relations: { synonyms: [], antonyms: [], confusables: [], wordFamily: [] },
-      tags: [],
-      sourceRef: 'Resource',
-      createdAt: now,
-      updatedAt: now,
-    })
-    pack.items = [word('w1', 'attention'), word('w2', 'scarcity'), word('w3', 'deliberate')]
-    pack.microStory = {
-      title: 'The Quiet Room',
-      text: 'Attention was scarce. She made a deliberate choice.',
-      translation: '注意力很稀缺。她做了一个刻意的选择。',
-      used: ['attention', 'scarce', 'deliberate'],
-    }
-    const html = renderHtml(pack, { items: {} })
-    assert.ok(html.includes('id="micro-story-open"'))
-    assert.ok(html.includes('id="micro-story-modal"'))
-    assert.ok(html.includes('MICRO_STORY = {\"title\":\"The Quiet Room\"'))
-    assert.ok(html.includes('function requestMicroStory('))
-    assert.ok(html.includes('/micro-story'))
-
-    pack.items = pack.items.slice(0, 2)
-    pack.microStory = undefined
-    const sparse = renderHtml(pack, { items: {} })
-    assert.ok(!sparse.includes('id="micro-story-open"'))
-  })
-})
-
-describe('review html', () => {
-  it('emits syntactically valid inline scripts', () => {
-    const html = renderReviewApp()
-    const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1] ?? '')
-    assert.ok(scripts.length > 0)
-    for (const script of scripts) new Function(script)
-  })
-
-  it('includes the reading passport and its share card canvas', () => {
-    const html = renderReviewApp()
-    assert.ok(html.includes('class="app-shell"'))
-    assert.ok(html.includes('id="page-title"'))
-    assert.ok(html.includes('class="source-tabs"'))
-    assert.ok(html.includes('class="mobile-nav"'))
-    assert.ok(html.includes('class="skip-link"'))
-    assert.ok(html.includes('id="main-content"'))
-    assert.ok(html.includes('id="store-warning"'))
-    assert.ok(html.includes('data-tab="passport"'))
-    assert.ok(html.includes('data-go-tab="insights"'))
-    assert.ok(html.includes('id="view-insights"'))
-    assert.ok(html.includes('id="home-diagnosis"'))
-    assert.ok(html.includes('id="passport-weekly"'))
-    assert.ok(html.includes('id="passport-achievements"'))
-    assert.ok(html.includes('id="passport-activity"'))
-    assert.ok(html.includes('id="import-text-ai-clean"'))
-    assert.ok(html.includes('id="import-url-ai-clean"'))
-    assert.ok(html.includes('id="undo-review"'))
-    assert.ok(html.includes('id="review-forecast"'))
-    assert.ok(html.includes('id="lan-toggle"'))
-    assert.ok(html.includes('id="lan-panel"'))
-    assert.ok(html.includes('id="lan-body"'))
-    assert.ok(html.includes('id="theme-toggle"'))
-    assert.ok(html.includes('id="nuance-modal"'))
-    assert.ok(html.includes('id="nuance-close"'))
-    assert.ok(html.includes('html[data-theme="dark"]'))
-    assert.ok(html.includes('id="insight-weekly"'))
-    assert.ok(html.includes('id="insight-diagnosis"'))
-    assert.ok(html.includes('id="lang-toggle"'))
-    assert.ok(html.includes('closeread-lang'))
-    assert.ok(html.includes('id="view-passport"'))
-    assert.ok(html.includes('id="passport-stamps"'))
-    assert.ok(html.includes('id="passport-modal"'))
-    assert.ok(html.includes('id="passport-download"'))
-    assert.ok(html.includes('/api/passport'))
-    assert.ok(html.includes('function drawPassportCard('))
-    assert.ok(html.includes('function downloadPassportCard('))
-  })
-
-  it('has a first-class import entry for text, URL and PDF', () => {
-    const html = renderReviewApp()
-    assert.ok(html.includes('id="view-import"'))
-    assert.ok(html.includes('id="import-text-form"'))
-    assert.ok(html.includes('id="import-url-form"'))
-    assert.ok(html.includes('id="import-ebook-form"'))
-    assert.ok(html.includes('data-go-tab="import"'))
-    assert.ok(html.includes('data-build-article'))
-    assert.ok(html.includes('article-search'))
-    assert.ok(html.includes('renderArticleList'))
-    assert.ok(html.includes('RSS/Atom'))
-  })
-
-  it('includes the daily loop, cloze practice and pronunciation controls', () => {
-    const html = renderReviewApp()
-    assert.ok(html.includes('/api/today'))
-    assert.ok(html.includes('today-output-save'))
-    assert.ok(html.includes('id="practice-input"'))
-    assert.ok(html.includes('clozeSentence'))
-    assert.ok(html.includes('speechSynthesis'))
-    assert.ok(html.includes('id="only-new"'))
-    assert.ok(html.includes('id="selection-size"'))
-    assert.ok(html.includes('id="review-retention"'))
-    assert.ok(html.includes('id="first-accuracy"'))
-    assert.ok(html.includes('data-value="5"'))
-    assert.ok(html.includes('data-value="100"'))
-    assert.ok(html.includes('id="llm-settings"'))
-    assert.ok(html.includes('id="llm-provider"'))
-    assert.ok(html.includes('data-value="deepseek"'))
-    assert.ok(html.includes('data-value="glm"'))
-    assert.ok(html.includes('data-value="anthropic"'))
-    assert.ok(html.includes('data-value="google"'))
-    assert.ok(html.includes('id="llm-model-options"'))
-  })
-
-  it('opens on a reading-first home and keeps review reachable from today', () => {
-    const html = renderReviewApp()
-    assert.ok(html.includes('id="view-home"'))
-    assert.ok(html.includes('id="home-hero"'))
-    assert.ok(html.includes('data-tab="home"'))
-    assert.ok(html.includes('data-go-tab="review"'))
-    assert.ok(html.includes('继续精读'))
-    assert.ok(html.includes('最近精读'))
-  })
-
-  it('includes a sentence-only review shortcut and reading stats', () => {
-    const html = renderReviewApp()
-    assert.ok(html.includes('id="review-sentence-only"'))
-    assert.ok(html.includes('data-sentence-review="1"'))
-    assert.ok(html.includes('paragraphsRead'))
-  })
-
-  it('includes sentence back-translation review controls', () => {
-    const html = renderReviewApp()
-    assert.ok(html.includes('sentenceScore'))
-    assert.ok(html.includes('sentence-input'))
-    assert.ok(html.includes('sentence-title'))
-    assert.ok(html.includes('把这句话译回英文'))
-    assert.ok(html.includes('句子卡 · 回译'))
-  })
-
-  it('keeps empty chart bars away from the global empty-state padding', () => {
-    const html = renderReviewApp()
-    assert.ok(html.includes('.history-bar.is-empty'))
-    assert.ok(!html.includes('.history-bar.empty'))
-  })
-
-  it('includes written output capture and history', () => {
-    const html = renderReviewApp()
-    assert.ok(html.includes('today-output-input'))
-    assert.ok(html.includes('today-output-save'))
-    assert.ok(html.includes('home-outputs'))
-    assert.ok(html.includes('最近输出'))
-    assert.ok(html.includes('/api/today/output'))
-    assert.ok(html.includes('output-revise'))
-    assert.ok(html.includes('data-output-revision-save'))
-    assert.ok(html.includes('data-output-revision-feedback'))
-  })
-
-  it('includes the vocabulary groups, detail drawer and study session', () => {
-    const html = renderReviewApp()
-    assert.ok(html.includes('data-vocab-group="new"'))
-    assert.ok(html.includes('data-vocab-group="due"'))
-    assert.ok(html.includes('data-vocab-group="leech"'))
-    assert.ok(html.includes('id="vocab-study"'))
-    assert.ok(html.includes('id="vocab-books-open"'))
-    assert.ok(html.includes('id="wordbooks-modal"'))
-    assert.ok(html.includes('id="quality-modal"'))
-    assert.ok(html.includes('data-vocab-group="missing"'))
-    assert.ok(html.includes('vocab-select-toggle'))
-    assert.ok(html.includes('vocab-select-review'))
-    assert.ok(html.includes('vocab-bulk-suspend'))
-    assert.ok(html.includes('vocab-bulk-known'))
-    assert.ok(html.includes('vocab-sort'))
-    assert.ok(html.includes('/api/items/bulk'))
-    assert.ok(html.includes('vocab-known-open'))
-    assert.ok(html.includes('/api/vocab/known'))
-    assert.ok(html.includes('selectedVocabIds'))
-    assert.ok(html.includes('function setBusy('))
-    assert.ok(!html.includes('<select'))
-    assert.ok(html.includes('/api/wordbooks'))
-    assert.ok(html.includes('id="vocab-detail"'))
-    assert.ok(html.includes('id="study-session"'))
-    assert.ok(html.includes('/api/vocab'))
-    assert.ok(html.includes('/api/queue'))
-    assert.ok(html.includes('sentence-row'))
-    assert.ok(html.includes('sentence-original'))
-  })
-})
+  })})

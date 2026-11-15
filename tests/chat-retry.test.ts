@@ -11,7 +11,7 @@ const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-chat-'))
 process.env.LEARN_DATA_DIR = temp
 process.env.LEARN_PACKS_DIR = path.join(temp, 'packs')
 
-type Mode = 'retry-500' | 'empty-then-valid' | 'unauthorized'
+type Mode = 'retry-500' | 'empty-then-valid' | 'invalid-then-valid' | 'unauthorized'
 
 let mode: Mode = 'retry-500'
 let requests = 0
@@ -37,6 +37,10 @@ before(async () => {
     }
     if (mode === 'empty-then-valid' && requests === 1) {
       send(response, 200, { choices: [{ message: { content: '' } }] })
+      return
+    }
+    if (mode === 'invalid-then-valid' && requests === 1) {
+      send(response, 200, { choices: [{ message: { content: '{"ok" "yes",}' } }] })
       return
     }
     send(response, 200, { choices: [{ message: { content: '{"ok":true}' } }] })
@@ -73,6 +77,35 @@ describe('LLM retry', () => {
   it('retries an empty 200 response', async () => {
     const { chatJson } = await import('../src/analyze/chat.js')
     mode = 'empty-then-valid'
+    requests = 0
+    const result = await chatJson(schema, 'system', 'user')
+    assert.deepEqual(result, { ok: true })
+    assert.equal(requests, 2)
+  })
+
+  it('repairs trailing commas, fences and raw newlines', async () => {
+    const { parseJson } = await import('../src/analyze/chat.js')
+    assert.deepEqual(parseJson('```json\n{"ok":true,}\n```'), { ok: true })
+    assert.deepEqual(parseJson('Here is the JSON: {"ok":true}'), { ok: true })
+    assert.deepEqual(parseJson('{"ok":true,"note":"line\nbreak",}'), { ok: true, note: 'line\nbreak' })
+  })
+
+  it('escapes unescaped quotes inside string values', async () => {
+    const { parseJson } = await import('../src/analyze/chat.js')
+    assert.deepEqual(parseJson('{"summaryZh":"文章称"Netflix"正在失去剧情","titleZh":"x"}'), {
+      summaryZh: '文章称"Netflix"正在失去剧情',
+      titleZh: 'x',
+    })
+    assert.deepEqual(parseJson('{"a":"one","b":"他说："走吧"","c":1}'), {
+      a: 'one',
+      b: '他说："走吧"',
+      c: 1,
+    })
+  })
+
+  it('retries once when the reply is not valid JSON', async () => {
+    const { chatJson } = await import('../src/analyze/chat.js')
+    mode = 'invalid-then-valid'
     requests = 0
     const result = await chatJson(schema, 'system', 'user')
     assert.deepEqual(result, { ok: true })

@@ -104,10 +104,10 @@ describe('store v2', () => {
     await store.recordDailyArticle('pack-1', 'First article', day)
     assert.equal(store.todayProgress(day).completed, false)
     await store.markArticleRead('pack-1', 'First article', day)
-    await store.saveOutput({ text: 'Today I wrote three sentences.', prompt: 'Why?' }, day)
     assert.equal(store.todayProgress(day).articleFinished, true)
     assert.equal(store.todayProgress(day).completed, true)
     assert.equal(store.preferences().streak, 1)
+    await store.saveOutput({ text: 'Today I wrote three sentences.', prompt: 'Why?' }, day)
 
     const nextDay = new Date('2026-10-29T08:00:00Z')
     const reset = store.todayProgress(nextDay)
@@ -115,8 +115,9 @@ describe('store v2', () => {
     assert.equal(reset.reviewed, 0)
     await store.recordDailyArticle('pack-2', 'Second article', nextDay)
     await store.markArticleRead('pack-2', 'Second article', nextDay)
-    await store.saveOutput({ text: 'A second day of writing.', prompt: 'What changed?' }, nextDay)
+    assert.equal(store.todayProgress(nextDay).completed, true)
     assert.equal(store.preferences().streak, 2)
+    await store.saveOutput({ text: 'A second day of writing.', prompt: 'What changed?' }, nextDay)
 
     const reopened = await Store.open(dailyPath)
     assert.equal(reopened.preferences().streak, 2)

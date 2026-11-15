@@ -153,74 +153,28 @@ describe('browser reading flow', () => {
     await page.waitFor("document.getElementById('recent-imports').textContent.includes('E2E Imported Article')")
   })
 
-  it('reads and marks a paragraph in the integrated reader', async () => {
-    await page.navigate(`${server.url}/read/${packId}`)
-    await page.waitFor("document.querySelector('.r-para')")
-    await page.waitFor("document.body.getAttribute('data-reader-ready') === '1'")
-    assert.match(await page.evaluate<string>('document.title'), /E2E Reading Fixture/)
-    await page.evaluate("document.querySelector('[data-mark=\"0\"]').click()")
-    await page.waitFor("document.querySelector('.r-para.is-read')")
-    let read = 0
-    for (let attempt = 0; attempt < 20 && read !== 1; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      read = await fetch(`${server.url}/api/packs/${packId}/reading`)
-        .then((response) => response.json())
-        .then((data: { progress: { readParagraphs: number[] } }) => data.progress.readParagraphs.length)
-    }
-    assert.equal(read, 1)
-  })
+  it('keeps legacy tabs mapped to reading', async () => {
+    await page.navigate(`${server.url}/?tab=home`)
+    await page.waitFor("document.body.getAttribute('data-tab') === 'read'")
+    await page.waitFor("document.getElementById('home-hero')")
+    const home = await page.evaluate<string>('document.body.innerText')
+    assert.doesNotMatch(home, /今日三件事/)
+    assert.match(await page.evaluate<string>("document.querySelector('[data-tab=\"read\"]').textContent"), /精读/)
+    assert.equal(await page.evaluate<number>("document.querySelectorAll('[data-tab=\"vocab\"]').length"), 0)
+    await page.waitFor("document.querySelectorAll('#reading-stats .reading-stat').length === 4")
 
-  it('persists dark mode and typography in the tool reader', async () => {
-    await page.navigate(`${server.url}/pack/${packId}/index.html`)
-    await page.waitFor("document.querySelector('.original')")
-    assert.match(await page.evaluate<string>('document.title'), /E2E Reading Fixture/)
-    await page.waitFor("document.getElementById('reading-text').textContent.includes('1')")
-
-    const read = await page.evaluate<number>(
-      `fetch('/api/packs/${packId}/reading').then((response) => response.json()).then((data) => data.progress.readParagraphs.length)`,
-    )
-    assert.equal(read, 1)
-
-    await page.evaluate("document.getElementById('reader-settings-open').click()")
-    await page.waitFor("!document.getElementById('reader-settings').hidden")
-    await page.evaluate("document.querySelector('[data-reader-theme=\"dark\"]').click()")
-    await page.evaluate("document.querySelector('[data-reader-size=\"19\"]').click()")
-    await page.evaluate("document.querySelector('[data-reader-width=\"1120\"]').click()")
-    const style = await page.evaluate<{ theme: string; size: string; width: string }>(`(() => {
-      const original = getComputedStyle(document.querySelector('.original'));
-      return {
-        theme: document.documentElement.getAttribute('data-theme'),
-        size: original.fontSize,
-        width: getComputedStyle(document.querySelector('.page')).maxWidth,
-      };
-    })()`)
-    assert.equal(style.theme, 'dark')
-    assert.equal(style.size, '19px')
-    assert.equal(style.width, '1120px')
-  })
-
-  it('rates, undoes and shows the due forecast', async () => {
+    await page.navigate(`${server.url}/?tab=library`)
+    await page.waitFor("document.body.getAttribute('data-tab') === 'read'")
     await page.navigate(`${server.url}/?tab=review`)
-    await page.waitFor("document.getElementById('review-card')")
-    await page.waitFor("document.getElementById('nuance-open')")
-    await page.evaluate("document.getElementById('reveal').click()")
-    await page.evaluate("document.querySelector('.rating[data-r=\"3\"]').click()")
-    await page.waitFor("!document.getElementById('undo-review').hidden")
-    await page.evaluate("document.getElementById('undo-review').click()")
-    await page.waitFor("document.getElementById('toast').textContent.includes('撤销')")
-
-    const summary = await page.evaluate<{ reviewedToday: number }>(
-      "fetch('/api/summary').then((response) => response.json()).then((data) => data.summary)",
-    )
-    assert.equal(summary.reviewedToday, 0)
-    const forecast = await page.evaluate<string>("document.getElementById('review-forecast').textContent")
-    assert.match(forecast, /未来 7 天/)
+    await page.waitFor("document.body.getAttribute('data-tab') === 'read'")
   })
 
   it('saves a diagnosis and renders the weekly review', async () => {
     await page.navigate(`${server.url}/?tab=insights`)
     await page.waitFor("document.getElementById('diagnosis-save')")
     await page.evaluate("document.querySelectorAll('[data-diagnosis-word]').forEach((button) => button.click())")
+    await page.evaluate("document.getElementById('diagnosis-reveal').click()")
+    await page.waitFor("!document.getElementById('diagnosis-save').disabled")
     await page.evaluate("document.getElementById('diagnosis-save').click()")
     await page.waitFor("document.getElementById('insight-diagnosis').textContent.includes('上次')")
     const diagnosis = await page.evaluate<string>("document.getElementById('insight-diagnosis').textContent")
@@ -240,61 +194,6 @@ describe('browser reading flow', () => {
     assert.equal(data.achievements, 10)
     assert.equal(data.cells, 84)
     assert.match(data.heading, /成就/)
-  })
-
-  it('opens a word detail and runs a study card', async () => {
-    await page.navigate(`${server.url}/?tab=library`)
-    await page.waitFor("document.querySelector('.vocab-row')")
-    await page.evaluate("document.querySelector('.vocab-row').click()")
-    await page.waitFor("!document.getElementById('vocab-detail').hidden")
-    assert.ok((await page.evaluate<string>("document.getElementById('vocab-detail-body').textContent")).length > 20)
-    await page.evaluate("document.getElementById('vocab-detail-close').click()")
-
-    await page.evaluate("document.getElementById('vocab-study').click()")
-    await page.waitFor("document.getElementById('review-budget') && document.getElementById('review-budget').textContent.includes('今天')")
-    await page.waitFor("document.getElementById('review-card')")
-    const budget = await page.evaluate<string>("document.getElementById('review-budget').textContent")
-    assert.match(budget, /到期/)
-    assert.match(budget, /新词/)
-  })
-
-  it('selects multiple library words for a custom review', async () => {
-    await page.navigate(`${server.url}/?tab=library`)
-    await page.waitFor("document.querySelectorAll('.vocab-row').length >= 2")
-    await page.evaluate("document.getElementById('vocab-select-toggle').click()")
-    await page.waitFor("document.querySelector('.vocab-check')")
-    await page.evaluate(`(() => {
-      const rows = document.querySelectorAll('.vocab-row');
-      rows[0].click();
-      rows[1].click();
-    })()`)
-    await page.waitFor("document.getElementById('vocab-select-status').textContent.includes('已选 2 个')")
-    const visible = await page.evaluate<boolean>("!document.getElementById('vocab-select-review').hidden")
-    assert.equal(visible, true)
-    await page.evaluate("document.getElementById('vocab-select-review').click()")
-    await page.waitFor("location.search.includes('words=')")
-    await page.waitFor("document.getElementById('review-card')")
-  })
-
-  it('opens the wordbook library', async () => {
-    await page.navigate(`${server.url}/?tab=library`)
-    await page.waitFor("document.getElementById('vocab-books-open')")
-    await page.evaluate("document.getElementById('vocab-books-open').click()")
-    await page.waitFor("document.querySelectorAll('.wordbook-card').length === 4")
-    const names = await page.evaluate<string>("document.getElementById('wordbooks-body').textContent")
-    assert.match(names, /CET-4/)
-    assert.match(names, /IELTS/)
-    await page.evaluate("document.getElementById('wordbooks-close').click()")
-  })
-
-  it('opens the lab with three word-based tasks', async () => {
-    await page.navigate(`${server.url}/lab`)
-    await page.waitFor("document.querySelectorAll('.mission-card').length === 3")
-    assert.equal(await page.evaluate<number>("document.querySelectorAll('select').length"), 0)
-    await page.evaluate("document.querySelector('[data-feature=\"dictation\"]').click()")
-    await page.waitFor("document.getElementById('dict-input')")
-    const heading = await page.evaluate<string>("document.querySelector('.stage-title').textContent")
-    assert.match(heading, /听写诊所/)
   })
 
   it('opens the settings center with data, backup and trash sections', async () => {

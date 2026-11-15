@@ -26,6 +26,11 @@ describe('pdf text cleanup', () => {
     assert.equal(reflowed, 'Every morning, millions of people reach for a small rectangle of glass.')
   })
 
+  it('keeps paragraph gaps from the page layout', () => {
+    const reflowed = reflowPdfPage('First paragraph ends here.\n\nSecond paragraph starts fresh.')
+    assert.equal(reflowed, 'First paragraph ends here.\n\nSecond paragraph starts fresh.')
+  })
+
   it('joins a word split across lines without a hyphen', () => {
     assert.equal(reflowPdfPage('Before t\nhey arrived, the room was quiet.'), 'Before they arrived, the room was quiet.')
     assert.equal(reflowPdfPage('I\nam here.'), 'I am here.')

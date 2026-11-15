@@ -64,19 +64,25 @@ function key(value: string): string {
   return value.replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
+/** True for the title, section label, date line and other non-body blocks. */
+export function isSourceHeader(block: string, title?: string): boolean {
+  const text = block.trim()
+  if (!text) return true
+  if (words(text) <= 10 && /\|/.test(text)) return true
+  const titleKey = title ? key(title) : ''
+  if (!titleKey) return DATE_PATTERN.test(text) && words(text) <= 60
+  const normalized = key(text)
+  if (normalized === titleKey || (normalized.startsWith(titleKey) && words(text) <= 40)) return true
+  return DATE_PATTERN.test(text) && words(text) <= 60
+}
+
 /** Join layout fragments before the reading model sees the source. */
 export function normalizeSourceParagraphs(text: string, title?: string): string {
   const blocks = text
     .split(/\n{2,}/)
     .map((block) => block.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
-  const titleKey = title ? key(title) : ''
-  const isHeaderBlock = (block: string): boolean => {
-    if (!titleKey) return false
-    const normalized = key(block)
-    if (normalized === titleKey || (normalized.startsWith(titleKey) && words(block) <= 40)) return true
-    return DATE_PATTERN.test(block) && words(block) <= 60
-  }
+  const isHeaderBlock = (block: string): boolean => isSourceHeader(block, title)
   const paragraphs: string[] = []
   let previousIsHeader = false
   for (const block of blocks) {

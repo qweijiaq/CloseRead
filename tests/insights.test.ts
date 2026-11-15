@@ -23,7 +23,6 @@ const CHROME_CANDIDATES = [
 const chrome = CHROME_CANDIDATES.find((candidate) => existsSync(candidate))
 
 const { startReviewServer } = await import('../src/review/server.js')
-const { DIAGNOSIS_WORDS } = await import('../src/review/diagnosis.js')
 const { config } = await import('../src/config.js')
 
 describe('diagnosis and weekly API', () => {
@@ -38,29 +37,32 @@ describe('diagnosis and weekly API', () => {
     await fs.rm(temp, { recursive: true, force: true })
   })
 
-  it('returns the diagnosis words and saves a computed level', async () => {
+  it('returns a fresh diagnosis sample and saves a computed level', async () => {
     const initial = (await fetch(`${server.url}/api/diagnosis`).then((response) => response.json())) as {
-      words: unknown[]
+      words: Array<{ lemma: string; level: string; gloss: string }>
       diagnosis: unknown
     }
-    assert.equal(initial.words.length, DIAGNOSIS_WORDS.length)
+    assert.equal(initial.words.length, 24)
+    for (const level of ['B1', 'B2', 'C1', 'C2']) {
+      assert.equal(initial.words.filter((word) => word.level === level).length, 6)
+    }
     assert.equal(initial.diagnosis, null)
 
     const known = ['B1', 'B2', 'C1', 'C2'].flatMap((level) =>
-      DIAGNOSIS_WORDS.filter((word) => word.level === level)
+      initial.words.filter((word) => word.level === level)
         .slice(0, 4)
         .map((word) => word.lemma),
     )
     const saved = (await fetch(`${server.url}/api/diagnosis`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ known }),
+      body: JSON.stringify({ known, words: initial.words.map((word) => word.lemma) }),
     }).then((response) => response.json())) as {
       diagnosis: { level: string; knownCount: number; total: number }
     }
     assert.equal(saved.diagnosis.level, 'C2')
     assert.equal(saved.diagnosis.knownCount, 16)
-    assert.equal(saved.diagnosis.total, DIAGNOSIS_WORDS.length)
+    assert.equal(saved.diagnosis.total, 24)
     assert.equal(config.level, 'C2')
 
     const reopened = (await fetch(`${server.url}/api/diagnosis`).then((response) => response.json())) as {
@@ -74,15 +76,18 @@ describe('diagnosis and weekly API', () => {
     { skip: chrome ? false : 'Chrome not found; set CHROME_PATH to run the insights smoke test.' },
     async () => {
       assert.ok(chrome)
+      const sample = (await fetch(`${server.url}/api/diagnosis`).then((response) => response.json())) as {
+        words: Array<{ lemma: string; level: string }>
+      }
       const known = ['B1', 'B2', 'C1', 'C2'].flatMap((level) =>
-        DIAGNOSIS_WORDS.filter((word) => word.level === level)
+        sample.words.filter((word) => word.level === level)
           .slice(0, 4)
           .map((word) => word.lemma),
       )
       await fetch(`${server.url}/api/diagnosis`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ known }),
+        body: JSON.stringify({ known, words: sample.words.map((word) => word.lemma) }),
       })
       const { stdout } = await execFileAsync(
         chrome,
@@ -101,10 +106,9 @@ describe('diagnosis and weekly API', () => {
         ],
         { timeout: 30_000, maxBuffer: 20 * 1024 * 1024 },
       )
-      // The word and its gloss only exist in the API response / rendered DOM,
-      // not in the inline client script, so this proves the page rendered.
-      assert.ok(stdout.includes('ubiquitous'))
-      assert.ok(stdout.includes('无处不在的'))
+      // The gloss class and reveal control are rendered by the diagnosis card.
+      assert.ok(stdout.includes('diagnosis-gloss'))
+      assert.ok(stdout.includes('核对释义'))
       assert.ok(stdout.includes('上次 C2'))
       assert.ok(stdout.includes('16 / 24'))
     },

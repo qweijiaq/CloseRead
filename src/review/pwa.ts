@@ -99,8 +99,8 @@ export function pwaManifest(): Record<string, unknown> {
     start_url: '/?tab=home',
     scope: '/',
     display: 'standalone',
-    background_color: '#f6f2e8',
-    theme_color: '#1e6b4e',
+    background_color: '#f7f6f3',
+    theme_color: '#243b53',
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
@@ -118,7 +118,7 @@ export function pwaHead(): string {
   return `<link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta name="theme-color" content="#1e6b4e">
+<meta name="theme-color" content="#243b53">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="CloseRead">
 <script>window.addEventListener('beforeinstallprompt',function(event){event.preventDefault();window.__closereadInstall=event;var button=document.getElementById('settings-install');if(button)button.hidden=false;});if('serviceWorker' in navigator){navigator.serviceWorker.register('/sw.js').catch(function(){});}</script>`

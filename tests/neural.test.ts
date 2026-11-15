@@ -34,6 +34,7 @@ describe('neural speech helpers', () => {
     const ids = TTS_PROVIDERS.map((provider) => provider.id)
     assert.ok(ids.includes('local'))
     assert.ok(ids.includes('edge'))
+    assert.ok(ids.includes('bailian'))
     assert.ok(ids.includes('glm'))
     assert.ok(ids.includes('gemini'))
     assert.ok(ids.includes('minimax'))

@@ -43,6 +43,22 @@ export function renderReaderApp(
   const continueIndex = firstUnread?.index ?? 0
   const words = pack.items.filter((item) => item.type !== 'sentence').slice(0, 14)
   const annotations = progress.annotations ?? []
+  const outline = (pack.reading ?? []).map((paragraph, index) => ({
+    index,
+    number: String(index + 1).padStart(2, '0'),
+    label: paragraph.original.replace(/\s+/g, ' ').trim().slice(0, 46),
+    role: paragraph.note?.role ?? '',
+  }))
+  const outlineMarkup = outline.length
+    ? outline
+        .map(
+          (entry) =>
+            `<a href="#p-${entry.number}" data-outline-link><span>${entry.number}</span><b>${escapeHtml(entry.label)}${entry.label.length >= 46 ? '…' : ''}</b>${
+              entry.role ? `<em>${escapeHtml(entry.role)}</em>` : ''
+            }</a>`,
+        )
+        .join('')
+    : '<p class="muted">这篇文章还没有分段。</p>'
   const paragraphs = (pack.reading ?? [])
     .map((paragraph, index) => {
       const isRead = read.has(paragraph.index)
@@ -107,7 +123,7 @@ export function renderReaderApp(
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${escapeHtml(title)} · CloseRead</title>
 ${themeBootScript()}
 ${pwaHead()}
@@ -122,13 +138,11 @@ ${pwaHead()}
     <div class="side-label">学习</div>
     <nav class="side-nav">
       <a class="nav-link active" href="/?tab=read"><span class="nav-icon">◉</span><span>精读</span></a>
-      <a class="nav-link" href="/?tab=vocab"><span class="nav-icon">▦</span><span>背单词</span></a>
+      <a class="nav-link" href="/?tab=packs"><span class="nav-icon">▦</span><span>文章</span></a>
     </nav>
     <details class="side-more">
       <summary>更多</summary>
       <nav class="side-nav side-more-list">
-        <a class="nav-link" href="/lab"><span class="nav-icon">✦</span><span>练习</span></a>
-        <a class="nav-link" href="/?tab=graph"><span class="nav-icon">⌘</span><span>词网</span></a>
         <a class="nav-link" href="/?tab=passport"><span class="nav-icon">◈</span><span>成长</span></a>
         <a class="nav-link" href="/?tab=insights"><span class="nav-icon">▥</span><span>复盘</span></a>
       </nav>
@@ -140,7 +154,6 @@ ${pwaHead()}
     <header class="topbar">
       <div class="topbar-title"><span class="topbar-eyebrow">INTENSIVE READING</span><h1>精读</h1></div>
       <div class="topbar-actions">
-        <a class="topbar-tool" href="/pack/${encodeURIComponent(record.id)}/index.html">工具模式</a>
         <button class="icon-btn" id="reader-theme" type="button">自动</button>
         <button class="btn btn-primary" id="reader-finish" type="button">${progress.finishedAt ? '已完成' : '完成精读'}</button>
       </div>
@@ -153,12 +166,20 @@ ${pwaHead()}
         <div class="reader-progress-row"><div class="reader-track"><span id="reader-fill" style="width:${percent}%"></span></div><span id="reader-percent">${percent}%</span></div>
         <div class="reader-hero-actions">
           <a class="btn btn-primary" href="#p-${String(continueIndex + 1).padStart(2, '0')}">${progress.startedAt ? '继续精读' : '开始精读'}</a>
-          ${chapter?.previous ? `<a class="btn" href="${escapeHtml(chapter.previous.url)}">← ${escapeHtml(chapter.previous.title)}</a>` : ''}
-          ${chapter?.next ? `<a class="btn" href="${escapeHtml(chapter.next.url)}">${escapeHtml(chapter.next.title)} →</a>` : ''}
           ${pack.reading?.length ? `<button class="btn" id="reader-sentence-start" type="button">▶ 逐句听</button>` : ''}
           ${pack.reading?.length ? `<button class="btn" id="reader-audio" type="button"${pack.audio?.reading ? ` data-src="/pack/${encodeURIComponent(record.id)}/${escapeHtml(pack.audio.reading)}"` : ''}>▶ 听全文</button>` : ''}
-          <a class="btn" href="/?tab=review">去复习</a>
+          <button class="btn" id="reader-focus" type="button" aria-pressed="false">专注</button>
+          <button class="btn" id="reader-outline" type="button" aria-expanded="false">目录</button>
+          <button class="btn" id="reader-type" type="button" aria-expanded="false">Aa</button>
+          <button class="btn" id="reader-help" type="button" aria-expanded="false">快捷键</button>
         </div>
+        <details class="reader-more-tools">
+          <summary>更多阅读工具</summary>
+          <div class="reader-more-actions">
+            ${chapter?.previous ? `<a href="${escapeHtml(chapter.previous.url)}">← ${escapeHtml(chapter.previous.title)}</a>` : ''}
+            ${chapter?.next ? `<a href="${escapeHtml(chapter.next.url)}">${escapeHtml(chapter.next.title)} →</a>` : ''}
+          </div>
+        </details>
         ${chapter ? `<p class="reader-chapter">${escapeHtml(chapter.resourceTitle)} · 第 ${chapter.index ?? '?'} / ${chapter.total} 篇</p>` : ''}
         <p class="reader-select-hint">选中一个词或一句话，可以直接加入词卡或句子卡；点句子可以逐句听读。</p>
       </section>
@@ -167,7 +188,7 @@ ${pwaHead()}
         <aside class="reader-rail">
           <section class="rail-card"><h2>本篇词汇</h2>${words.length ? words.map((item) => `<div class="rail-word"><b>${escapeHtml(item.lemma)}</b><span>${escapeHtml(item.definitionZh ?? item.definition)}</span></div>`).join('') : '<p class="muted">暂无词卡。</p>'}</section>
           <section class="rail-card"><h2>我的批注 <span class="rail-count">${annotations.length}</span></h2>${annotations.length ? annotations.map((entry) => `<div class="rail-annotation"><p>${escapeHtml(entry.quote)}</p>${entry.note ? `<span>${escapeHtml(entry.note)}</span>` : ''}<button type="button" data-annotation-delete="${escapeHtml(entry.id)}">删除</button></div>`).join('') : '<p class="muted">选中一句话后可以加批注。</p>'}</section>
-          <section class="rail-card"><h2>阅读工具</h2><a href="/pack/${encodeURIComponent(record.id)}/index.html?focus=1">单句精读</a><a href="/pack/${encodeURIComponent(record.id)}/index.html">完整学习包</a><a href="/?tab=insights">查看本周复盘</a><p class="small muted" style="margin:8px 0 0;color:var(--muted);font-size:10px;line-height:1.6">快捷键：J / K 段落 · T 翻译</p></section>
+          <section class="rail-card"><h2>阅读工具</h2><a href="/read/${encodeURIComponent(record.id)}/notes.md">导出精读笔记</a><a href="/?tab=insights">查看本周复盘</a><p class="small muted" style="margin:8px 0 0;color:var(--muted);font-size:10px;line-height:1.6">快捷键：J / K 段落 · T 翻译</p></section>
           <section class="rail-card rail-note"><h2>读法</h2><p>先读原文，遇到生词先猜；读完一段再看翻译，最后用本篇词汇复述一遍。</p></section>
         </aside>
       </div>
@@ -175,20 +196,44 @@ ${pwaHead()}
         <h2>接下来读</h2>
         <div class="reader-next-list" id="reader-next-list"></div>
       </section>
-      <div class="reader-footer"><button class="btn btn-primary" id="reader-finish-bottom" type="button">${progress.finishedAt ? '已完成' : '完成精读'}</button><a class="btn" href="/?tab=review">去复习这篇的词</a></div>
+      <div class="reader-footer"><button class="btn btn-primary" id="reader-finish-bottom" type="button">${progress.finishedAt ? '已完成' : '完成精读'}</button><a class="btn" href="/?tab=packs">回到文章列表</a></div>
     </main>
+  </div>
+  <div class="reader-outline-panel" id="reader-outline-panel" hidden>
+    <div class="reader-panel-head"><strong>目录</strong><button type="button" data-panel-close="outline">关闭</button></div>
+    <div class="reader-outline-list">${outlineMarkup}</div>
+  </div>
+  <div class="reader-type-panel" id="reader-type-panel" hidden>
+    <div class="reader-panel-head"><strong>阅读设置</strong><button type="button" data-panel-close="type">关闭</button></div>
+    <div class="reader-type-group"><span>字号</span><div class="reader-type-options">
+      <button type="button" data-type-size="sm">小</button><button type="button" data-type-size="md" class="active">标准</button><button type="button" data-type-size="lg">大</button>
+    </div></div>
+    <div class="reader-type-group"><span>行宽</span><div class="reader-type-options">
+      <button type="button" data-type-width="sm">窄</button><button type="button" data-type-width="md" class="active">标准</button><button type="button" data-type-width="lg">宽</button>
+    </div></div>
+    <div class="reader-type-group"><span>字体</span><div class="reader-type-options">
+      <button type="button" data-type-face="serif" class="active">衬线</button><button type="button" data-type-face="sans">无衬线</button>
+    </div></div>
+  </div>
+  <div class="reader-help-panel" id="reader-help-panel" hidden>
+    <div class="reader-panel-head"><strong>快捷键</strong><button type="button" data-panel-close="help">关闭</button></div>
+    <div class="reader-help-list">
+      <div><kbd>J</kbd><span>下一段</span></div>
+      <div><kbd>K</kbd><span>上一段</span></div>
+      <div><kbd>T</kbd><span>翻译当前段落</span></div>
+      <div><kbd>?</kbd><span>打开这个面板</span></div>
+      <div><kbd>Esc</kbd><span>关闭面板</span></div>
+    </div>
+    <p class="reader-help-note">选中文字可以加词卡、句子卡或批注；点击句子可以逐句听读。</p>
   </div>
   <nav class="mobile-nav" aria-label="移动导航">
     <a class="active" href="/?tab=read"><span>◉</span>精读</a>
-    <a href="/?tab=vocab"><span>▦</span>背单词</a>
+    <a href="/?tab=packs"><span>▦</span>文章</a>
     <button data-reader-more type="button"><span>⋯</span>更多</button>
   </nav>
   <div class="reader-mobile-more" id="reader-mobile-more" hidden>
     <div class="reader-mobile-more-panel" role="dialog" aria-modal="true" aria-label="更多">
       <div class="reader-mobile-more-head"><strong>更多</strong><button type="button" data-reader-more-close>关闭</button></div>
-      <a href="/pack/${encodeURIComponent(record.id)}/index.html?focus=1">单句精读</a>
-      <a href="/pack/${encodeURIComponent(record.id)}/index.html">工具模式</a>
-      <a href="/lab">练习 / 实验室</a>
       <a href="/?tab=passport">成长</a>
       <a href="/?tab=insights">复盘</a>
       <a href="/?tab=settings">设置</a>

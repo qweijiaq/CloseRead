@@ -7,227 +7,224 @@
 <p align="center">
   <a href="https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/qweijiaq/CloseRead/actions/workflows/ci.yml/badge.svg"></a>
   <a href="LICENSE"><img alt="license" src="https://img.shields.io/badge/license-MIT-2ea44f"></a>
+  <a href="package.json"><img alt="node" src="https://img.shields.io/badge/node-22%2B-43853d"></a>
 </p>
 
 <p align="center">
-  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a> · <a href="https://qweijiaq.github.io/CloseRead/">Live demo</a>
+  <strong>English</strong> · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
-**CloseRead turns a PDF, EPUB, MOBI, DOCX, article URL, text file or talk transcript into a paragraph-by-paragraph intensive reading pack: translation, notes, word cards, sentence cards and a local review library.**
+**CloseRead turns an English article, PDF, EPUB, MOBI, DOCX, URL or transcript into a paragraph-by-paragraph close-reading pack: Chinese translation, notes, word cards, sentence cards, exercises, and a local reading history.**
 
-It is not a chat tutor, and it is not a flashcard app that happens to contain articles. The loop is **read → understand → collect → briefly review**. The interface can switch between Chinese and an English beta; generated study notes remain Chinese.
+It is a reading workspace, not a chat tutor, and not a flashcard app with articles bolted on. The loop is **read → understand → keep**. There is no account, no cloud library and no analytics. A model key is optional: without one, CloseRead still imports, segments, builds packs and lets you read and annotate. The interface switches between Chinese and an English beta; generated study notes remain Chinese by default.
 
-![CloseRead intensive reading workspace](assets/reader.png)
+![CloseRead reading home](assets/screenshots/home.png)
 
-*Actual UI: article head, paragraph translation, intensive-reading notes and collapsed word cards.*
+*The reading home: continue the current article, see reading stats and recent packs.*
 
-## Why not ChatGPT / a vocabulary app?
+## Why another reading tool?
 
-| | ChatGPT | Vocabulary app | CloseRead |
-| --- | --- | --- | --- |
-| Real article | Can read it, but you re-prompt every time | Usually no real article | PDF / EPUB / MOBI / DOCX / URL / text / transcript |
-| Structured output | You have to organise it yourself | Word list only | Paragraph translations, notes, grammar, word cards, sentence cards |
-| Keep the context | Stays in the chat | Cards lose the article | Cards stay attached to their paragraph |
-| Review | No built-in queue | Yes | FSRS queue for words and sentences, plus Anki CSV |
-| Where it lives | Cloud account | Usually cloud | Sources, packs, progress and library stay on disk |
+| | The usual problem | What CloseRead does |
+| --- | --- | --- |
+| Real text | Chat answers disappear into a thread; vocabulary apps rarely contain the article | One pack per article, with the full source, paragraph order and page or timestamp references |
+| Context | Word cards lose the sentence they came from | Every card stays attached to its paragraph; the source sentence travels with it |
+| Output | You still have to organise translations, notes and exercises yourself | Translation, structure map, paragraph notes, cards, cloze, comprehension and discussion are one page |
+| Ownership | Progress and vocabulary live in someone else's account | Sources, packs, reading progress and backups are files on your disk |
 
-## Quick start
+## What a pack contains
 
-Requires **Node.js 22+** and **pnpm 10+** (the repo pins pnpm 11.9 via `packageManager`).
+### Read
+
+- PDF with a text layer, EPUB, MOBI/AZW/AZW3, DOCX, article URLs, RSS/Atom feeds, pasted text/Markdown and timestamped transcripts.
+- A bilingual reading page: English title, Chinese title, standfirst and paragraph-by-paragraph translation.
+- A reading guide before the text: article map, author stance, language threads and one concrete reading strategy.
+- Paragraph notes: role, key sentence, grammar, connectors, background and a question that sends you back to the text.
+- Sentence focus: large text, optional translation, pronunciation, previous/next navigation, merge/split sentence boundaries and "mark this paragraph read".
+- Select 1–8 words or a whole sentence to look it up and add a card without leaving the text.
+- Four font sizes, three line heights, three column widths, and light / dark / follow-system themes, remembered per browser.
+- PDF imports use pdf.js with two-column detection, running-header removal and front-matter/index/reference skipping; bookmarks or headings can split long PDFs into chapters.
+
+### Understand
+
+- Word cards with context, Chinese gloss, etymology, roots and affixes, a derivation tree, word family, synonyms, antonyms, confusables, collocations and examples.
+- Sentence cards with the full sentence, translation, chunks, pattern, grammar, substitutions and register rewrites for back-translation.
+- Cloze, comprehension (fact, inference, main idea, word choice) and discussion prompts with reference answers.
+- A 24-word vocabulary check that calibrates article difficulty and glossing; results stay on this machine.
+
+### Keep
+
+- Paragraph annotations, favourite cards and a "known" state that survives paragraph edits.
+- Three English sentences after reading, with optional editor feedback and separately stored revisions.
+- Reading progress per paragraph, a reading passport with a locally generated 3:4 share card, achievements, and a 12-week activity calendar.
+- A weekly review of articles finished, words read, writing output and study days, with a Markdown report export.
+- Full-article audio and sentence-by-sentence shadowing with local recording. Audio can use macOS `say`, the browser, or a configured neural TTS provider.
+
+![Reading passport](assets/screenshots/growth.png)
+
+*The reading passport, weekly review and achievements are derived from existing reading records.*
+
+### Export
+
+- Interactive HTML, EPUB, PDF (comfortable or compact) and PNG (single image or page-by-page ZIP).
+- Anki CSV, standalone pack Markdown, and Markdown notes containing annotations, sentence cards and vocabulary.
+- MOBI when Calibre is installed; PDF/PNG rendering uses local Chrome.
+- A complete backup archive with the library, imported sources, pack folders, reading progress, cached audio and the local quote wall when present.
+
+![CloseRead reader](assets/screenshots/reader.png)
+
+*The article, translation, paragraph note and structure map are one continuous reading surface.*
+
+## Install from source
+
+CloseRead is **source-only** today: there is no npm package and no signed installer. You need:
+
+- **Node.js 22+**
+- **pnpm** (the repository pins `pnpm@11.9.0` via `packageManager`)
+- Runs on macOS, Linux and Windows
+- Optional: Chrome for PDF/PNG export, Calibre for MOBI export, macOS `say` for offline audio
 
 ```bash
+git clone https://github.com/qweijiaq/CloseRead.git
+cd CloseRead
 pnpm install
-pnpm dev demo          # build the sample article into a pack
-pnpm dev review        # open the local reading UI at http://127.0.0.1:4317
+pnpm dev demo
+pnpm dev review
 ```
 
-`demo` runs the full pipeline on `samples/sample-article.md`: it builds a pack under `packs/`, adds the items to the review library, and generates audio with macOS `say` when available. `review` opens the **Today** reading dashboard; **Review** is a separate flashcard tab.
+`demo` builds the bundled sample article into a pack and writes it under `packs/`. `review` starts the local server at <http://127.0.0.1:4317>.
 
-Add your own material:
+To import your own material, use the import panel in the app or the CLI:
 
 ```bash
-pnpm dev add ./article.pdf
-pnpm dev add ./book.epub
+pnpm dev add ./article.pdf --build --open
+pnpm dev add ./book.epub --build
 pnpm dev add https://example.com/article --build --open
 pnpm dev add --clipboard --build
 ```
 
-From any article page, you can install the local bookmarklet at `/bookmarklet`; it opens the import form with the current URL filled in.
+Pasted text and web articles can optionally run a **clean-text** pass that removes navigation, cookie notices, subscribe prompts, related links and footers. It only drops whole blocks; it never rewrites the article. Use `--no-ai-clean` to keep the raw extraction. PDF and EPUB imports skip this pass so page references and book structure stay intact.
 
-CloseRead is currently **source-only**: there is no npm package or signed installer release yet. A thin Electron shell is included for a local desktop app:
+From any article page, install the local bookmarklet at `/bookmarklet` to open the import form with the current URL filled in.
+
+### Desktop app
+
+A thin Electron shell is included. It is not a signed or notarised release:
 
 ```bash
-pnpm desktop        # run the desktop shell from source
-pnpm desktop:pack   # build an unpacked app in desktop-dist/
-pnpm desktop:build:mac  # unsigned macOS dmg
-pnpm desktop:build:win  # Windows NSIS; run on Windows
+pnpm desktop              # run from source
+pnpm desktop:pack         # unpacked app in desktop-dist/
+pnpm desktop:build:mac    # unsigned macOS dmg
+pnpm desktop:build:win    # Windows NSIS; run on Windows
 ```
 
-See [desktop/README.md](desktop/README.md) for packaging notes. A read-only static demo lives in [`demo/index.html`](demo/index.html); the included Pages workflow can publish it. The reading dashboard and pack header also have an `EN` toggle for the English UI beta.
+The desktop app keeps data under Electron's `userData` directory. Open **Settings → Data & packs** to see the exact paths. Packaging notes are in [desktop/README.md](desktop/README.md).
 
-## Where your data lives
+## Models and audio (optional)
 
-`pnpm dev` keeps the library in `data/` and packs in `packs/` under the repository. The desktop app uses the OS app-data directory instead: `~/Library/Application Support/closeread/` on macOS, `%APPDATA%\closeread` on Windows, and `~/.config/closeread` on Linux. Set `LEARN_DATA_DIR` and `LEARN_PACKS_DIR` to point both at the same folder; the desktop app honors them when launched from a shell (for example `LEARN_DATA_DIR=... pnpm desktop`).
+Without a model key, CloseRead uses its heuristic pipeline for structure, notes, cards and exercises. Chinese glosses and short translations then come from public dictionary and machine-translation endpoints, so quality is shallower and some text leaves your machine.
 
-The library is a single `store.json` plus one JSON file per imported resource. CloseRead writes it atomically and keeps:
+With a key, you can use DeepSeek, OpenAI-compatible endpoints, Anthropic, Gemini, Qwen/DashScope, GLM/Zhipu, xAI or Moonshot. Configure it in the import panel's **Model settings**, or through environment variables such as `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DASHSCOPE_API_KEY` or `GLM_API_KEY`. Keys stored in the app live in `data/llm.json`.
 
-- `store.json.bak` — the last good version;
-- `data/backups/store-YYYY-MM-DD.json` — one snapshot per day, seven kept;
-- `store.json.corrupt-<timestamp>` — an unreadable file is moved aside and shown as a banner instead of being overwritten.
+TTS is separate and optional. Supported providers are macOS system voices, Microsoft Edge online voices, Alibaba Cloud Bailian `qwen3-tts-flash`, GLM-TTS, Gemini TTS, MiniMax, ElevenLabs and OpenAI-compatible `/audio/speech` endpoints.
 
-To restore, stop the server and copy the chosen snapshot over `store.json`. The automatic daily snapshots cover the library store only. The portable `pnpm dev backup` archive includes the store, imported resources, pack folders (including `reading.json` and cached audio) and the local quote wall when present; the `data/lab/audio/` cache is not included because it can be regenerated.
+## Your data
 
-For a portable copy of the library, use:
+`pnpm dev` keeps everything in two folders under the repository:
+
+```text
+data/
+  store.json              library, packs, card state, outputs, preferences
+  store.json.bak          last good library file
+  store.json.corrupt-*    an unreadable file is moved aside, not overwritten
+  backups/                daily library snapshots, 7 kept
+  resources/              one JSON file per imported source
+  trash/                  deleted packs and resources
+  llm.json, tts.json      provider settings and API keys
+  cache/                  dictionary, translation and model caches
+packs/<id>/
+  pack.json, meta.json, pack.md, notes.md, anki.csv, index.html
+  reading.json            paragraph progress and annotations
+```
+
+Set `LEARN_DATA_DIR` and `LEARN_PACKS_DIR` to move both folders, for example when running the desktop shell from a terminal.
+
+CloseRead writes atomically and keeps the last good library, but it is a single-user app. **Run one server per data directory.** Two servers writing to the same `store.json` can overwrite each other.
+
+### Backup and restore
+
+The automatic daily snapshots cover `store.json` only. For a portable copy that includes sources, packs, `reading.json`, cached audio and quotes, use **Settings → Download full backup** or:
 
 ```bash
-pnpm dev backup                  # writes data/backups/library-<timestamp>.json
+pnpm dev backup                  # data/backups/library-<timestamp>.json
 pnpm dev restore <file> --force  # stop the server first
 ```
 
-Manual restores keep a `store.json.pre-restore-<timestamp>` copy and only overwrite the records included in the backup. Pack directories are remapped under the current `LEARN_PACKS_DIR`. The **成长** page also has **下载完整备份**, which writes the same archive through the local server.
+Restore keeps a `store.json.pre-restore-<timestamp>` copy and remaps pack directories under the current `LEARN_PACKS_DIR`. Deleting a pack or source moves it to `data/trash/` first; **Settings → Trash** restores it or deletes it permanently.
 
-Deleting a pack or a resource moves it to `data/trash/` first; open **设置 → 回收站** to restore it or delete it permanently. Trash entries keep pack records, item review state and uploaded files.
+## Privacy
+
+CloseRead has no accounts, telemetry, analytics, ads or cloud sync. It makes network requests only for things you ask it to do:
+
+- **URL/RSS import** fetches the page directly.
+- **Model notes and translations** send selected article text to the provider you configure.
+- **Without a model key**, word and short-text lookups use `api.dictionaryapi.dev`, `api.datamuse.com`, `dict.youdao.com` and `api.mymemory.translated.net`.
+- **Cloud TTS** sends the text to the voice provider you choose; local system voices do not.
+- **Phone access** serves the app over plain HTTP on your LAN, protected by a random token in an HttpOnly cookie. Use it only on a trusted network.
+
+Keys in `data/llm.json` and `data/tts.json` are stored as plain JSON with owner-only permissions where the OS supports it. Backups and exported packs are unencrypted copies of your reading material.
+
+The local server binds to `127.0.0.1` and has no login. Do not expose it to the public internet.
+
+## Export at a glance
+
+| Output | What it is for |
+| --- | --- |
+| HTML | Standalone reading page with the pack's styling |
+| EPUB | Reflowable book for e-readers |
+| PDF | Printable pack, comfortable or compact layout |
+| PNG | A single long image, or one image per page in a ZIP |
+| MOBI | Kindle, when Calibre is installed |
+| Anki CSV | Import cards into Anki |
+| Markdown | Standalone pack or reading notes for Obsidian and other editors |
+| Weekly report | Markdown summary of the last seven days |
+| Backup JSON | Full local archive for moving or restoring the library |
+
+The pack folder also keeps `pack.json`, `meta.json`, `pack.md`, `notes.md`, `anki.csv` and `index.html`, so a pack can be inspected or moved without the app. `meta.json` records the input hash, mode, provider/model, prompt version, timestamp and warnings, but no API keys.
 
 ## Phone access
 
-The main server binds to `127.0.0.1`. To read or review on a phone or tablet on the same Wi-Fi:
+The main server stays on `127.0.0.1`. To read on a phone or tablet on the same Wi-Fi:
 
-- Open the **手机** panel in the app and choose **开启手机访问**, or run `pnpm dev review --lan`.
-- Scan the QR code in the panel with the phone camera to open the token link. The QR is generated locally and never sent to a third-party service.
-- Use “Add to Home Screen” on the phone or install CloseRead from the desktop browser to open it as a standalone app; data and tokens stay local.
-- Open the token link once on the phone. The token is stored in an HttpOnly cookie, stripped from the address bar, and used for the app's relative links and API calls.
-- The phone token is a learning token: it can read, review, collect words/sentences, write outputs and use the practice lab. Importing, deleting data, rebuilding packs and changing model/TTS settings stay on the computer.
-- Phone access uses a separate random LAN port and requires the token for every request. Closing it stops that listener; a new token is issued on the next enable unless `LEARN_ACCESS_TOKEN` pins one.
-- Use a trusted network only: the LAN connection is HTTP, not HTTPS. Do not enable it on public Wi-Fi. If the phone cannot connect, check the OS firewall and the router's AP isolation.
-- `LEARN_ACCESS_TOKEN` can pin a token for automation; otherwise a new token is generated each time phone access is enabled.
+- Open the **Phone** panel and choose **Enable phone access**, or run `pnpm dev review --lan`.
+- Scan the QR code, or open the token link shown in the panel. The QR code is generated locally.
+- The token is stored in an HttpOnly cookie and removed from the address bar. Phone access uses a separate random LAN port and can be closed at any time.
+- Phones can read, annotate, collect words and sentences, write outputs. Importing, deleting, rebuilding packs and changing model/TTS settings stay on the computer.
+- Add CloseRead to the home screen for a standalone window. The local server is HTTP, not HTTPS; check the OS firewall and router AP isolation if the phone cannot connect.
 
-## A calmer workspace
+<p align="center">
+  <img src="assets/screenshots/reader-dark.png" width="82%" alt="CloseRead dark reading mode">
+</p>
 
-The app now has two primary modes: **Reading** and **Vocabulary**. The desktop sidebar and mobile bottom bar expose only those two actions; practice, progress, weekly review and writing output move behind **More**, and the word web has been removed from the interface. The reading home only continues reading, imports material and lists articles; the vocabulary home leads with today's review. The default reading view is `/read/:id`: select a word or sentence to add it directly; the older `/pack/:id` remains as **tool mode** inside “more reading tools”.
+<p align="center">
+  <img src="assets/screenshots/mobile.png" width="30%" alt="CloseRead on a phone">
+</p>
 
-![CloseRead dashboard](docs/review/ui-home.png)
+## CLI
 
-![Integrated reader](docs/review/ui-reader.png)
-
-
-### AI cleanup on import
-
-Pasted text and web articles can be cleaned before they enter the library. When a model key is configured, the import form's **AI 清理正文** option is on by default. The model receives numbered blocks and may only **drop boilerplate blocks** (navigation, cookie notices, newsletter/subscribe prompts, related links, ads, footers); it never rewrites the article. If the model fails or tries to remove too much, the original text is kept and the resource shows a warning.
-
-Use `pnpm dev add --no-ai-clean` to keep raw extracted text. PDF/EPUB imports intentionally skip this pass for now so page references and book structure are not destroyed.
-
-![AI cleanup on import](docs/review/import-ai-clean.png)
-
-
-### Vocabulary that you can actually study
-
-The library is now a study surface, not a list. Group words by **new / due / leech / known**, filter by source, wordbook or CEFR, and sort by due date, recency, alphabet, CEFR, frequency or lapse count. Open a full word card (contexts, collocations, examples, relations, etymology, notes), and start a daily session with **10 new words + due reviews** by default. The review queue is the single study surface; it shares the same FSRS scheduler as the rest of the app.
-
-Built-in wordbooks can be added from **词书库**: CET-4 (4,544), CET-6 (3,991), TOEFL (10,367) and a full IELTS dataset (7,298). They are seeded into the same FSRS library and can be filtered/studied like your own words. Sources and licenses are documented in [src/wordbooks/ATTRIBUTION.md](src/wordbooks/ATTRIBUTION.md): CET/TOEFL data is BSD-3-Clause from KyleBing/english-vocabulary; IELTS comes from CC BY 4.0 Word Atlas; phonetics come from MIT-licensed ECDICT. The bundled IELTS list is a 7,298-entry dataset, not an official list.
-
-The library now has a **daily budget**: due reviews and new words default to 10 each, adjustable in Settings, while wordbook imports sit in a **backlog** until a day's budget releases them. The review page and both "背词" buttons share one queue; adding 10,000 TOEFL words no longer makes the due badge 10,000.
-
-Words without a real example are marked **无例句** and are skipped by 练习. Open the quality strip in 词库 to generate examples in batches of 5 or 10; each word makes one model call, so the batch is explicit rather than a hidden 10,000-word job.
-
-![Vocabulary library](docs/review/vocab-library.png)
-
-### More: practice
-
-Open `/lab` (or **练习** in the sidebar). Three word-based missions draw from your **learned vocabulary**, not from a selected article. Pick a scope (all / new / due / leech / favorites); the tasks use target words with real example sentences.
-
-- **听写诊所**: listen to a vocabulary example, type it, compare word by word.
-- **影子跟读**: listen, shadow, record and play back locally; audio never leaves the browser.
-- **生活例句**: put one target word into work, travel, hobby or daily life with AI.
-
-Only 生活例句 needs a model key; dictation and shadowing work without one. Generated examples are cached under `data/cache/lab/`; audio is cached under `data/lab/audio/`.
-
-![Learning Lab](docs/review/lab.png)
-
-
-1. **Import** a real source. A bookmarked PDF or an EPUB is split into articles; directory pages, ads, cartoons and digest pages can be filtered out.
-2. **Generate** one article. You get a bilingual reading page, paragraph translations, a structure map and intensive-reading notes.
-3. **Read** paragraph by paragraph. Select a word or a whole sentence to see its context and add a card without leaving the text.
-4. **Go deeper** with etymology, word-family expansion, sentence focus, AI theater, micro-stories and a 60-second warm-up.
-5. **Review** only what you chose to keep. Core cards enter FSRS; bonus cards stay in the pack. Export to Anki or Markdown when you want.
-
-## Pack output
-
-Each pack is a folder you can keep, inspect or move:
-
-`pack.json` · `meta.json` · `pack.md` · `anki.csv` · `index.html` · `reading.json`
-
-`meta.json` records the input hash, mode, provider/model, prompt version, timestamp and build warnings. It contains no API keys, so a later build can be compared or reproduced.
-
-## Main features
-
-### Read
-
-- PDF (text layer), EPUB, MOBI/AZW/AZW3, DOCX, article URLs, RSS/Atom feeds, pasted text/Markdown and timestamped transcripts.
-- English title, Chinese title, standfirst/deck and paragraph-by-paragraph translation.
-- A structure map, per-paragraph notes (role, key sentence, grammar, background, reflection question) and a reading progress bar; the default reader can expand each paragraph's notes without switching to tool mode.
-- Chapter navigation for books split into articles, plus select-to-analyse and local annotations from the default reader.
-- Sentence-by-sentence listening from the default reader: click any sentence or “逐句听”, and the current sentence is highlighted and scrolled into view.
-- A “接下来读” strip at the end of each article recommends neighbouring packs by CEFR, length, same book and reading state.
-- Edit or delete a paragraph; edits re-translate the paragraph and re-sync word and sentence cards.
-- Light / dark / follow-system themes and reader typography: four font sizes, three line heights and three column widths, remembered on this device.
-
-### Understand
-
-- Sentence focus mode with large text, optional translation, pronunciation, previous/next navigation, merge/split sentence boundaries and “mark this paragraph read”.
-- Sentence cards with chunks, pattern, grammar and substitutions for back-translation.
-- AI theater: a bounded three-turn interview with the author or a rebuttal challenge, with a recap of expressions used and missed.
-- Micro-stories and 60-second sentence/word puzzles built from the cards already in the pack.
-
-### Collect
-
-- Select 1–8 words or a complete sentence; the card stays attached to the paragraph it came from.
-- Contextual translation and a short annotation appear before you add anything.
-- Word cards include etymology, roots and affixes, a derivation tree, word family, synonyms, antonyms, confusables, collocations and examples.
-- Edit a card's sense, definitions, mnemonic, collocations and notes from the vocabulary detail drawer; the change follows the card into its pack.
-- Sentence cards keep the full source sentence, translation, chunks and pattern.
-
-### Review
-
-- FSRS scheduling for word and sentence cards, with an adjustable target retention (85–95%).
-- Vocabulary review uses a flashcard: the front shows the word, pronunciation and source sentence; tap the card or press Space to flip. The back shows meanings, collocations, examples and the source, followed by Again / Hard / Good / Easy (keys 1–4).
-- Choose 5/10/15/20/30/50 new words per day; enable “AI 选相关词” when starting a session to pick a thematically related set from due/new words and cache it for the day, with a source/context fallback when no model key is configured.
-- First-attempt accuracy is shown separately so repeated reviews do not inflate it.
-- A 7-day due forecast sits above the queue; the last rating can be undone with the button or `U` / `Cmd/Ctrl+Z`; cards with 4+ lapses are flagged as leeches with a pause/rewrite hint.
-- Core/bonus split: core cards enter the queue; bonus cards stay in the pack.
-- Select any word or sentence cards in the library to start a custom review round, or bulk suspend, mark known, restore and favourite them.
-- Paste or upload a CSV/TXT list of words you already know; matching cards are marked known, and no new cards are created.
-- Anki CSV, Markdown for Obsidian, and HTML/EPUB/PDF/PNG export. MOBI export needs Calibre.
-
-### More: writing
-
-- Write three English sentences after reading; drafts are kept in the local output history.
-- Ask the editor for feedback, then revise and save another version. Each revision is stored separately and can get its own editor reply, so you can see what changed.
-
-### More: stats and experiments
-
-- A 24-word vocabulary check seeds your level and known words, so the first build is not a cold start.
-- Achievements and a 12-week reading calendar (streaks, reviews, outputs, night-owl/early-bird) derived from existing records; no extra data is stored.
-- AI usage detective: from a review card, generate a short scene and three sentences where only one uses the target word naturally; get a Chinese explanation and a combo streak. Requires an LLM key.
-- **成长** includes the reading passport and a weekly review (last 7 days: articles finished, review accuracy, missed words and next-week focus), with a Markdown report export; the insights page also shows a 14-day review curve, retention by source/CEFR, and weekly article/study-day goal progress.
-- Reading passport with a 3:4 share card.
-- Full-article audio and sentence-by-sentence shadowing with local recording.
-- Audio can use macOS `say`, browser speech, or a configured neural TTS provider (Edge online, GLM-TTS, Gemini TTS, MiniMax, ElevenLabs or an OpenAI-compatible endpoint).
-
-## Inputs and outputs
-
-`PDF` `EPUB` `MOBI` `AZW/AZW3` `DOCX` `URL` `RSS/Atom` `Text` `SRT/VTT` · `HTML reader` `Markdown` `Anki CSV` `EPUB` `PDF` `PNG` `MOBI`
-
-| | |
+| Command | Purpose |
 | --- | --- |
-| **Input** | Text-layer PDFs, EPUB/MOBI/AZW/AZW3, DOCX, article URLs, RSS/Atom feeds, pasted text/Markdown, talk transcripts. Feeds import their latest article. Audio/video needs a sibling transcript. |
-| **Output** | Interactive HTML reader, Markdown for Obsidian/print, Anki CSV; the UI can also export EPUB, PDF, PNG and (with Calibre) MOBI. |
-| **Platform** | Node 22+ on macOS, Linux or Windows. PDF/PNG export uses local Chrome; MOBI export uses Calibre when installed. |
-| **Models** | No LLM key needed for heuristic mode; add a DeepSeek/OpenAI/GLM-compatible key for AI notes, translations, word expansion and selection. |
-| **Audio** | Optional. macOS `say` works offline; other systems can use browser speech or configure a neural TTS endpoint. |
+| `pnpm dev add <file-or-url>` | Import a PDF, EPUB, MOBI, DOCX, URL, text or transcript |
+| `pnpm dev build <id\|latest>` | Build a pack from an imported resource |
+| `pnpm dev review` | Start the local reading UI |
+| `pnpm dev list` | List imported resources |
+| `pnpm dev doctor` | Check the environment and library |
+| `pnpm dev export <id\|latest>` | Export the pack's Anki CSV |
+| `pnpm dev audio <id\|latest>` | Generate audio with macOS `say` |
+| `pnpm dev resplit <id> <file>` | Re-parse a resource into articles |
+| `pnpm dev backup` / `restore` | Create or restore a full library archive |
+| `pnpm dev demo` | Run the full pipeline on the bundled sample |
 
-## Is this for you?
-
-CloseRead is for people who want to read real English articles slowly and keep the useful parts: exam preparation, foreign-magazine reading and long-term vocabulary building. It is less useful if you want a one-click summary, do not want to configure a model key, or need scanned PDF OCR today.
+Run `pnpm dev --help` for build options such as `--no-llm`, `--limit`, `--style`, `--audio` and `--no-source`.
 
 ## Limitations
 
@@ -235,9 +232,10 @@ CloseRead is for people who want to read real English articles slowly and keep t
 - DRM-protected EPUB, MOBI and AZW files cannot be decrypted; use a DRM-free copy.
 - Paywalls, login walls and bot checks are not bypassed.
 - Video/audio transcription is not built in; bring a transcript.
-- Heuristic Chinese definitions are dictionary/translation glosses, not context-aware paraphrase. LLM mode gives better sense-level Chinese.
-- The review server binds to `127.0.0.1` and has no authentication. Do not expose it.
-- Copyright: use this for personal study. Do not redistribute packs that contain full source text.
+- Heuristic Chinese definitions are dictionary or machine-translation glosses, not context-aware paraphrase. Model mode is better at sense-level Chinese.
+- The app is optimised for one reader on one machine. There is no multi-user login, file lock or cloud sync.
+- Desktop builds are unsigned, and there is no npm package or auto-updater yet.
+- Copyright: use CloseRead for personal study. Do not redistribute packs that contain full source text.
 
 ## Development
 
@@ -245,11 +243,17 @@ CloseRead is for people who want to read real English articles slowly and keep t
 pnpm typecheck
 pnpm lint            # tsc with noUnusedLocals / noUnusedParameters
 pnpm format:check    # whitespace, newline and tab check
-pnpm test
-pnpm test:e2e        # Chrome-driven browser flow (uses CHROME_PATH if needed)
+pnpm test            # unit/integration suite via Node's test runner
+pnpm test:e2e        # Chrome flow: import, read, settings, export
 ```
 
-Tests use Node's built-in test runner via `tsx`. `pnpm test` runs the unit/integration suite plus small Chrome smoke tests; `pnpm test:e2e` runs the seeded browser flow (import → read → settings → review/undo → diagnosis → export). Both use the installed Chrome or `CHROME_PATH`. The CLI runs from source with `tsx`; there is no separate build step. Agent/CLI integration notes live in [AGENTS.md](AGENTS.md).
+Tests use Node's built-in test runner through `tsx`. `pnpm test:e2e` uses installed Chrome or `CHROME_PATH`. The CLI runs from source; there is no separate build step.
+
+Layout: `src/ingest` parses sources, `src/analyze` builds the study layer, `src/pack` renders and exports packs, `src/review` serves the local UI, and `desktop/` contains the Electron shell. Agent/CLI notes are in [AGENTS.md](AGENTS.md).
+
+## Contributing
+
+Issues, bug reports and pull requests are welcome at <https://github.com/qweijiaq/CloseRead>. If you find the project useful, starring the repository or sharing a pack you made is the easiest way to help.
 
 ## License
 

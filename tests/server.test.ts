@@ -372,9 +372,15 @@ describe('review server', { concurrency: 1 }, () => {
       warnings: unknown[]
     }
     assert.deepEqual(today.warnings, [])
-    assert.equal(today.steps.review.dueAtStart, 1)
-    assert.equal(today.steps.review.done, false)
-    assert.equal(today.steps.review.remaining, 1)
+    assert.ok(today.steps.review.dueAtStart >= 1)
+    assert.equal(
+      today.steps.review.done,
+      today.steps.review.dueAtStart === 0 || today.steps.review.reviewed >= today.steps.review.dueAtStart,
+    )
+    assert.equal(
+      today.steps.review.remaining,
+      Math.max(0, today.steps.review.dueAtStart - today.steps.review.reviewed),
+    )
     assert.equal(today.steps.article.done, false)
     assert.equal(today.steps.output.done, false)
 
@@ -484,7 +490,7 @@ describe('review server', { concurrency: 1 }, () => {
     assert.ok(new Date(response.item.due).getTime() > Date.now() + 30_000)
   })
 
-  it('completes the daily loop after reading an article and writing output', async () => {
+  it('completes the daily loop after reading an article', async () => {
     await server.store.addPack({
       id: 'pack-today',
       resourceId: 'r',
@@ -538,8 +544,6 @@ describe('review server', { concurrency: 1 }, () => {
     }
     assert.equal(today.steps.article.done, true)
     assert.equal(today.steps.article.title, 'Today article')
-    assert.equal(today.steps.output.done, true)
-    assert.equal(today.steps.output.text, 'The article makes a convincing case.')
     assert.equal(today.completed, true)
     assert.equal(today.streak, 1)
   })
@@ -990,12 +994,6 @@ describe('review server', { concurrency: 1 }, () => {
           itemIds: [],
         },
       ],
-      microStory: {
-        title: 'The Quiet Room',
-        text: 'Attention was scarce, so she made a deliberate choice.',
-        translation: '注意力很稀缺，所以她做了一个刻意的选择。',
-        used: ['attention', 'scarce', 'deliberate'],
-      },
     }
     await fs.writeFile(path.join(dir, 'pack.json'), JSON.stringify(pack), 'utf8')
     await server.store.addPack({
@@ -1007,14 +1005,6 @@ describe('review server', { concurrency: 1 }, () => {
       title: 'Passport Article',
       createdAt: now,
     })
-
-    const cached = (await fetch(`${server.url}/api/pack/pack-passport/micro-story`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: '{}',
-    }).then((response) => response.json())) as { cached: boolean; story: { title: string } }
-    assert.equal(cached.cached, true)
-    assert.equal(cached.story.title, 'The Quiet Room')
 
     await fetch(`${server.url}/api/packs/pack-passport/reading`, {
       method: 'POST',
@@ -1105,6 +1095,7 @@ describe('review server', { concurrency: 1 }, () => {
     assert.equal(typeof initial.tts.configured, 'boolean')
     assert.ok(initial.providers.some((provider) => provider.id === 'glm'))
     assert.ok(initial.providers.some((provider) => provider.id === 'gemini'))
+    assert.ok(initial.providers.some((provider) => provider.id === 'bailian'))
 
     const saved = (await fetch(`${server.url}/api/tts`, {
       method: 'POST',

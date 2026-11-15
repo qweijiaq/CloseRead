@@ -279,14 +279,6 @@ export interface PackFrontMatter {
   itemIds: string[]
 }
 
-export interface MicroStory {
-  title: string
-  text: string
-  translation: string
-  /** Target lemmas the model actually reused in the story. */
-  used: string[]
-}
-
 export interface BuildMetadata {
   inputHash: string
   mode: 'heuristic' | 'llm'
@@ -324,8 +316,6 @@ export interface LearningPack {
   /** Reproducible build fingerprint and warnings. */
   build?: BuildMetadata
   parentResourceId?: string
-  /** Cached, pack-level micro-story built from the target words. */
-  microStory?: MicroStory
   articleIndex?: number
   audio?: PackAudio
 }

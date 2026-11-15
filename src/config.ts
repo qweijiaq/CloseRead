@@ -112,28 +112,62 @@ function readStoredTts(): StoredTtsSettings | undefined {
 
 const storedTts = readStoredTts()
 const storedTtsKey = storedTts?.apiKey?.trim() ?? ''
-const envTtsKey = process.env.OPENAI_TTS_API_KEY?.trim() ?? ''
 const DEFAULT_TTS_PROVIDER: TtsProviderId = 'local'
-const envTtsProvider = process.env.LEARN_TTS_PROVIDER
-  ? normalizeTtsProvider(process.env.LEARN_TTS_PROVIDER)
-  : envTtsKey
-    ? 'openai'
-    : DEFAULT_TTS_PROVIDER
+
+function envTtsKeyFor(provider: TtsProviderId): string {
+  const keys: Record<TtsProviderId, string[]> = {
+    local: [],
+    edge: [],
+    bailian: ['DASHSCOPE_TTS_API_KEY', 'DASHSCOPE_API_KEY'],
+    glm: ['GLM_TTS_API_KEY', 'GLM_API_KEY', 'ZHIPUAI_API_KEY'],
+    gemini: ['GEMINI_TTS_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY'],
+    minimax: ['MINIMAX_TTS_API_KEY', 'MINIMAX_API_KEY'],
+    elevenlabs: ['ELEVENLABS_API_KEY'],
+    openai: ['OPENAI_TTS_API_KEY', 'OPENAI_API_KEY'],
+    custom: ['OPENAI_TTS_API_KEY', 'OPENAI_API_KEY'],
+  }
+  for (const key of keys[provider] ?? []) {
+    const value = process.env[key]?.trim()
+    if (value) return value
+  }
+  return ''
+}
+
+function detectEnvTtsProvider(): TtsProviderId {
+  if (process.env.LEARN_TTS_PROVIDER) return normalizeTtsProvider(process.env.LEARN_TTS_PROVIDER)
+  // Keep local speech as the default: only an explicit TTS key opts into a provider.
+  return process.env.OPENAI_TTS_API_KEY?.trim() ? 'openai' : DEFAULT_TTS_PROVIDER
+}
+
+const envTtsProvider = detectEnvTtsProvider()
+const effectiveProvider: TtsProviderId = storedTts?.provider
+  ? normalizeTtsProvider(storedTts.provider)
+  : envTtsProvider
+const envTtsKey = envTtsKeyFor(effectiveProvider)
 const defaultPreset = ttsProviderPreset(DEFAULT_TTS_PROVIDER)
-const effectivePreset = ttsProviderPreset(
-  storedTts?.provider ? normalizeTtsProvider(storedTts.provider) : envTtsProvider,
-)
+const effectivePreset = ttsProviderPreset(effectiveProvider)
 const defaultInstructions =
   'Read like a thoughtful magazine narrator: warm, unhurried, with natural pauses and a slight lift at commas.'
+const openAiTtsEnv = effectiveProvider === 'openai' || effectiveProvider === 'custom'
 const tts = {
-  provider: storedTts?.provider ? normalizeTtsProvider(storedTts.provider) : envTtsProvider,
+  provider: effectiveProvider,
   apiKey: storedTtsKey || envTtsKey,
-  baseUrl: (storedTts?.baseUrl?.trim() || process.env.OPENAI_TTS_BASE_URL || effectivePreset.baseUrl).replace(/\/+$/, ''),
-  model: storedTts?.model?.trim() || process.env.OPENAI_TTS_MODEL || effectivePreset.model,
-  voice: storedTts?.voice?.trim() || process.env.OPENAI_TTS_VOICE || effectivePreset.voice,
+  baseUrl: (
+    storedTts?.baseUrl?.trim() ||
+    (openAiTtsEnv ? process.env.OPENAI_TTS_BASE_URL : '') ||
+    effectivePreset.baseUrl
+  ).replace(/\/+$/, ''),
+  model:
+    storedTts?.model?.trim() ||
+    (openAiTtsEnv ? process.env.OPENAI_TTS_MODEL : '') ||
+    effectivePreset.model,
+  voice:
+    storedTts?.voice?.trim() ||
+    (openAiTtsEnv ? process.env.OPENAI_TTS_VOICE : '') ||
+    effectivePreset.voice,
   instructions:
     storedTts?.instructions?.trim() ||
-    process.env.OPENAI_TTS_INSTRUCTIONS ||
+    (openAiTtsEnv ? process.env.OPENAI_TTS_INSTRUCTIONS : '') ||
     (effectivePreset.instructions ? defaultInstructions : ''),
   keySource: (storedTtsKey ? 'stored' : envTtsKey ? 'env' : 'none') as 'stored' | 'env' | 'none',
 }
@@ -309,7 +343,8 @@ export function saveTtsSettings(input: TtsSettingsInput): TtsStatus {
     return ttsStatus()
   }
   const providedKey = input.apiKey?.trim() ?? ''
-  const apiKey = providedKey || config.tts.apiKey.trim()
+  const sameProvider = config.tts.provider === provider
+  const apiKey = providedKey || (sameProvider ? config.tts.apiKey.trim() : '')
   if (!apiKey) throw new Error('请填写神经语音的 API Key。')
   const baseUrl = (input.baseUrl?.trim() || preset.baseUrl).replace(/\/+$/, '')
   if (!/^https?:\/\//i.test(baseUrl)) throw new Error('Base URL 需要以 http:// 或 https:// 开头。')

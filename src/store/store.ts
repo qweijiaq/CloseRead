@@ -102,6 +102,12 @@ export interface DailyProgress {
   articleFinished: boolean
   outputDone: boolean
   completed: boolean
+  /** Cached AI/heuristic word-theme selection for today's vocabulary session. */
+  wordTheme?: string
+  wordThemeReason?: string
+  wordSelectionSource?: 'ai' | 'heuristic'
+  wordSelectionIds?: string[]
+  wordSelectionAt?: string
 }
 
 export interface StorePreferences {
@@ -189,6 +195,15 @@ function normalizePreferences(raw: unknown): StorePreferences {
       articleFinished: daily.articleFinished === true,
       outputDone: daily.outputDone === true,
       completed: daily.completed === true,
+      ...(typeof daily.wordTheme === 'string' ? { wordTheme: daily.wordTheme } : {}),
+      ...(typeof daily.wordThemeReason === 'string' ? { wordThemeReason: daily.wordThemeReason } : {}),
+      ...(daily.wordSelectionSource === 'ai' || daily.wordSelectionSource === 'heuristic'
+        ? { wordSelectionSource: daily.wordSelectionSource }
+        : {}),
+      ...(Array.isArray(daily.wordSelectionIds)
+        ? { wordSelectionIds: [...new Set(daily.wordSelectionIds.filter((value): value is string => typeof value === 'string'))] }
+        : {}),
+      ...(typeof daily.wordSelectionAt === 'string' ? { wordSelectionAt: daily.wordSelectionAt } : {}),
     },
     streak: typeof value.streak === 'number' && Number.isFinite(value.streak) ? value.streak : 0,
     ...(typeof value.lastCompletedDate === 'string'
@@ -960,6 +975,37 @@ export class Store {
     return { ...this.ensureDaily(now) }
   }
 
+  dailyWordSelection(now: Date = new Date()): {
+    ids: string[]
+    theme: string
+    reason: string
+    source: 'ai' | 'heuristic'
+    createdAt: string
+  } | undefined {
+    const daily = this.ensureDaily(now)
+    if (!daily.wordSelectionIds?.length) return undefined
+    return {
+      ids: [...daily.wordSelectionIds],
+      theme: daily.wordTheme ?? '今日词组',
+      reason: daily.wordThemeReason ?? '',
+      source: daily.wordSelectionSource ?? 'heuristic',
+      createdAt: daily.wordSelectionAt ?? daily.date,
+    }
+  }
+
+  async saveDailyWordSelection(
+    input: { ids: string[]; theme: string; reason: string; source: 'ai' | 'heuristic' },
+    now: Date = new Date(),
+  ): Promise<void> {
+    const daily = this.ensureDaily(now)
+    daily.wordSelectionIds = [...new Set(input.ids.filter(Boolean))]
+    daily.wordTheme = input.theme.trim() || '今日词组'
+    daily.wordThemeReason = input.reason.trim()
+    daily.wordSelectionSource = input.source
+    daily.wordSelectionAt = now.toISOString()
+    await this.save()
+  }
+
   private ensureDaily(now: Date): DailyProgress {
     const key = todayKey(now)
     const target = () => {
@@ -994,9 +1040,8 @@ export class Store {
   private completeDailyIfReady(now: Date): void {
     const daily = this.data.preferences.daily
     if (daily.completed) return
-    // 复习是读后收尾，不阻塞“今天读完一篇并写出三句话”的完成判定
-    const hasWrittenOutput = this.data.outputs.some((entry) => entry.date === todayKey(now))
-    if (!daily.articleFinished || !daily.outputDone || !hasWrittenOutput) return
+    // 连续天数奖励“读完”，复习和输出都是独立进度。
+    if (!daily.articleFinished) return
     daily.completed = true
     const today = todayKey(now)
     if (this.data.preferences.lastCompletedDate === today) return
