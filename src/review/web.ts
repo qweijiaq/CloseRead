@@ -1444,6 +1444,19 @@ ${pwaHead()}
   .settings-details p { margin: 8px 0 6px; color: var(--muted); font-size: 12px; line-height: 1.8; }
   .settings-details ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.8; }
   .import-note { margin: -4px 0 14px; }
+  .cmdk { position: fixed; inset: 0; z-index: 220; display: flex; align-items: flex-start; justify-content: center; padding: 12vh 16px 16px; background: rgba(12,16,13,.45); }
+  .cmdk[hidden] { display: none; }
+  .cmdk-panel { width: min(520px, 100%); border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 30px 80px rgba(0,0,0,.3); overflow: hidden; }
+  .cmdk-panel input { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); padding: 14px 16px; font: inherit; font-size: 14px; outline: none; }
+  .cmdk-list { max-height: 46vh; overflow: auto; padding: 6px; }
+  .cmdk-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border-radius: 9px; color: var(--ink); font-size: 13px; cursor: pointer; }
+  .cmdk-item small { color: var(--muted); font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; }
+  .cmdk-item.active { background: var(--accent-soft); color: var(--accent-strong); }
+  .cmdk-item.active small { color: var(--accent-strong); }
+  .cmdk-empty { padding: 16px 12px; color: var(--muted); font-size: 12.5px; }
+  .import-preview { margin: 8px 0 2px; padding: 8px 11px; border: 1px dashed var(--line-strong); border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+  .import-preview b { color: var(--ink); font-weight: 600; }
+  .import-preview[hidden] { display: none; }
   .llm-hint { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.6; }
   .llm-hint[hidden] { display: none; }
   @media (max-width: 760px) {
@@ -1806,6 +1819,7 @@ ${pwaHead()}
         <p>从网页、Word 或笔记里复制英文正文，粘贴到这里。标题留空时会从首行或 Markdown 标题推断。</p>
         <input id="import-text-title" type="text" placeholder="标题（可选）">
         <textarea id="import-text-body" placeholder="Paste the English article here…"></textarea>
+        <div class="import-preview" id="import-preview" hidden></div>
         <label class="import-option"><input type="checkbox" id="import-text-ai-clean" checked> 清理正文 <span>去导航、订阅、相关推荐；需要模型</span></label>
         <button class="btn btn-primary" type="submit">导入文本</button>
       </form>
@@ -1847,6 +1861,12 @@ ${pwaHead()}
     <button data-tab="shared" type="button">公共库</button>
     <button data-mobile-more type="button">更多</button>
   </nav>
+  <div class="cmdk" id="cmdk" hidden>
+    <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="命令面板">
+      <input id="cmdk-input" type="text" placeholder="去哪、做什么…  ↑↓ 选择，回车执行" autocomplete="off" spellcheck="false">
+      <div class="cmdk-list" id="cmdk-list" role="listbox"></div>
+    </div>
+  </div>
   <div class="mobile-more" id="mobile-more" hidden>
     <div class="mobile-more-panel" role="dialog" aria-modal="true" aria-label="更多">
       <div class="mobile-more-head"><strong>更多</strong><button class="link-button" data-mobile-more-close type="button">关闭</button></div>
@@ -3990,9 +4010,9 @@ ${pwaHead()}
               '<a class="btn btn-primary" href="' + escapeHtml(pack.url) + '">精读</a>' +
               rebuild +
               (pack.shared
-                ? (pack.publishedByMe
+                ? (pack.canUnpublish
                     ? '<button class="btn" data-unpublish-pack="' + escapeHtml(pack.id) + '">取消公开</button>'
-                    : '<span class="pack-shared-tag">已公开</span>')
+                    : '<span class="pack-shared-tag">' + (pack.builtIn ? '公共库示例' : '已公开') + '</span>')
                 : '<button class="btn" data-publish-pack="' + escapeHtml(pack.id) + '">公开</button>') +
               '<button class="btn danger" data-delete-pack="' + escapeHtml(pack.id) + '">删除</button>' +
             '</div>' +
@@ -4539,6 +4559,43 @@ ${pwaHead()}
   function buildGuardAttrs() {
     return buildNeedsKey() ? ' disabled title="需要先配置模型 Key"' : '';
   }
+
+  // Show what a build would produce before spending a model call.
+  var previewTimer = null;
+
+  function scheduleImportPreview() {
+    var body = document.getElementById('import-text-body');
+    var host = document.getElementById('import-preview');
+    if (!body || !host) return;
+    if (previewTimer) clearTimeout(previewTimer);
+    var text = body.value.trim();
+    if (text.length < 40) {
+      host.hidden = true;
+      return;
+    }
+    previewTimer = setTimeout(function () {
+      api('/api/preview', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          text: text,
+          title: (document.getElementById('import-text-title') || {}).value || ''
+        })
+      }).then(function (data) {
+        host.hidden = false;
+        host.innerHTML = '预计 <b>' + data.items + '</b> 个学习项 · ' + data.segments + ' 段 · ' +
+          escapeHtml(data.cefr || '') + ' · 精读约 <b>' + data.minutes + '</b> 分钟' +
+          '<br>按规则估算，实际以生成结果为准。';
+      }).catch(function () { host.hidden = true; });
+    }, 800);
+  }
+
+  (function bindImportPreview() {
+    var body = document.getElementById('import-text-body');
+    if (!body || body.getAttribute('data-preview-bound') === '1') return;
+    body.setAttribute('data-preview-bound', '1');
+    body.addEventListener('input', scheduleImportPreview);
+  })();
 
   function loadRecentImports() {
     loadStyles();
@@ -5753,6 +5810,108 @@ ${pwaHead()}
     if (tab === 'passport' || tab === 'insights' || tab === 'feedback') return 'more';
     return '';
   }
+
+  // Cmd/Ctrl+K command palette: keyboard access to the handful of actions
+  // people repeat every session.
+  var cmdkIndex = 0;
+  var cmdkCommands = [
+    { title: '精读', hint: 'g r', run: function () { switchTab('read'); } },
+    { title: '文章', hint: 'g a', run: function () { switchTab('packs'); } },
+    { title: '公共库', hint: 'g l', run: function () { switchTab('shared'); } },
+    { title: '导入文章', hint: 'g i', run: function () { switchTab('import'); } },
+    { title: '意见墙', hint: 'g f', run: function () { switchTab('feedback'); } },
+    { title: '成长', hint: '', run: function () { switchTab('passport'); } },
+    { title: '复盘', hint: '', run: function () { switchTab('insights'); } },
+    { title: '设置', hint: 'g s', run: function () { switchTab('settings'); } },
+    { title: '导出到本机', hint: '', run: function () { exportWorkspaceLocal(null); } },
+    { title: '切换主题', hint: '', run: function () { cycleReviewTheme(); } },
+  ];
+
+  function cmdkMatches(query) {
+    var q = query.trim().toLowerCase();
+    if (!q) return cmdkCommands.slice();
+    return cmdkCommands.filter(function (item) {
+      return item.title.toLowerCase().indexOf(q) >= 0 ||
+        (item.hint || '').toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  function renderCmdk() {
+    var list = document.getElementById('cmdk-list');
+    var input = document.getElementById('cmdk-input');
+    if (!list || !input) return;
+    var items = cmdkMatches(input.value);
+    if (cmdkIndex >= items.length) cmdkIndex = Math.max(0, items.length - 1);
+    list.innerHTML = items.length
+      ? items.map(function (item, index) {
+          return '<div class="cmdk-item' + (index === cmdkIndex ? ' active' : '') + '" data-cmdk-index="' + index + '" role="option">' +
+            '<span>' + escapeHtml(item.title) + '</span><small>' + escapeHtml(item.hint || '') + '</small></div>';
+        }).join('')
+      : '<div class="cmdk-empty">没有匹配的命令</div>';
+    list.querySelectorAll('[data-cmdk-index]').forEach(function (node) {
+      node.addEventListener('click', function () {
+        runCmdk(Number(node.getAttribute('data-cmdk-index')));
+      });
+    });
+  }
+
+  function runCmdk(index) {
+    var items = cmdkMatches((document.getElementById('cmdk-input') || {}).value || '');
+    var item = items[index];
+    closeCmdk();
+    if (item) item.run();
+  }
+
+  function openCmdk() {
+    var host = document.getElementById('cmdk');
+    var input = document.getElementById('cmdk-input');
+    if (!host || !input) return;
+    host.hidden = false;
+    input.value = '';
+    cmdkIndex = 0;
+    renderCmdk();
+    input.focus();
+  }
+
+  function closeCmdk() {
+    var host = document.getElementById('cmdk');
+    if (host) host.hidden = true;
+  }
+
+  (function bindCmdk() {
+    var host = document.getElementById('cmdk');
+    var input = document.getElementById('cmdk-input');
+    if (!host || !input || host.getAttribute('data-bound') === '1') return;
+    host.setAttribute('data-bound', '1');
+    input.addEventListener('input', function () { cmdkIndex = 0; renderCmdk(); });
+    input.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        cmdkIndex += 1;
+        renderCmdk();
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        cmdkIndex = Math.max(0, cmdkIndex - 1);
+        renderCmdk();
+      } else if (event.key === 'Enter') {
+        event.preventDefault();
+        runCmdk(cmdkIndex);
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        closeCmdk();
+      }
+    });
+    host.addEventListener('click', function (event) {
+      if (event.target === host) closeCmdk();
+    });
+    document.addEventListener('keydown', function (event) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        if (host.hidden) openCmdk();
+        else closeCmdk();
+      }
+    });
+  })();
 
   var tabScroll = {};
 

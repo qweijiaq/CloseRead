@@ -1,10 +1,10 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 
-import { analyzeResource } from '../analyze/index.js'
+import { analyzeResource, suggestSelection } from '../analyze/index.js'
 import { chatJson } from '../analyze/chat.js'
 import { usageSummary } from '../analyze/usage.js'
 import { z } from 'zod'
@@ -49,6 +49,9 @@ import {
 } from '../ingest/articles.js'
 import { readEpub } from '../ingest/epub.js'
 import { contentHash, ingestDocxBuffer, ingestEpubBuffer, ingestMobiBuffer, ingestPdfBuffer, ingestSource, ingestText } from '../ingest/index.js'
+import { segmentsFromText } from '../ingest/segment.js'
+import { countWords } from '../ingest/summary.js'
+import { intensiveReadingMinutes } from '../pack/reading-time.js'
 import { extractArticle } from '../ingest/web.js'
 import { readMobi } from '../ingest/mobi.js'
 import { readPdf } from '../ingest/pdf.js'
@@ -1432,8 +1435,11 @@ async function handle(
 
   // The read-only demo (used by bots and by visitors who have not written yet)
   // must never accept writes: a script could otherwise pollute the shared library.
-  const feedbackPath = url.pathname === '/api/feedback' || url.pathname.startsWith('/api/feedback/')
-  if (currentWorkspace().readOnly && method !== 'GET' && method !== 'HEAD' && !feedbackPath) {
+  const statelessWrite =
+    url.pathname === '/api/preview' ||
+    url.pathname === '/api/feedback' ||
+    url.pathname.startsWith('/api/feedback/')
+  if (currentWorkspace().readOnly && method !== 'GET' && method !== 'HEAD' && !statelessWrite) {
     sendJson(response, 403, { error: '演示空间是只读的，请先创建自己的空间。' })
     return
   }
@@ -1534,6 +1540,26 @@ async function handle(
       response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
       response.end(error instanceof Error ? error.message : String(error))
     }
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/app.js') {
+    const version = url.searchParams.get('v') ?? ''
+    let script = appScriptCache.get(version)
+    if (!script) {
+      externalizeAppScript(renderReviewApp())
+      script = appScriptCache.get(version) ?? [...appScriptCache.values()].at(-1)
+    }
+    if (!script) {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Script not found')
+      return
+    }
+    response.writeHead(200, {
+      'content-type': 'text/javascript; charset=utf-8',
+      'cache-control': 'public, max-age=31536000, immutable',
+    })
+    response.end(script)
     return
   }
 
@@ -1860,8 +1886,9 @@ async function handle(
   }
 
   if (method === 'GET' && url.pathname === '/') {
+    const { html } = externalizeAppScript(renderReviewApp())
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
-    response.end(renderReviewApp())
+    response.end(html)
     return
   }
 
@@ -3619,11 +3646,11 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         return
       }
       const me = currentWorkspace().id
-      if (record.publishedBy !== me) {
+      if (record.publishedBy !== me && !isOwnerVisitor(me)) {
         sendJson(response, 403, {
           error: record.publishedBy
             ? '这个学习包是别人公开的，只有作者本人能取消。'
-            : '这是内置的示例内容，不能取消公开。',
+            : '只有站点作者能移除内置的示例内容。',
         })
         return
       }
@@ -3642,6 +3669,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     await shared.reload().catch(() => {})
     const sharedById = new Map(shared.packs().map((pack) => [pack.id, pack]))
     const me = currentWorkspace().id
+    const owner = isOwnerVisitor(me)
     sendJson(response, 200, {
       packs: store.packs().map((pack) => {
         const issueId = pack.parentResourceId ?? pack.resourceId
@@ -3651,6 +3679,10 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
           ...packView(store, pack),
           shared: sharedById.has(pack.id),
           publishedByMe: sharedById.get(pack.id)?.publishedBy === me,
+          builtIn: Boolean(sharedById.get(pack.id)) && !sharedById.get(pack.id)?.publishedBy,
+          canUnpublish:
+            Boolean(sharedById.get(pack.id)) &&
+            (sharedById.get(pack.id)?.publishedBy === me || owner),
           issueId,
           issueTitle: issue?.title ?? issueId,
           chapter: chapterNav(store, pack),
@@ -3758,6 +3790,48 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       } finally {
         compileActive -= 1
       }
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/preview') {
+    try {
+      const body = await readJson(request, 2_000_000)
+      const text = typeof body.text === 'string' ? body.text.trim() : ''
+      if (text.length < 40) {
+        sendJson(response, 400, { error: '内容太短，先粘贴一篇完整的文章。' })
+        return
+      }
+      const title = typeof body.title === 'string' ? body.title.trim() : ''
+      const resource = {
+        id: 'preview',
+        title: title || '预览',
+        kind: 'text' as const,
+        source: 'preview',
+        text,
+        segments: segmentsFromText(text),
+        wordCount: countWords(text),
+        createdAt: new Date().toISOString(),
+        metadata: { format: 'preview' },
+      } as unknown as Resource
+      const selection = suggestSelection(resource, { limit: 'auto' })
+      const articles = getResourceArticles(resource)
+      sendJson(response, 200, {
+        ok: true,
+        words: resource.wordCount,
+        segments: resource.segments.length,
+        articles: articles.length,
+        items: selection.recommended,
+        cefr: selection.cefr,
+        minutes: intensiveReadingMinutes({
+          wordCount: resource.wordCount,
+          paragraphs: resource.segments.length,
+          items: selection.recommended,
+        }),
+        note: selection.reason,
+      })
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
     }
@@ -5244,6 +5318,33 @@ function closeHttpServer(instance: http.Server): Promise<void> {
     instance.close((error) => (error ? reject(error) : resolve()))
     instance.closeAllConnections?.()
   })
+}
+
+
+/**
+ * The shell is one big inline script. Serving it as a separate, immutable file
+ * lets the browser cache it, so a repeat visit only refetches the HTML.
+ */
+const appScriptCache = new Map<string, string>()
+
+function externalizeAppScript(html: string): { html: string; version: string } {
+  let best: { start: number; end: number; body: string } | undefined
+  const pattern = /<script>([\s\S]*?)<\/script>/g
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(html)) !== null) {
+    const body = match[1] ?? ''
+    if (!best || body.length > best.body.length) {
+      best = { start: match.index, end: match.index + match[0].length, body }
+    }
+  }
+  if (!best || best.body.length < 20_000) return { html, version: '' }
+  const version = createHash('sha1').update(best.body).digest('hex').slice(0, 12)
+  if (appScriptCache.size > 4) appScriptCache.clear()
+  appScriptCache.set(version, best.body)
+  return {
+    html: html.slice(0, best.start) + `<script src="/app.js?v=${version}"></script>` + html.slice(best.end),
+    version,
+  }
 }
 
 export async function startReviewServer(options: { port?: number } = {}): Promise<ReviewServer> {

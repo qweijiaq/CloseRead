@@ -477,10 +477,12 @@ export class VisitorRegistry {
 
     const personal = await this.hasWorkspace(id)
     if (!personal) {
-      // Feedback is stored server-side and must not force a workspace claim.
-      const feedbackWrite =
-        isWriteMethod(method) && (request.url ?? '').startsWith('/api/feedback')
-      if (!isWriteMethod(method) || feedbackWrite) {
+      // Feedback and previews do not need a workspace: nothing is stored for
+      // the visitor, so claiming one would just create an empty directory.
+      const statelessWrite =
+        isWriteMethod(method) &&
+        ((request.url ?? '').startsWith('/api/feedback') || (request.url ?? '').startsWith('/api/preview'))
+      if (!isWriteMethod(method) || statelessWrite) {
         return { workspace: this.demo(), store: this.demoStore, visitorId: id, personal: false }
       }
       const claimed = await this.claim(id, ip, created === false)
