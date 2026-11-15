@@ -792,7 +792,7 @@ describe('review server', { concurrency: 1 }, () => {
   })
 
   it('rejects an unsupported ebook extension', async () => {
-    const response = await fetch(`${server.url}/api/import/ebook?name=book.txt`, {
+    const response = await fetch(`${server.url}/api/import/ebook?name=book.xyz`, {
       method: 'POST',
       body: Buffer.from('plain text'),
     })

@@ -104,6 +104,30 @@ curl -sS https://closeread.example.com/api/public/stats
 - 因此服务器上没有任何需要备份、清理或迁移的用户数据。备份、容量、隐私都由访客自己的浏览器承担。
 - 导出/导入在「设置 → 设备迁移」里：导出一个 JSON 文件，在新设备上导入即可。
 
+## 4.1 公共库（作者发布，所有人可读）
+
+没有模型 Key 的访客什么也生成不了，但他们可以读你发布的内容。做法是在服务器上导入并生成，放进公共库：
+
+```bash
+cd /opt/closeread
+
+# 1. 作者在容器里导入并生成（需要 .env 里有 LEARN_API_KEY）
+docker compose exec app pnpm dev add /tmp/article.pdf --build --title "文章标题"
+
+# 2. 预生成「看答案」用的内容，这样没 Key 的访客也能看到答案
+docker compose exec app pnpm dev prefetch latest
+
+# 3. 确认公共库里有什么
+docker compose exec app pnpm dev list
+```
+
+- 公共库就是服务器的 `data/` 和 `packs/`（和演示内容同一个位置）。
+- 访客的「文章」页会多出一个「公共库」分组，只显示他还没读过的包。
+- 访客第一次打开某个公共包时，服务器会把这份包复制到他的临时空间，之后进度、批注、词卡都按他自己的记录走。
+- 访客仍然可以用自己的 Key 导入私有文章；公共库只是额外内容。
+
+不做第 2 步的话，没 Key 的访客点「看答案」会失败——那一步是模型调用。`prefetch` 只处理段落笔记里的「想一想」问题，已生成过的会跳过。
+
 ## 5. 统计口径
 
 `GET /api/public/stats`

@@ -15,8 +15,9 @@ import { readMobi } from './ingest/mobi.js'
 import { readPdf } from './ingest/pdf.js'
 import { previewText, resourceWarnings } from './ingest/summary.js'
 import { writePack } from './pack/build.js'
-import { loadPack } from './pack/mutate.js'
+import { loadPack, savePackFiles } from './pack/mutate.js'
 import { renderHtml } from './pack/html.js'
+import { answerReadingQuestion } from './analyze/note-answer.js'
 import { startReviewServer } from './review/server.js'
 import { VisitorRegistry, pruneWorkspaces } from './review/visitors.js'
 import { restoreLibraryBackup, writeLibraryBackup } from './store/backup.js'
@@ -70,6 +71,7 @@ Usage:
   pnpm dev backup [file]              Back up the library to one JSON file
   pnpm dev restore <file> --force     Restore the library from a backup
   pnpm dev guests [--days N] [--force]  List visitor workspaces; prune idle ones
+  pnpm dev prefetch <id|latest>       Pre-generate reading answers for shared packs
 
 Add options:
   --title <name>   Override the resource title
@@ -594,6 +596,51 @@ async function commandStyle(
   }
 }
 
+
+/**
+ * Pre-generate the answers that the reader otherwise asks the model for on
+ * click, so visitors without a key can still reveal them.
+ */
+async function commandPrefetch(target: string | undefined): Promise<void> {
+  const store = await Store.open(storePath())
+  const pack = target && target !== 'latest'
+    ? store.findPack(target)
+    : store.packs()[0]
+  if (!pack) {
+    console.error('没有找到学习包。先运行 pnpm dev add <file> --build。')
+    process.exitCode = 1
+    return
+  }
+  if (!hasLlm()) {
+    console.error('预生成答案需要模型 Key（LEARN_API_KEY 或 data/llm.json）。')
+    process.exitCode = 1
+    return
+  }
+  const contents = await loadPack(pack.dir)
+  const paragraphs = contents.reading ?? []
+  const pending = paragraphs.filter((entry) => entry.note?.question && !entry.note.answer)
+  console.log(`${pack.id}: ${pending.length} / ${paragraphs.length} 段待生成`)
+  let done = 0
+  for (const paragraph of pending) {
+    try {
+      const answer = await answerReadingQuestion(
+        paragraph.original,
+        paragraph.note!.question!,
+        contents.title,
+      )
+      paragraph.note!.answer = answer
+      done += 1
+      console.log(`  [${done}/${pending.length}] 第 ${paragraph.index + 1} 段 ok`)
+      // Save as we go so an interrupted run keeps its progress.
+      if (done % 3 === 0) await savePackFiles(contents, pack.dir)
+    } catch (error) {
+      console.warn(`  第 ${paragraph.index + 1} 段失败：${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  await savePackFiles(contents, pack.dir)
+  console.log(`完成：写入 ${done} 条答案 → ${pack.dir}`)
+}
+
 async function commandGuests(options: { days?: number; force: boolean }): Promise<void> {
   function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`
@@ -822,6 +869,9 @@ async function main(): Promise<void> {
       break
     case 'backup':
       await commandBackup(positionals[1] ?? values.out)
+      break
+    case 'prefetch':
+      await commandPrefetch(positionals[1] ?? 'latest')
       break
     case 'guests':
       await commandGuests({

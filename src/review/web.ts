@@ -1614,7 +1614,7 @@ ${pwaHead()}
       <button class="active" type="button" data-source="text" role="tab">粘贴文本</button>
       <button type="button" data-source="url" role="tab">网页链接</button>
       <button type="button" data-source="pdf" role="tab">PDF</button>
-      <button type="button" data-source="ebook" role="tab">EPUB / MOBI</button>
+      <button type="button" data-source="ebook" role="tab">电子书 / 文件</button>
     </div>
     <details class="llm-settings" id="llm-settings">
       <summary>模型设置 <span id="llm-settings-state">检测中…</span></summary>
@@ -1701,7 +1701,7 @@ ${pwaHead()}
         <h2>EPUB / MOBI / DOCX</h2>
         <p>支持 EPUB、MOBI、AZW、AZW3 和 DOCX；DRM 加密文件无法解析。</p>
         <input id="import-ebook-title" type="text" placeholder="标题（可选）">
-        <input id="import-ebook" type="file" accept=".epub,.mobi,.azw,.azw3,.docx,application/epub+zip,application/x-mobipocket-ebook,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+        <input id="import-ebook" type="file" accept=".epub,.mobi,.azw,.azw3,.docx,.html,.htm,.txt,.md,.markdown,application/epub+zip,application/x-mobipocket-ebook,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/html,text/plain,text/markdown">
         <button class="btn btn-primary" type="submit">上传并导入</button>
       </form>
     </div>
@@ -3420,9 +3420,14 @@ ${pwaHead()}
     if (els.packsList && !els.packsList.innerHTML.trim()) {
       els.packsList.innerHTML = '<div class="empty loading"><span class="spinner"></span>正在加载文章…</div>';
     }
-    api('/api/packs').then(function (result) {
+    Promise.all([
+      api('/api/packs'),
+      api('/api/shared').catch(function () { return { packs: [] }; })
+    ]).then(function (results) {
+      var result = results[0] || {};
+      var sharedPacks = (results[1] && results[1].packs) || [];
       var packs = result.packs || [];
-      if (!packs.length) {
+      if (!packs.length && !sharedPacks.length) {
         els.packsList.innerHTML = '<div class="empty"><strong>还没有学习包</strong>在「导入」里添加 PDF、粘贴文字或填写链接。' +
           '<button class="btn btn-primary" data-go-tab="import" style="margin-top:14px">去导入</button></div>';
         return;
@@ -3439,7 +3444,23 @@ ${pwaHead()}
         byIssue[key].packs.push(pack);
       });
 
-      els.packsList.innerHTML = groups.map(function (group) {
+      var sharedHtml = sharedPacks.length
+        ? '<div class="pack-group pack-group-shared">' +
+            '<div class="pack-group-head"><strong>公共库</strong>' +
+            '<span>作者发布 · ' + sharedPacks.length + ' 个学习包</span></div>' +
+            sharedPacks.map(function (pack) {
+              return '<div class="pack-row">' +
+                '<div><a href="' + escapeHtml(pack.url) + '">' + escapeHtml(pack.title) + '</a>' +
+                '<div class="due">可直接读 · ' + pack.itemCount + ' 项 · 答案已预生成</div></div>' +
+                '<div class="pack-actions">' +
+                  '<a class="btn btn-primary" href="' + escapeHtml(pack.url) + '">精读</a>' +
+                '</div>' +
+              '</div>';
+            }).join('') +
+          '</div>'
+        : '';
+
+      els.packsList.innerHTML = sharedHtml + groups.map(function (group) {
         var rows = group.packs.map(function (pack) {
           var label = pack.articleIndex === null || pack.articleIndex === undefined
             ? '整本'

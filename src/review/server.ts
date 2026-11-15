@@ -49,6 +49,7 @@ import {
 } from '../ingest/articles.js'
 import { readEpub } from '../ingest/epub.js'
 import { contentHash, ingestDocxBuffer, ingestEpubBuffer, ingestMobiBuffer, ingestPdfBuffer, ingestSource, ingestText } from '../ingest/index.js'
+import { extractArticle } from '../ingest/web.js'
 import { readMobi } from '../ingest/mobi.js'
 import { readPdf } from '../ingest/pdf.js'
 import { previewText, resourceWarnings } from '../ingest/summary.js'
@@ -551,6 +552,34 @@ export async function compileToPack(input: CompileInput): Promise<CompileResult>
     })
   } finally {
     await fs.rm(tempRoot, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+
+/**
+ * The shared library lives in the server's root workspace. Visitors get their
+ * own copy the first time they open a shared pack, so progress, notes and
+ * cards keep working without a second storage model.
+ */
+async function adoptSharedPack(shared: Store, store: Store, packId: string): Promise<boolean> {
+  if (!packId || store.findPack(packId)) return true
+  let record = shared.findPack(packId)
+  if (!record) {
+    // The CLI may have published after this process started.
+    await shared.reload().catch(() => {})
+    record = shared.findPack(packId)
+  }
+  if (!record) return false
+  const target = path.join(config.packsDir, path.basename(record.dir))
+  try {
+    await fs.cp(record.dir, target, { recursive: true, errorOnExist: false, force: false })
+    const contents = await loadPack(target)
+    await store.addPack({ ...record, dir: target })
+    const items = (contents.items ?? []).map((item) => ({ ...item }))
+    if (items.length) await store.upsertItems(items as never)
+    return true
+  } catch {
+    return false
   }
 }
 
@@ -1279,6 +1308,7 @@ async function handle(
   lan: LanController,
   requireToken: boolean,
   visitors: VisitorRegistry,
+  shared: Store,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://localhost')
   const method = request.method ?? 'GET'
@@ -1342,6 +1372,15 @@ async function handle(
     }
   }
 
+
+  // Opening a shared pack copies it into this visitor's workspace first.
+  const packIdInPath =
+    /^\/api\/pack\/([^/]+)/.exec(url.pathname)?.[1] ??
+    /^\/api\/packs\/([^/]+)/.exec(url.pathname)?.[1] ??
+    /^\/read\/([^/]+)/.exec(url.pathname)?.[1]
+  if (packIdInPath && shared !== store) {
+    await adoptSharedPack(shared, store, decodeURIComponent(packIdInPath))
+  }
 
   if (method === 'GET' && (url.pathname === '/lab' || url.pathname === '/lab/')) {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
@@ -1775,6 +1814,27 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
 
   if (method === 'GET' && url.pathname === '/api/public/stats') {
     sendJson(response, 200, { ...visitors.stats(), mode: publicModeEnabled() ? 'public' : 'local' })
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/shared') {
+    // Packs published by the CLI land on disk; pick them up without a restart.
+    await shared.reload().catch(() => {})
+    const mine = new Set(store.packs().map((pack) => pack.id))
+    sendJson(response, 200, {
+      packs: shared
+        .packs()
+        .filter((pack) => !mine.has(pack.id))
+        .map((pack) => ({
+          id: pack.id,
+          title: pack.title ?? pack.id,
+          itemCount: pack.itemCount,
+          createdAt: pack.createdAt,
+          issueId: pack.parentResourceId ?? pack.resourceId,
+          shared: true,
+          url: `/read/${encodeURIComponent(pack.id)}`,
+        })),
+    })
     return
   }
 
@@ -3523,8 +3583,20 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         resource = await ingestMobiBuffer(buffer, { filename, title })
       } else if (extension === '.docx') {
         resource = await ingestDocxBuffer(buffer, { filename, title })
+      } else if (['.txt', '.md', '.markdown', '.text'].includes(extension)) {
+        resource = await ingestText(buffer.toString('utf8'), {
+          ...(title ? { title } : {}),
+          source: filename,
+        })
+      } else if (extension === '.html' || extension === '.htm') {
+        const extracted = extractArticle(buffer.toString('utf8'), filename)
+        if (extracted.chars < 200) throw new Error('这个 HTML 里没提取到正文。')
+        resource = await ingestText(extracted.text, {
+          title: title || extracted.title,
+          source: filename,
+        })
       } else {
-        throw new Error('只支持 EPUB、MOBI、AZW、AZW3、DOCX 文件。')
+        throw new Error('只支持 EPUB、MOBI、AZW、AZW3、DOCX、HTML、TXT、Markdown 文件。')
       }
       try {
         resource.metadata.uploadPath = await saveUpload(buffer, filename)
@@ -4916,7 +4988,7 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
         // (and no cookie) should be created for it.
         if ((request.url ?? '').startsWith('/api/compile')) {
           await runInWorkspace(rootWorkspaceRef(), () =>
-            handle(request, response, store, lan, requireToken, visitors),
+            handle(request, response, store, lan, requireToken, visitors, store),
           )
           return
         }
@@ -4930,7 +5002,7 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
           return
         }
         await runInWorkspace(context.workspace, () =>
-          handle(request, response, context.store, lan, requireToken, visitors),
+          handle(request, response, context.store, lan, requireToken, visitors, store),
         )
         // Any write inside the scratch workspace is captured here so the
         // browser can pull it even when the reader page made the change.
