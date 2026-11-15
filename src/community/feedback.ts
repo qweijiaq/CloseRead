@@ -192,6 +192,15 @@ export class FeedbackBoard {
     return true
   }
 
+  async remove(id: string): Promise<boolean> {
+    await this.load()
+    const index = this.items.findIndex((entry) => entry.id === id)
+    if (index < 0) return false
+    this.items.splice(index, 1)
+    await this.write()
+    return true
+  }
+
   /** Used by the CLI: resolve a short id prefix. */
   async find(idOrPrefix: string): Promise<FeedbackItem | undefined> {
     await this.load()

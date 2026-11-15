@@ -1889,6 +1889,17 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     return
   }
 
+  const deleteMatch = /^\/api\/feedback\/([^/]+)$/.exec(url.pathname)
+  if (method === 'DELETE' && deleteMatch) {
+    if (visitorId !== 'owner-main') {
+      sendJson(response, 403, { error: '只有站点作者能删除意见。' })
+      return
+    }
+    const removed = await feedbackBoard.remove(decodeURIComponent(deleteMatch[1]!))
+    sendJson(response, removed ? 200 : 404, removed ? { ok: true } : { error: '这条意见不在了。' })
+    return
+  }
+
   const statusMatch = /^\/api\/feedback\/([^/]+)\/status$/.exec(url.pathname)
   if (method === 'POST' && statusMatch) {
     if (visitorId !== 'owner-main') {

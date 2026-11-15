@@ -3569,6 +3569,7 @@ ${pwaHead()}
             return '<button type="button" data-feedback-set="' + item.id + '" data-feedback-status="' + status + '">' +
               (FEEDBACK_STATUS_LABEL[status] || status) + '</button>';
           }).join('') +
+          '<button type="button" data-feedback-delete="' + item.id + '">删除</button>' +
         '</div>'
       : '';
     return '<div class="feedback-item">' +
@@ -3649,6 +3650,18 @@ ${pwaHead()}
           headers: { 'content-type': 'application/json' },
           body: '{}'
         }).then(function () { loadFeedback(); })
+          .catch(function (error) { toast(error.message); });
+        return;
+      }
+      var remover = event.target.closest('[data-feedback-delete]');
+      if (remover) {
+        if (!confirm('删除这条意见？')) return;
+        fetch('/api/feedback/' + encodeURIComponent(remover.getAttribute('data-feedback-delete')), { method: 'DELETE' })
+          .then(function (response) { return response.json().catch(function () { return {}; }); })
+          .then(function (data) {
+            if (data.error) throw new Error(data.error);
+            loadFeedback();
+          })
           .catch(function (error) { toast(error.message); });
         return;
       }

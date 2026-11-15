@@ -80,6 +80,16 @@ describe('feedback board', () => {
     assert.equal(list.counts.planned, 1)
   })
 
+  it('lets the owner remove an item', async () => {
+    const board = new FeedbackBoard(path.join(dir, 'remove.json'))
+    const added = await board.add('visitor-a', { kind: 'idea', body: '这条会被删掉' })
+    assert.ok(added.ok)
+    const id = added.ok ? added.item.id : ''
+    assert.equal(await board.remove(id), true)
+    assert.equal(await board.remove(id), false)
+    assert.equal((await board.list('visitor-a')).items.length, 0)
+  })
+
   it('sees changes made by another process', async () => {
     const file = path.join(dir, 'outside.json')
     const board = new FeedbackBoard(file)

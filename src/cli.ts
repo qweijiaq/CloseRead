@@ -76,7 +76,8 @@ Usage:
   pnpm dev prefetch <id|latest> [--expand] [--sentences]
                                       Pre-generate answers the reader would ask for
   pnpm dev unpublish <id|title>       Remove a pack from the shared library
-  pnpm dev feedback [status <id> <s>] List the feedback board or move a status
+  pnpm dev feedback [status <id> <s> | delete <id>]
+                                      List the feedback board, move or remove an item
 
 Add options:
   --title <name>   Override the resource title
@@ -613,6 +614,22 @@ async function commandStyle(
 async function commandFeedback(args: string[]): Promise<void> {
   const board = new FeedbackBoard(path.join(config.dataDir, 'community', 'feedback.json'))
   const [action, id, status] = args
+  if (action === 'delete' || action === 'remove') {
+    if (!id) {
+      console.error('用法: pnpm dev feedback delete <id>')
+      process.exitCode = 1
+      return
+    }
+    const item = await board.find(id)
+    if (!item) {
+      console.error('没有找到这条意见。')
+      process.exitCode = 1
+      return
+    }
+    await board.remove(item.id)
+    console.log(`已删除 ${item.id}`)
+    return
+  }
   if (action === 'status') {
     if (!id || !status) {
       console.error('用法: pnpm dev feedback status <id> <open|planned|fixed|declined>')
