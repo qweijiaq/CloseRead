@@ -6,7 +6,20 @@ import { LLM_PROVIDERS, isLlmProvider, normalizeLlmProvider, providerPreset } fr
 describe('LLM provider presets', () => {
   it('lists the supported providers with usable defaults', () => {
     const ids = LLM_PROVIDERS.map((provider) => provider.id)
-    assert.deepEqual(ids, ['anthropic', 'openai', 'deepseek', 'google', 'alibaba', 'xai', 'glm', 'moonshot', 'custom'])
+    assert.deepEqual(ids, [
+      'anthropic',
+      'openai',
+      'deepseek',
+      'google',
+      'alibaba',
+      'xai',
+      'glm',
+      'moonshot',
+      'opencode',
+      'opencode-go',
+      'open-design',
+      'custom',
+    ])
     for (const provider of LLM_PROVIDERS) {
       assert.ok(provider.baseUrl.startsWith('https://'))
       assert.ok(provider.model.length > 0)

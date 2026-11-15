@@ -1992,14 +1992,19 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     return
   }
 
-  if (method === 'GET' && url.pathname === '/api/llm/models') {
-    if (!hasLlm()) {
-      sendJson(response, 400, { error: '还没有配置模型 API Key。' })
-      return
-    }
+  if ((method === 'GET' || method === 'POST') && url.pathname === '/api/llm/models') {
+    const body = method === 'POST' ? await readJson(request).catch(() => ({} as Record<string, unknown>)) : {}
+    const requestedProvider = typeof body.provider === 'string' ? normalizeLlmProvider(body.provider) : undefined
     try {
-      const models = await listProviderModels()
-      sendJson(response, 200, { models, provider: llmStatus().label })
+      const models = await listProviderModels({
+        ...(requestedProvider ? { provider: requestedProvider } : {}),
+        ...(typeof body.apiKey === 'string' && body.apiKey.trim() ? { apiKey: body.apiKey.trim() } : {}),
+        ...(typeof body.baseUrl === 'string' && body.baseUrl.trim() ? { baseUrl: body.baseUrl.trim() } : {}),
+      })
+      sendJson(response, 200, {
+        models,
+        provider: providerPreset(requestedProvider ?? config.llm.provider).label,
+      })
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
     }

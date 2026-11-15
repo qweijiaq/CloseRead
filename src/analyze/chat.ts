@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { config } from '../config.js'
+import { providerExtraHeaders } from '../llm/providers.js'
 import { recordUsage } from './usage.js'
 
 /** Escape raw newlines/tabs that some models leave inside JSON strings. */
@@ -110,6 +111,7 @@ async function request(body: Record<string, unknown>, signal?: AbortSignal): Pro
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${config.llm.apiKey}`,
+      ...providerExtraHeaders(config.llm.provider),
     },
     body: JSON.stringify(body),
     signal: signal ? AbortSignal.any([timeout, signal]) : timeout,

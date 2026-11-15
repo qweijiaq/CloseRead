@@ -1383,6 +1383,8 @@ ${pwaHead()}
   .settings-details p { margin: 8px 0 6px; color: var(--muted); font-size: 12px; line-height: 1.8; }
   .settings-details ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.8; }
   .import-note { margin: -4px 0 14px; }
+  .llm-hint { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+  .llm-hint[hidden] { display: none; }
   @media (max-width: 760px) {
     .community-inline { display: flex; margin: 2px 2px 14px; }
   }
@@ -1626,6 +1628,7 @@ ${pwaHead()}
         </label>
         <label class="llm-field">Base URL
           <input id="llm-base-url" type="text" autocomplete="off" spellcheck="false" placeholder="https://api.openai.com/v1">
+          <small class="llm-hint" id="llm-base-hint" hidden></small>
         </label>
       </div>
       <div class="llm-settings-actions">
@@ -3811,11 +3814,27 @@ ${pwaHead()}
     });
   }
 
+  function setLlmHint(text) {
+    var el = document.getElementById('llm-base-hint');
+    if (!el) return;
+    el.textContent = text || '';
+    el.hidden = !text;
+  }
+
   function refreshModels() {
     if (!els.llmRefresh) return;
     setBusy(els.llmRefresh, true, '查询中…');
     if (els.llmRefreshStatus) els.llmRefreshStatus.textContent = '';
-    api('/api/llm/models').then(function (result) {
+    // Send what is in the form so refreshing works before saving the settings.
+    api('/api/llm/models', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        provider: els.llmProvider ? els.llmProvider.value : '',
+        apiKey: els.llmApiKey ? els.llmApiKey.value.trim() : '',
+        baseUrl: els.llmBaseUrl ? els.llmBaseUrl.value.trim() : ''
+      })
+    }).then(function (result) {
       var models = result.models || [];
       renderLiveModelOptions(models, els.llmModel ? els.llmModel.value : '');
       if (els.llmRefreshStatus) els.llmRefreshStatus.textContent = '已获取 ' + models.length + ' 个模型';
@@ -3835,6 +3854,8 @@ ${pwaHead()}
     if (els.llmModel) els.llmModel.value = status.model || '';
     renderModelOptions(status.provider || 'openai', status.model || '');
     if (els.llmBaseUrl) els.llmBaseUrl.value = status.baseUrl || '';
+    var statusPreset = llmPreset(status.provider || 'openai');
+    setLlmHint(statusPreset ? statusPreset.hint : '');
     if (els.llmApiKey) {
       els.llmApiKey.value = '';
       els.llmApiKey.placeholder = status.configured ? '已配置，留空保持不变' : 'sk-...';
@@ -5374,6 +5395,7 @@ ${pwaHead()}
         if (els.llmBaseUrl) els.llmBaseUrl.value = preset.baseUrl;
         if (els.llmApiKey) els.llmApiKey.placeholder = '填写 ' + preset.label + ' 的 API Key';
         renderModelOptions(preset.id, preset.model);
+        setLlmHint(preset.hint);
       }
     });
   }

@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 export type LlmProviderId =
   | 'anthropic'
   | 'openai'
@@ -7,6 +9,9 @@ export type LlmProviderId =
   | 'xai'
   | 'glm'
   | 'moonshot'
+  | 'opencode'
+  | 'opencode-go'
+  | 'open-design'
   | 'custom'
 
 export type LlmApi = 'openai' | 'anthropic'
@@ -25,6 +30,8 @@ export interface LlmProviderPreset {
   model: string
   keyEnv: string[]
   models: LlmModelOption[]
+  /** Shown under the Base URL field; use it when the default may not fit. */
+  hint?: string
 }
 
 export const LLM_PROVIDERS: LlmProviderPreset[] = [
@@ -150,6 +157,57 @@ export const LLM_PROVIDERS: LlmProviderPreset[] = [
     ],
   },
   {
+    id: 'opencode',
+    label: 'OpenCode Zen',
+    api: 'openai',
+    baseUrl: 'https://opencode.ai/zen/v1',
+    model: 'deepseek-v4.1-flash-free',
+    keyEnv: ['OPENCODE_API_KEY'],
+    hint: '在 opencode.ai 控制台创建 Key；点「刷新可用模型」可以拉到全部模型，部分免费模型有额度限制。',
+    models: [
+      { id: 'deepseek-v4.1-flash-free', label: 'DeepSeek V4.1 Flash（免费）', description: '快速档，适合日常精读' },
+      { id: 'big-pickle', label: 'Big Pickle（免费）', description: '推理与多步任务' },
+      { id: 'glm-5.3-flash-free', label: 'GLM-5.3 Flash（免费）', description: '中文释义友好' },
+      { id: 'deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash', description: '付费档，速度稳定' },
+      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', description: '写作与长文理解' },
+      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', description: '便宜快速' },
+      { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash', description: '长上下文' },
+      { id: 'glm-5.3', label: 'GLM-5.3', description: '中文表现好' },
+      { id: 'kimi-k3', label: 'Kimi K3', description: '长文阅读' },
+    ],
+  },
+  {
+    id: 'opencode-go',
+    label: 'OpenCode Go',
+    api: 'openai',
+    baseUrl: 'https://opencode.ai/zen/go/v1',
+    model: 'deepseek-v4.1-flash',
+    keyEnv: ['OPENCODE_GO_API_KEY'],
+    hint: '需要 OpenCode Go 订阅的 Key；这个网关要求带上会话标识，CloseRead 会自动添加。',
+    models: [
+      { id: 'deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash', description: '默认档，性价比高' },
+      { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', description: '更强的推理' },
+      { id: 'glm-5.3', label: 'GLM-5.3', description: '中文友好' },
+      { id: 'glm-5.3-flash', label: 'GLM-5.3 Flash', description: '快速档' },
+      { id: 'kimi-k3', label: 'Kimi K3', description: '长文阅读' },
+      { id: 'qwen3.8-max', label: 'Qwen3.8 Max', description: '旗舰' },
+      { id: 'qwen3.8-flash', label: 'Qwen3.8 Flash', description: '快速档' },
+      { id: 'minimax-m3', label: 'MiniMax M3', description: '通用' },
+      { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', description: '轻量' },
+      { id: 'grok-4.7', label: 'Grok 4.7', description: '推理' },
+    ],
+  },
+  {
+    id: 'open-design',
+    label: 'OpenDesign',
+    api: 'openai',
+    baseUrl: 'https://api.open-design.ai/v1',
+    model: 'claude-sonnet-5-5',
+    keyEnv: ['OPEN_DESIGN_API_KEY'],
+    hint: 'Base URL 和模型 ID 以 OpenDesign 控制台 → Connection setup 显示的为准，这里的默认值只是占位，请按你的账号改。',
+    models: [],
+  },
+  {
     id: 'custom',
     label: '自定义 OpenAI 兼容',
     api: 'openai',
@@ -171,12 +229,31 @@ const PROVIDER_ALIASES: Record<string, LlmProviderId> = {
   dashscope: 'alibaba',
   zhipu: 'glm',
   kimi: 'moonshot',
+  zen: 'opencode',
+  'opencode-zen': 'opencode',
+  opencodezen: 'opencode',
+  go: 'opencode-go',
+  opencodego: 'opencode-go',
+  opendesign: 'open-design',
+  'open-design-ai': 'open-design',
 }
 
 export function normalizeLlmProvider(value: string): LlmProviderId | undefined {
   const normalized = value.trim().toLowerCase()
   if (isLlmProvider(normalized)) return normalized
   return PROVIDER_ALIASES[normalized]
+}
+
+let opencodeSession = ''
+
+/**
+ * OpenCode gateways route requests by session. Send one stable id per process
+ * so their edge can keep a request on the same upstream.
+ */
+export function providerExtraHeaders(id: LlmProviderId): Record<string, string> {
+  if (id !== 'opencode' && id !== 'opencode-go') return {}
+  if (!opencodeSession) opencodeSession = randomUUID()
+  return { 'x-opencode-session': opencodeSession }
 }
 
 export function providerPreset(id: string): LlmProviderPreset {

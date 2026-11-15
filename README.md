@@ -123,7 +123,7 @@ The desktop app keeps data under Electron's `userData` directory. Open **Setting
 
 Without a model key, CloseRead uses its heuristic pipeline for structure, notes, cards and exercises. Chinese glosses and short translations then come from public dictionary and machine-translation endpoints, so quality is shallower and some text leaves your machine.
 
-With a key, you can use DeepSeek, OpenAI-compatible endpoints, Anthropic, Gemini, Qwen/DashScope, GLM/Zhipu, xAI or Moonshot. Configure it in the import panel's **Model settings**, or through environment variables such as `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DASHSCOPE_API_KEY` or `GLM_API_KEY`. Keys stored in the app live in `data/llm.json`.
+With a key, you can use DeepSeek, OpenAI-compatible endpoints, Anthropic, Gemini, Qwen/DashScope, GLM/Zhipu, xAI, Moonshot, OpenCode Zen, OpenCode Go or OpenDesign. Configure it in the import panel's **Model settings**, or through environment variables such as `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DASHSCOPE_API_KEY` or `GLM_API_KEY`. Keys stored in the app live in `data/llm.json`.
 
 TTS is separate and optional. Supported providers are macOS system voices, Microsoft Edge online voices, Alibaba Cloud Bailian `qwen3-tts-flash`, GLM-TTS, Gemini TTS, MiniMax, ElevenLabs and OpenAI-compatible `/audio/speech` endpoints.
 

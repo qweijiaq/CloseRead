@@ -1,5 +1,6 @@
 import { config } from '../config.js'
-import { providerPreset } from './providers.js'
+import { providerExtraHeaders, providerPreset } from './providers.js'
+import type { LlmProviderId } from './providers.js'
 
 /** Extract model ids from the common /models response shapes. */
 export function modelIdsFromResponse(value: unknown): string[] {
@@ -26,18 +27,30 @@ export function modelIdsFromResponse(value: unknown): string[] {
   return [...new Set(found)].sort((a, b) => a.localeCompare(b))
 }
 
-/** Ask the configured provider for its current model catalogue. */
-export async function listProviderModels(): Promise<string[]> {
-  if (!config.llm.apiKey.trim()) throw new Error('还没有配置模型 API Key。')
-  const preset = providerPreset(config.llm.provider)
-  const base = config.llm.baseUrl.replace(/\/+$/, '')
+export interface ModelListRequest {
+  provider?: LlmProviderId
+  apiKey?: string
+  baseUrl?: string
+}
+
+/**
+ * Ask a provider for its current model catalogue. The form values take
+ * precedence so "refresh models" works before the settings are saved.
+ */
+export async function listProviderModels(request: ModelListRequest = {}): Promise<string[]> {
+  const provider = request.provider ?? config.llm.provider
+  const apiKey = (request.apiKey ?? config.llm.apiKey).trim()
+  const base = (request.baseUrl ?? config.llm.baseUrl).replace(/\/+$/, '')
+  if (!apiKey) throw new Error('请先填写 API Key，再刷新模型。')
+  if (!base) throw new Error('请先填写 Base URL，再刷新模型。')
+  const preset = providerPreset(provider)
   const url = `${base}/models`
-  const headers: Record<string, string> = { accept: 'application/json' }
+  const headers: Record<string, string> = { accept: 'application/json', ...providerExtraHeaders(provider) }
   if (preset.api === 'anthropic') {
-    headers['x-api-key'] = config.llm.apiKey
+    headers['x-api-key'] = apiKey
     headers['anthropic-version'] = '2023-06-01'
   } else {
-    headers.authorization = `Bearer ${config.llm.apiKey}`
+    headers.authorization = `Bearer ${apiKey}`
   }
   const response = await fetch(url, {
     headers,

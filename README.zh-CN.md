@@ -123,7 +123,7 @@ pnpm desktop:build:win    # Windows NSIS，请在 Windows 上运行
 
 不配置模型 Key 时，CloseRead 用规则流程生成结构、笔记、词卡和练习；中文释义和短译文来自公开词典/机器翻译接口，质量会浅一些，也会有文本离开本机。
 
-配置 Key 后，可以使用 DeepSeek、OpenAI 兼容接口、Anthropic、Gemini、Qwen/百炼、GLM/智谱、xAI 或 Moonshot。在导入面板的 **模型设置** 里填写，或使用 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`DASHSCOPE_API_KEY`、`GLM_API_KEY` 等环境变量。本地模式下 Key 保存在 `data/llm.json`；公开部署下只存在访客自己的浏览器里。
+配置 Key 后，可以使用 DeepSeek、OpenAI 兼容接口、Anthropic、Gemini、Qwen/百炼、GLM/智谱、xAI、Moonshot、OpenCode Zen、OpenCode Go 或 OpenDesign。在导入面板的 **模型设置** 里填写，或使用 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`DASHSCOPE_API_KEY`、`GLM_API_KEY` 等环境变量。本地模式下 Key 保存在 `data/llm.json`；公开部署下只存在访客自己的浏览器里。
 
 语音是另一项可选配置，支持 macOS 系统语音、Microsoft Edge 在线语音、阿里云百炼 `qwen3-tts-flash`、GLM-TTS、Gemini TTS、MiniMax、ElevenLabs 和 OpenAI 兼容的 `/audio/speech` 接口。
 
