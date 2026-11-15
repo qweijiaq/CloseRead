@@ -200,7 +200,7 @@ describe('browser reading flow', () => {
     await page.navigate(`${server.url}/?tab=settings`)
     await page.waitFor("document.querySelector('#settings-data') && document.querySelector('#settings-data').textContent.includes('数据目录')")
     const text = await page.evaluate<string>("document.getElementById('view-settings').textContent")
-    assert.match(text, /备份与恢复/)
+    assert.match(text, /设备迁移/)
     assert.match(text, /回收站/)
     assert.match(text, /本次运行用量/)
   })
