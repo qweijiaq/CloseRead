@@ -120,7 +120,7 @@ function closingHtml(): string {
     letter-spacing: .26em; text-transform: uppercase; color: #8a6a2f; }
   h1 { margin: 22px 0 0; font-family: Georgia, "Songti SC", serif; font-size: 96px;
     line-height: 1.12; letter-spacing: -.04em; font-weight: 700; }
-  main { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; gap: 46px; }
+  main { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: flex-start; gap: 52px; padding-top: 104px; }
   .step { display: flex; gap: 26px; align-items: flex-start; }
   .step b { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 26px;
     color: #8a6a2f; padding-top: 8px; letter-spacing: .1em; }
