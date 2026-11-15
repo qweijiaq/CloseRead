@@ -704,7 +704,8 @@ ${pwaHead()}
   .recent { margin-top: 26px; }
   .recent h2 { margin-bottom: 10px; }
   .resource-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 13px; padding: 12px 16px; }
-  .resource-main { min-width: 0; cursor: pointer; }
+  .resource-main { min-width: 0; flex: 1 1 auto; cursor: pointer; }
+  .resource-actions { display: flex; align-items: center; gap: 8px; flex: none; }
   .resource-title { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .resource-row .due { margin-top: 2px; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
   .graph-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -4297,7 +4298,8 @@ ${pwaHead()}
             '<div class="due">' + kindLabel(resource.kind) + ' · ' + resource.wordCount + ' 词 · ' + resource.segmentCount + ' 段' +
               (articleCount > 1 ? ' · ' + articleCount + ' 篇' : '') +
               (generatedCount ? ' · 已生成 ' + generatedCount + ' 篇' : '') + '</div>' +
-          '</div>' + action +
+          '</div>' +
+          '<div class="resource-actions">' + action + '</div>' +
         '</div>';
       }).join('');
     }).catch(function (error) {
