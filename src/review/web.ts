@@ -3839,6 +3839,94 @@ ${pwaHead()}
     }
   }
 
+  var sharedFilter = { query: '', level: '', sort: 'new' };
+
+  function renderSharedList() {
+    var host = document.getElementById('library-list');
+    var count = document.getElementById('library-count');
+    if (!host) return;
+    var packs = (state.sharedPacks || []).slice();
+    var query = sharedFilter.query.trim().toLowerCase();
+    if (query) {
+      packs = packs.filter(function (pack) {
+        return String(pack.title || '').toLowerCase().indexOf(query) >= 0;
+      });
+    }
+    if (sharedFilter.level) {
+      packs = packs.filter(function (pack) { return (pack.cefr || '') === sharedFilter.level; });
+    }
+    packs.sort(function (a, b) {
+      if (sharedFilter.sort === 'short') return (a.itemCount || 0) - (b.itemCount || 0);
+      if (sharedFilter.sort === 'title') return String(a.title || '').localeCompare(String(b.title || ''), 'zh');
+      return String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+    });
+    if (count) count.textContent = packs.length + ' / ' + (state.sharedPacks || []).length + ' 篇';
+    if (!packs.length) {
+      host.innerHTML = '<div class="empty">没有符合条件的文章。</div>';
+      return;
+    }
+    host.innerHTML = packs.map(function (pack) {
+      return '<div class="pack-row">' +
+        '<div><a href="' + escapeHtml(pack.url) + '">' + escapeHtml(pack.title) + '</a>' +
+        '<div class="due">' +
+          (pack.cefr ? '<span>' + escapeHtml(pack.cefr) + '</span> · ' : '') +
+          pack.itemCount + ' 项 · ' + escapeHtml((pack.createdAt || '').slice(0, 10)) +
+        '</div></div>' +
+        '<div class="pack-actions">' +
+          (pack.owned ? '<span class="library-owned">已在你的文章</span>' : '') +
+          '<a class="btn btn-primary" href="' + escapeHtml(pack.url) + '">精读</a>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function renderSharedLevels() {
+    var host = document.getElementById('library-levels');
+    if (!host) return;
+    var levels = [];
+    (state.sharedPacks || []).forEach(function (pack) {
+      var level = String(pack.cefr || '').toUpperCase();
+      if (level && levels.indexOf(level) < 0) levels.push(level);
+    });
+    levels.sort();
+    host.innerHTML = [{ value: '', label: '全部' }].concat(levels.map(function (level) {
+      return { value: level, label: level };
+    })).map(function (entry) {
+      return '<button type="button" data-library-level="' + escapeHtml(entry.value) + '"' +
+        (sharedFilter.level === entry.value ? ' class="active"' : '') + '>' + escapeHtml(entry.label) + '</button>';
+    }).join('');
+  }
+
+  function bindSharedFilters() {
+    var query = document.getElementById('library-query');
+    if (query && query.getAttribute('data-bound') !== '1') {
+      query.setAttribute('data-bound', '1');
+      query.addEventListener('input', function () {
+        sharedFilter.query = query.value;
+        renderSharedList();
+      });
+    }
+    var sort = document.getElementById('library-sort');
+    if (sort && sort.getAttribute('data-bound') !== '1') {
+      sort.setAttribute('data-bound', '1');
+      sort.addEventListener('change', function () {
+        sharedFilter.sort = sort.value;
+        renderSharedList();
+      });
+    }
+    var levels = document.getElementById('library-levels');
+    if (levels && levels.getAttribute('data-bound') !== '1') {
+      levels.setAttribute('data-bound', '1');
+      levels.addEventListener('click', function (event) {
+        var button = event.target.closest('[data-library-level]');
+        if (!button) return;
+        sharedFilter.level = button.getAttribute('data-library-level');
+        renderSharedLevels();
+        renderSharedList();
+      });
+    }
+  }
+
   function loadShared() {
     var host = document.getElementById('library-list');
     if (!host) return;
