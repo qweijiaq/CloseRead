@@ -932,8 +932,10 @@ ${exportMode ? '' : themeBootScript()}
   }
   .star { border: 0; background: transparent; color: var(--line-strong); font-size: 16px; cursor: pointer; padding: 0 2px; line-height: 1; }
   .star.active { color: var(--cinnabar); }
-  .item-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; flex: 0 0 auto; }
-  .item-actions button { white-space: nowrap; }
+  .item-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: nowrap; gap: 4px; flex: 0 0 auto; }
+  /* .practice also styles the exercise block further down the page; keep its
+     margin out of the word cards, where it pushed 造句 onto its own line. */
+  .item-actions button { margin: 0; white-space: nowrap; }
   .remove { border: 0; background: transparent; color: var(--line-strong); font-size: 16px; cursor: pointer; padding: 0 2px; line-height: 1; }
   .remove:hover { color: var(--cinnabar); }
   .expand { border: 1px solid var(--line); background: transparent; color: var(--indigo); border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 10.5px; cursor: pointer; }
