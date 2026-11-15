@@ -2051,16 +2051,20 @@ ${pwaHead()}
         }
         return api('/api/session').then(function (session) {
           if (session && session.personal) {
-            return checkpointNow().then(function () {
-              localSync.done = true;
-              return false;
+            return serverLooksEmptier(files).then(function (localWins) {
+              if (localWins) {
+                return pushLocalCopy(files).then(function () {
+                  localSync.done = true;
+                  return true;
+                });
+              }
+              return checkpointNow().then(function () {
+                localSync.done = true;
+                return false;
+              });
             });
           }
-          return api('/api/hydrate', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ files: files })
-          }).then(function () {
+          return pushLocalCopy(files).then(function () {
             localSync.done = true;
             return true;
           });
@@ -2070,6 +2074,38 @@ ${pwaHead()}
       localSync.failed = true;
       renderLocalSyncWarning();
       return false;
+    });
+  }
+
+  function localCounts(files) {
+    var packs = 0;
+    var resources = 0;
+    Object.keys(files || {}).forEach(function (file) {
+      if (file.indexOf('packs/') === 0 && file.slice(-10) === '/pack.json') packs += 1;
+      if (file.indexOf('data/resources/') === 0 && file.slice(-5) === '.json') resources += 1;
+    });
+    return { packs: packs, resources: resources };
+  }
+
+  // A restart leaves the server with an empty seeded workspace. If the browser
+  // copy has more content than the server, the server is the stale side.
+  function serverLooksEmptier(files) {
+    return Promise.all([
+      api('/api/summary').catch(function () { return {}; }),
+      api('/api/resources?limit=500').catch(function () { return {}; })
+    ]).then(function (results) {
+      var serverPacks = ((results[0] || {}).packs || []).length;
+      var serverResources = ((results[1] || {}).resources || []).length;
+      var local = localCounts(files);
+      return local.packs > serverPacks || local.resources > serverResources;
+    });
+  }
+
+  function pushLocalCopy(files) {
+    return api('/api/hydrate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ files: files })
     });
   }
 
