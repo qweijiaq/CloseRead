@@ -2940,8 +2940,25 @@ ${pwaHead()}
       if (percent >= 75) {
         rows += '<p class="settings-warning"><b>空间快满了。</b>建议先导出一份，再删掉一些读完的文章。</p>';
       }
+      if (!isPersisted) {
+        rows += '<div class="settings-actions"><button class="btn small" id="settings-persist" type="button">申请持久化存储</button></div>' +
+          '<p class="small muted">申请后浏览器更不容易在空间紧张时清理这些数据；能否通过由浏览器决定。</p>';
+      }
       host.innerHTML = '<h3>本浏览器占用</h3>' + rows;
       host.hidden = false;
+      var persistButton = document.getElementById('settings-persist');
+      if (persistButton) {
+        persistButton.addEventListener('click', function () {
+          setBusy(persistButton, true, '申请中…');
+          localDb().then(function (db) { return db.requestPersistence(); })
+            .then(function (granted) {
+              toast(granted ? '已开启持久化存储' : '浏览器没有批准，导出备份仍然有效');
+              fillStoragePanel();
+            })
+            .catch(function () { toast('申请失败，可以继续正常使用'); })
+            .finally(function () { setBusy(persistButton, false); });
+        });
+      }
     }).catch(function () {});
   }
 
@@ -2959,7 +2976,7 @@ ${pwaHead()}
           link.click();
           setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
           markExported();
-          toast('已导出 ' + Math.round(blob.size / 1024) + ' KB，在新设备上用「从文件导入」恢复');
+          toast('已导出 ' + Math.round(blob.size / 1024) + ' KB 到下载目录，在新设备上用「从文件导入」恢复');
         });
       })
       .catch(function (error) { toast('导出失败：' + error.message); })
