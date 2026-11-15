@@ -24,7 +24,7 @@ import { generateSentenceCard, sentenceIdentity } from '../analyze/sentence-card
 import { generateSentenceRewrites } from '../analyze/sentence-rewrites.js'
 import { generatePracticeFeedback } from '../analyze/sentence-practice.js'
 import { sentences } from '../analyze/tokenize.js'
-import { translateSentence } from '../analyze/sentence-translation.js'
+import { sentenceLookupKey, translateSentence } from '../analyze/sentence-translation.js'
 import { generateWordCard, enrichWordRelations } from '../analyze/word-card.js'
 import { generateWordStory } from '../analyze/word-story.js'
 import { generateOutputFeedback } from '../analyze/output-feedback.js'
@@ -36,7 +36,7 @@ import { petState } from '../lab/pet.js'
 import { enrollWordbook, getWordbook, listWordbooks, wordbookView } from '../wordbooks/index.js'
 import { generateAdventureFeedback, generateArgumentMap, generateDictationHint, generateDubbing, generateDungeonFlavor, generateLifeExamples, generateNewsShort, generatePetLine, generatePodcast, generateQuoteInsight, generateRegisterRemix, generateSubtitleHunter } from '../lab/generators.js'
 import { renderLabApp } from './lab.js'
-import { config, createWorkspace, currentWorkspace, ensureDirs, hasLlm, llmProviderOptions, llmStatus, projectRoot, publicModeEnabled, rootWorkspaceRef, runInWorkspace, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
+import { config, createWorkspace, currentWorkspace, ensureDirs, hasLlm, rootPacksDir, llmProviderOptions, llmStatus, projectRoot, publicModeEnabled, rootWorkspaceRef, runInWorkspace, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
 import { listProviderModels } from '../llm/models.js'
 import { normalizeLlmProvider, providerPreset } from '../llm/providers.js'
 import { buildWordGraph } from '../graph/build.js'
@@ -3365,7 +3365,36 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     return
   }
 
+  const publishMatch = /^\/api\/packs\/([^/]+)\/publish$/.exec(url.pathname)
+  if (method === 'POST' && publishMatch) {
+    const pack = store.findPack(decodeURIComponent(publishMatch[1]!))
+    if (!pack) {
+      sendJson(response, 404, { error: '找不到这个学习包。' })
+      return
+    }
+    try {
+      await shared.reload().catch(() => {})
+      if (shared.findPack(pack.id)) {
+        sendJson(response, 409, { error: '这个学习包已经在公共库里了。' })
+        return
+      }
+      if (shared.packs().length >= 200) {
+        sendJson(response, 429, { error: '公共库已满，暂时不能再公开新的学习包。' })
+        return
+      }
+      const name = `${path.basename(pack.dir)}`
+      const target = path.join(rootPacksDir, name)
+      await fs.cp(pack.dir, target, { recursive: true, errorOnExist: false, force: false })
+      await shared.addPack({ ...pack, dir: target })
+      sendJson(response, 200, { ok: true, pack: { id: pack.id, title: pack.title ?? pack.id } })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   if (method === 'GET' && url.pathname === '/api/packs') {
+    const published = new Set(shared.packs().map((pack) => pack.id))
     sendJson(response, 200, {
       packs: store.packs().map((pack) => {
         const issueId = pack.parentResourceId ?? pack.resourceId
@@ -3373,6 +3402,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         return {
           ...pack,
           ...packView(store, pack),
+          shared: published.has(pack.id),
           issueId,
           issueTitle: issue?.title ?? issueId,
           chapter: chapterNav(store, pack),
@@ -4705,7 +4735,20 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
           // Translation can proceed from the sentence alone.
         }
       }
+      const contents = await loadPack(pack.dir).catch(() => undefined)
+      const stored = contents?.sentenceTranslations?.[sentenceLookupKey(sentence)]
+      if (stored) {
+        sendJson(response, 200, { ok: true, translation: stored, cached: true })
+        return
+      }
       const translation = await translateSentence(sentence, context)
+      if (contents) {
+        contents.sentenceTranslations = {
+          ...(contents.sentenceTranslations ?? {}),
+          [sentenceLookupKey(sentence)]: translation,
+        }
+        await savePackFiles(contents, pack.dir).catch(() => {})
+      }
       sendJson(response, 200, { ok: true, translation })
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })

@@ -18,6 +18,9 @@ import { writePack } from './pack/build.js'
 import { loadPack, savePackFiles } from './pack/mutate.js'
 import { renderHtml } from './pack/html.js'
 import { answerReadingQuestion } from './analyze/note-answer.js'
+import { generateDerivationGraph } from './analyze/derivation.js'
+import { sentenceLookupKey, translateSentence } from './analyze/sentence-translation.js'
+import { sentences as splitSentences } from './analyze/tokenize.js'
 import { startReviewServer } from './review/server.js'
 import { VisitorRegistry, pruneWorkspaces } from './review/visitors.js'
 import { restoreLibraryBackup, writeLibraryBackup } from './store/backup.js'
@@ -71,7 +74,8 @@ Usage:
   pnpm dev backup [file]              Back up the library to one JSON file
   pnpm dev restore <file> --force     Restore the library from a backup
   pnpm dev guests [--days N] [--force]  List visitor workspaces; prune idle ones
-  pnpm dev prefetch <id|latest>       Pre-generate reading answers for shared packs
+  pnpm dev prefetch <id|latest> [--expand] [--sentences]
+                                      Pre-generate answers the reader would ask for
 
 Add options:
   --title <name>   Override the resource title
@@ -601,7 +605,10 @@ async function commandStyle(
  * Pre-generate the answers that the reader otherwise asks the model for on
  * click, so visitors without a key can still reveal them.
  */
-async function commandPrefetch(target: string | undefined): Promise<void> {
+async function commandPrefetch(
+  target: string | undefined,
+  options: { expand: boolean; sentences: boolean } = { expand: false, sentences: false },
+): Promise<void> {
   const store = await Store.open(storePath())
   const pack = target && target !== 'latest'
     ? store.findPack(target)
@@ -637,8 +644,52 @@ async function commandPrefetch(target: string | undefined): Promise<void> {
       console.warn(`  第 ${paragraph.index + 1} 段失败：${error instanceof Error ? error.message : String(error)}`)
     }
   }
+  if (options.expand) {
+    const pending = (contents.items ?? []).filter((item) => !item.derivation)
+    console.log(`单词展开：${pending.length} 个待生成`)
+    let ok = 0
+    for (const item of pending) {
+      try {
+        item.derivation = await generateDerivationGraph(item)
+        ok += 1
+        console.log(`  [${ok}/${pending.length}] ${item.lemma} ok`)
+        if (ok % 3 === 0) await savePackFiles(contents, pack.dir)
+      } catch (error) {
+        console.warn(`  ${item.lemma} 失败：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    done += ok
+  }
+
+  if (options.sentences) {
+    const store = (contents.sentenceTranslations ??= {})
+    const list: Array<{ sentence: string; context: string }> = []
+    for (const paragraph of contents.reading ?? []) {
+      for (const sentence of splitSentences(paragraph.original)) {
+        const key = sentenceLookupKey(sentence)
+        if (store[key]) continue
+        list.push({ sentence, context: paragraph.original })
+      }
+    }
+    console.log(`句子翻译：${list.length} 句待生成`)
+    let ok = 0
+    for (const entry of list) {
+      try {
+        store[sentenceLookupKey(entry.sentence)] = await translateSentence(entry.sentence, entry.context)
+        ok += 1
+        if (ok % 5 === 0) {
+          console.log(`  [${ok}/${list.length}] 已生成`)
+          await savePackFiles(contents, pack.dir)
+        }
+      } catch (error) {
+        console.warn(`  失败：${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
+    done += ok
+  }
+
   await savePackFiles(contents, pack.dir)
-  console.log(`完成：写入 ${done} 条答案 → ${pack.dir}`)
+  console.log(`完成：写入 ${done} 条预生成内容 → ${pack.dir}`)
 }
 
 async function commandGuests(options: { days?: number; force: boolean }): Promise<void> {
@@ -797,6 +848,8 @@ async function main(): Promise<void> {
       port: { type: 'string' },
       query: { type: 'string' },
       days: { type: 'string' },
+      expand: { type: 'boolean' },
+      sentences: { type: 'boolean' },
       due: { type: 'boolean' },
       text: { type: 'string' },
       title: { type: 'string' },
@@ -871,7 +924,10 @@ async function main(): Promise<void> {
       await commandBackup(positionals[1] ?? values.out)
       break
     case 'prefetch':
-      await commandPrefetch(positionals[1] ?? 'latest')
+      await commandPrefetch(positionals[1] ?? 'latest', {
+        expand: values.expand === true,
+        sentences: values.sentences === true,
+      })
       break
     case 'guests':
       await commandGuests({

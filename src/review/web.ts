@@ -559,6 +559,7 @@ ${pwaHead()}
   .pack-group-head span { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; }
   .pack-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: none; }
   .pack-actions .btn { white-space: nowrap; }
+  .pack-shared-tag { padding: 4px 9px; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 999px; color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
   @media (max-width: 760px) {
     .pack-row { flex-direction: column; align-items: stretch; gap: 12px; padding: 14px 15px; }
     .pack-actions { width: 100%; }
@@ -3478,6 +3479,9 @@ ${pwaHead()}
             '<div class="pack-actions">' +
               '<a class="btn btn-primary" href="' + escapeHtml(pack.url) + '">精读</a>' +
               rebuild +
+              (pack.shared
+                ? '<span class="pack-shared-tag">已公开</span>'
+                : '<button class="btn" data-publish-pack="' + escapeHtml(pack.id) + '">公开</button>') +
               '<button class="btn danger" data-delete-pack="' + escapeHtml(pack.id) + '">删除</button>' +
             '</div>' +
           '</div>';
@@ -3485,6 +3489,24 @@ ${pwaHead()}
         return '<div class="pack-group"><div class="pack-group-head"><strong>' + escapeHtml(group.title) +
           '</strong><span>' + group.packs.length + ' 个学习包</span></div>' + rows + '</div>';
       }).join('');
+
+      els.packsList.querySelectorAll('[data-publish-pack]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          if (!confirm('公开后，所有访客都能在「公共库」里读这篇文章（只读副本，不影响你自己的进度）。继续吗？')) return;
+          setBusy(button, true, '公开中…');
+          api('/api/packs/' + encodeURIComponent(button.getAttribute('data-publish-pack')) + '/publish', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{}'
+          }).then(function () {
+            toast('已加入公共库');
+            loadPacks();
+          }).catch(function (error) {
+            toast('公开失败：' + error.message);
+            setBusy(button, false);
+          });
+        });
+      });
 
       els.packsList.querySelectorAll('[data-delete-pack]').forEach(function (button) {
         var timer;

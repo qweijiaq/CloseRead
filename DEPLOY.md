@@ -126,7 +126,28 @@ docker compose exec app pnpm dev list
 - 访客第一次打开某个公共包时，服务器会把这份包复制到他的临时空间，之后进度、批注、词卡都按他自己的记录走。
 - 访客仍然可以用自己的 Key 导入私有文章；公共库只是额外内容。
 
-不做第 2 步的话，没 Key 的访客点「看答案」会失败——那一步是模型调用。`prefetch` 只处理段落笔记里的「想一想」问题，已生成过的会跳过。
+不做第 2 步的话，没 Key 的访客点「看答案」会失败——那一步是模型调用。
+
+`prefetch` 默认只生成段落「想一想」的答案，可以再开两项（按量消耗模型调用）：
+
+```bash
+# 单词展开 / 词源派生（每篇文章 20-40 次调用）
+docker compose exec app pnpm dev prefetch latest --expand
+
+# 逐句翻译（每篇文章约 40-80 次调用）
+docker compose exec app pnpm dev prefetch latest --sentences
+
+# 三项一起
+docker compose exec app pnpm dev prefetch latest --expand --sentences
+```
+
+已生成过的会跳过，中途失败也会继续。生成结果写进 `pack.json`，所以会跟着公共库分发给所有人。
+
+### 访客自己公开
+
+访客不需要命令行：在「文章」页每个学习包旁边有「公开」按钮。点了之后这个包会复制进服务器的公共库，其他访客在「公共库」里就能读到。已经公开的会显示「已公开」标签；同一个包重复公开会被拒绝。
+
+公开的是只读副本，不影响原作者自己的阅读进度。公共库上限 200 个包。
 
 ## 5. 统计口径
 

@@ -253,7 +253,7 @@ CloseRead 没有账号、埋点、统计、广告或云同步。只有你主动�
 | `pnpm dev resplit <id> <file>` | 重新把一份材料拆成文章 |
 | `pnpm dev backup` / `restore` | 创建或恢复完整数据归档 |
 | `pnpm dev guests` | 查看当前进程的临时工作区（诊断用） |
-| `pnpm dev prefetch <id\|latest>` | 预生成段落答案，没 Key 的读者也能看 |
+| `pnpm dev prefetch <id\|latest>` | 预生成答案；`--expand` 单词展开，`--sentences` 逐句翻译 |
 | `pnpm dev demo` | 用示例文章跑完整流程 |
 
 `pnpm dev --help` 里还有 `--no-llm`、`--limit`、`--style`、`--audio`、`--no-source` 等生成选项。

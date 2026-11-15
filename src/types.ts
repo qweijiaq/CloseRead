@@ -263,6 +263,8 @@ export interface AnalysisResult {
   cachedCards?: number
   /** Paragraph-by-paragraph bilingual reading. */
   reading?: ReadingParagraph[]
+  /** Pre-generated sentence translations, keyed by normalised sentence. */
+  sentenceTranslations?: Record<string, string>
   /** Long-form Chinese article generated in the requested style. */
   editorial?: string
 }
@@ -310,6 +312,8 @@ export interface LearningPack {
   exercises: PackExercises
   sourceText?: string
   reading?: ReadingParagraph[]
+  /** Pre-generated sentence translations, keyed by normalised sentence. */
+  sentenceTranslations?: Record<string, string>
   styleName?: string
   editorial?: string
   selection?: SelectionMetadata

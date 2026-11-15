@@ -83,6 +83,42 @@ describe('public visitor workspaces', { concurrency: 1 }, () => {
         favorite: false,
       },
     ] as never)
+    // A real pack in the root library: claim() copies it into the visitor's
+    // workspace and the publish test needs something to publish.
+    const packDir = path.join(tempPacks, 'fixture-pack')
+    await fs.mkdir(packDir, { recursive: true })
+    await fs.writeFile(
+      path.join(packDir, 'pack.json'),
+      JSON.stringify({
+        id: 'pack-fixture',
+        resourceId: 'r-fixture',
+        title: 'Fixture Article',
+        source: 'fixture',
+        mode: 'heuristic',
+        generatedAt: new Date().toISOString(),
+        summary: 'A short fixture article used by the shared library test.',
+        difficulty: { cefr: 'B2', reason: 'fixture' },
+        stats: { wordCount: 120, itemCount: 1, readingMinutes: 2 },
+        items: [],
+        exercises: { cloze: [], comprehension: [], discussion: [] },
+        reading: [
+          {
+            index: 0,
+            original: 'Attention is scarce and cannot be stored for later use.',
+            itemIds: [],
+          },
+        ],
+      }),
+    )
+    await store.addPack({
+      id: 'pack-fixture',
+      resourceId: 'r-fixture',
+      dir: packDir,
+      mode: 'heuristic',
+      itemCount: 1,
+      createdAt: new Date().toISOString(),
+      title: 'Fixture Article',
+    })
     server = await startReviewServer({ port: 0 })
     base = server.url
   })
@@ -150,6 +186,42 @@ describe('public visitor workspaces', { concurrency: 1 }, () => {
     assert.equal((await settings(a)).preferences.weeklyArticleGoal, 4)
     assert.equal((await settings(b)).preferences.weeklyArticleGoal, 9)
     assert.notEqual((await settings(a)).workspace.id, (await settings(b)).workspace.id)
+  })
+
+  it('reports shared-library state and rejects unknown publishes', async () => {
+    const owner = cookieFrom(await fetch(`${base}/api/summary`))
+    await post({ weeklyArticleGoal: 6 }, owner)
+    const mine = (await fetch(`${base}/api/packs`, { headers: { cookie: owner } }).then((r) =>
+      r.json(),
+    )) as { packs: Array<{ id: string; shared?: boolean }> }
+    assert.equal(mine.packs.length, 1)
+    // Seeded from the root library, so it is already part of the shared set.
+    assert.equal(mine.packs[0]!.shared, true)
+
+    const duplicate = await fetch(
+      `${base}/api/packs/${encodeURIComponent(mine.packs[0]!.id)}/publish`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: base, cookie: owner },
+        body: '{}',
+      },
+    )
+    assert.equal(duplicate.status, 409)
+
+    const unknown = await fetch(`${base}/api/packs/does-not-exist/publish`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: base, cookie: owner },
+      body: '{}',
+    })
+    assert.equal(unknown.status, 404)
+
+    // A read-only demo visitor already reads the root library directly, so it
+    // has nothing left to list as "shared".
+    const demo = cookieFrom(await fetch(`${base}/api/summary`))
+    const shared = (await fetch(`${base}/api/shared`, { headers: { cookie: demo } }).then((r) =>
+      r.json(),
+    )) as { packs: unknown[] }
+    assert.deepEqual(shared.packs, [])
   })
 
   it('reports how many visitors the site has seen', async () => {

@@ -13,6 +13,11 @@ const translationSchema = z.object({
 
 const memory = new Map<string, string>()
 
+/** Key used when a translation is stored inside a pack. */
+export function sentenceLookupKey(sentence: string): string {
+  return normalize(sentence).toLowerCase()
+}
+
 function normalize(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }
