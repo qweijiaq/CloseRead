@@ -1490,6 +1490,9 @@ ${pwaHead()}
   /* Six pills just overflow a phone, and a hidden scrollbar gives no clue that
      "回收站" is off-screen. Let them wrap instead. */
   @media (max-width: 760px) { .settings-toc { flex-wrap: wrap; overflow-x: visible; } }
+  /* A chip row is not a tab bar: the generic nav rule drew a second hairline
+     right above the first section's rule. */
+  .settings-toc { border-bottom: 0; }
   .settings-about-copy { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.7; max-width: 64ch; }
   .settings-about-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
   .settings-about-meta { margin-top: 12px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
