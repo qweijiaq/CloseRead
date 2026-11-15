@@ -991,7 +991,10 @@ async function todayPayload(store: Store, now: Date = new Date()) {
 
 export interface LanStatus {
   enabled: boolean
+  /** True when the caller is the machine running CloseRead. */
   local: boolean
+  /** True for a public deployment, where every visitor gets the full UI. */
+  public: boolean
   port: number | null
   urls: string[]
   qr: Array<{ url: string; svg: string }>
@@ -4665,6 +4668,7 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
     return {
       enabled: lanState.enabled,
       local,
+      public: publicModeEnabled(),
       port: lanState.port,
       urls,
       qr: urls.map((url) => ({ url, svg: qrSvg(url) })),

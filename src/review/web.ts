@@ -2690,13 +2690,13 @@ ${pwaHead()}
   function loadLanStatus() {
     return api('/api/lan').then(function (result) {
       state.lan = result;
-      var phoneMode = result.local === false;
+      var phoneMode = result.local === false && result.public !== true;
       document.body.classList.toggle('phone-mode', phoneMode);
       var banner = document.getElementById('phone-mode-banner');
       if (banner) banner.hidden = !phoneMode;
       if (phoneMode && (state.tab === 'import' || state.tab === 'settings')) switchTab('home');
       if (els.lanToggle) {
-        els.lanToggle.hidden = !result.local;
+        els.lanToggle.hidden = !result.local || result.public === true;
         els.lanToggle.textContent = result.enabled ? '手机 ✓' : '手机';
         els.lanToggle.classList.toggle('active', Boolean(result.enabled));
       }
