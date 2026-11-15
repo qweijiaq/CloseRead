@@ -1737,7 +1737,6 @@ ${pwaHead()}
 
   <section class="view" id="view-import">
     <div class="import-mode" id="import-mode">检查分析模式…</div>
-    <p class="small muted import-note">导入的文字会由服务器解析并生成学习包，结果只保存在你的浏览器里，服务器不留存。</p>
     <div class="source-tabs" id="source-tabs" role="tablist" aria-label="导入来源">
       <button class="active" type="button" data-source="text" role="tab">粘贴文本</button>
       <button type="button" data-source="url" role="tab">网页链接</button>
@@ -4356,8 +4355,8 @@ ${pwaHead()}
     state.llmConfigured = Boolean(llm);
     els.importMode.innerHTML = llm
       ? '当前使用 <strong>' + escapeHtml(provider || 'LLM') + '</strong> · ' + escapeHtml(model) +
-        ' 分析，生成通常需要 1–3 分钟。'
-      : '<strong>还没有配置模型 Key。</strong>可以先在「公共库」读别人公开的文章。这里导入自己的文章需要 Key，否则只会挑出候选词、没有中文译文。';
+        ' 分析，生成通常需要 1–3 分钟。<br>内容只保存在你的浏览器里，服务器不留存。'
+      : '<strong>还没有配置模型 Key。</strong>可以先在「公共库」读别人公开的文章；这里导入自己的文章需要 Key，否则只会挑出候选词、没有中文译文。<br>导入由服务器解析，内容只保存在你的浏览器里。';
   }
 
   function llmPreset(id) {
