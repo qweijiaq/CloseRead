@@ -1470,7 +1470,7 @@ ${pwaHead()}
       </div>
       <ol class="onboarding-list">
         <li><b>内容存在这个浏览器里。</b>换手机或换电脑打开是空的，要迁移请在「设置 → 设备迁移」导出再导入。</li>
-        <li><b>模型 Key 可选。</b>不填也能用，释义来自免费词典；填了自己的 Key，释义、练习和翻译会更准。Key 只存在这个浏览器。</li>
+        <li><b>需要自己的模型 Key。</b>没有 Key 时只会挑出候选词，<b>不会生成中文译文</b>，基本没法精读；填了之后才有逐段翻译、释义和练习。Key 只存在这个浏览器。</li>
         <li><b>从一篇文章开始。</b>粘贴文本、贴一个链接，或上传 PDF / EPUB / DOCX。</li>
       </ol>
       <p class="onboarding-warning"><b>务必定期导出。</b>清浏览器数据、换设备，或在 iPhone 上超过 7 天不打开，本地内容都可能被清掉。导出文件存在你自己的电脑或网盘里，随时能导回来。</p>
@@ -3768,10 +3768,11 @@ ${pwaHead()}
   }
 
   function renderImportMode(llm, model, provider) {
+    state.llmConfigured = Boolean(llm);
     els.importMode.innerHTML = llm
       ? '当前使用 <strong>' + escapeHtml(provider || 'LLM') + '</strong> · ' + escapeHtml(model) +
         ' 分析，生成通常需要 1–3 分钟。'
-      : '未配置 LLM，将使用<strong>启发式模式</strong>：速度快，但义项判断和中文释义会弱一些。展开下方「模型设置」可填写自己的 API Key。';
+      : '<strong>还没有配置模型 Key。</strong>规则模式只能挑出候选词，不会生成中文译文，选词也不准，基本上没法精读。先在下方「模型设置」里填一个 Key（DeepSeek 最便宜）。';
   }
 
   function llmPreset(id) {
@@ -4238,6 +4239,10 @@ ${pwaHead()}
   function startBuild(resourceId, articleIndex, fromQueue) {
     if (state.building) {
       toast('正在生成，请稍候');
+      return;
+    }
+    if (state.llmConfigured === false &&
+        !confirm('还没有配置模型 Key。这次的包不会有中文译文，选词也不准，读起来会很吃力。\\n\\n建议先去「模型设置」填写 Key。仍要现在生成吗？')) {
       return;
     }
     state.building = resourceId + ':' + (articleIndex === undefined ? 'all' : articleIndex);

@@ -16,7 +16,7 @@
 
 **CloseRead turns an English article, PDF, EPUB, MOBI, DOCX, URL or transcript into a paragraph-by-paragraph close-reading pack: Chinese translation, notes, word cards, sentence cards, exercises, and a local reading history.**
 
-It is a reading workspace, not a chat tutor, and not a flashcard app with articles bolted on. The loop is **read → understand → keep**. There is no account, no cloud library and no analytics. A model key is optional: without one, CloseRead still imports, segments, builds packs and lets you read and annotate. The interface switches between Chinese and an English beta; generated study notes remain Chinese by default.
+It is a reading workspace, not a chat tutor, and not a flashcard app with articles bolted on. The loop is **read → understand → keep**. There is no account, no cloud library and no analytics. A model key is required: without one CloseRead can still import and segment, but it will not generate Chinese translations or reliable vocabulary, so serious reading needs a key. The interface switches between Chinese and an English beta; generated study notes remain Chinese by default.
 
 ![CloseRead reading home](assets/screenshots/home.png)
 
@@ -119,9 +119,9 @@ pnpm desktop:build:win    # Windows NSIS; run on Windows
 
 The desktop app keeps data under Electron's `userData` directory. Open **Settings → Data & packs** to see the exact paths. Packaging notes are in [desktop/README.md](desktop/README.md).
 
-## Models and audio (optional)
+## Models and audio
 
-Without a model key, CloseRead uses its heuristic pipeline for structure, notes, cards and exercises. Chinese glosses and short translations then come from public dictionary and machine-translation endpoints, so quality is shallower and some text leaves your machine.
+A model key is required for a readable pack. Without one, the heuristic pipeline only proposes candidate words: it does **not** produce Chinese paragraph translations, and the selection is noisy. Treat that path as an offline fallback or a debugging aid. TTS is separate and optional.
 
 With a key, you can use DeepSeek, OpenAI-compatible endpoints, Anthropic, Gemini, Qwen/DashScope, GLM/Zhipu, xAI, Moonshot, OpenCode Zen, OpenCode Go or OpenDesign. Configure it in the import panel's **Model settings**, or through environment variables such as `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `DASHSCOPE_API_KEY` or `GLM_API_KEY`. Keys stored in the app live in `data/llm.json`.
 

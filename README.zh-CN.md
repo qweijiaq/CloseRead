@@ -16,7 +16,7 @@
 
 **CloseRead 把一篇英文文章、PDF、EPUB、MOBI、DOCX、网页链接或演讲转录，做成一份可以逐段精读的学习包：译文、笔记、词卡、句子卡、练习，以及留在本地的阅读记录。**
 
-它是一个阅读工作台，不是聊天外教，也不是“碰巧放了几篇文章”的背单词 App。主循环是 **读 → 懂 → 留下**。没有账号、没有云端数据、没有埋点。模型 Key 是可选的：不配置也能导入、切分、生成学习包、阅读和批注。界面支持中文和英文 beta；生成的学习笔记默认仍是中文。
+它是一个阅读工作台，不是聊天外教，也不是“碰巧放了几篇文章”的背单词 App。主循环是 **读 → 懂 → 留下**。没有账号、没有云端数据、没有埋点。模型 Key 是必须的：不配置也能导入和切分，但不会生成中文译文，选词也不准，没法正常精读。界面支持中文和英文 beta；生成的学习笔记默认仍是中文。
 
 ![CloseRead 精读首页](assets/screenshots/home.png)
 
@@ -119,9 +119,9 @@ pnpm desktop:build:win    # Windows NSIS，请在 Windows 上运行
 
 桌面版把数据放在 Electron 的 `userData` 目录。打开 **设置 → 数据与学习包** 可以看到确切路径。打包说明见 [desktop/README.md](desktop/README.md)。
 
-## 模型与语音（可选）
+## 模型与语音
 
-不配置模型 Key 时，CloseRead 用规则流程生成结构、笔记、词卡和练习；中文释义和短译文来自公开词典/机器翻译接口，质量会浅一些，也会有文本离开本机。
+不配置模型 Key 时，CloseRead 只能按规则挑出候选词，**不会生成中文译文**，选词也不准；这条路只适合离线应急或调试，日常精读请配置 Key。
 
 配置 Key 后，可以使用 DeepSeek、OpenAI 兼容接口、Anthropic、Gemini、Qwen/百炼、GLM/智谱、xAI、Moonshot、OpenCode Zen、OpenCode Go 或 OpenDesign。在导入面板的 **模型设置** 里填写，或使用 `DEEPSEEK_API_KEY`、`OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`DASHSCOPE_API_KEY`、`GLM_API_KEY` 等环境变量。本地模式下 Key 保存在 `data/llm.json`；公开部署下只存在访客自己的浏览器里。
 
