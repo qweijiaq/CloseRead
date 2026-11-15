@@ -567,7 +567,8 @@ ${pwaHead()}
   .library-toolbar input[type="search"]:focus { border-color: var(--accent); }
   .library-toolbar select { border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); padding: 8px 9px; font: inherit; font-size: 12px; }
   .library-levels { display: flex; gap: 6px; }
-  .library-levels button { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 5px 11px; font: inherit; font-size: 11.5px; cursor: pointer; }
+  .library-levels button { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 5px 11px; font: inherit; font-size: 11.5px; line-height: 1.5; cursor: pointer; }
+  .library-levels { align-items: center; }
   .library-levels button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
   .library-owned { color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; white-space: nowrap; }
   .feedback-intro { margin-bottom: 16px; }
@@ -625,7 +626,15 @@ ${pwaHead()}
   .lang-toggle { padding: 7px 10px; font-size: 11.5px; }
   .import-mode { color: var(--muted); font-size: 12.5px; margin-bottom: 6px; }
   .import-mode strong { color: var(--ink); }
-  .selection-size { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 10px 0 12px; color: var(--muted); font-size: 12.5px; }
+  /* Label, control and hint each get a column so the two rows line up instead
+     of drifting with the length of the label text. */
+  .selection-size { display: grid; grid-template-columns: 64px minmax(0, 180px) minmax(0, 1fr); align-items: center; gap: 8px 12px; margin: 10px 0 12px; color: var(--muted); font-size: 12.5px; }
+  .selection-size .cselect { justify-self: stretch; }
+  .selection-size .cselect-trigger { width: 100%; justify-content: space-between; }
+  @media (max-width: 720px) {
+    .selection-size { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+    .selection-size-label { font-size: 11.5px; }
+  }
   .cselect { position: relative; display: inline-flex; min-width: 0; }
   .cselect-trigger { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 9px; padding: 7px 10px; font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
   .cselect-trigger:hover { border-color: var(--accent); }
@@ -1243,7 +1252,9 @@ ${pwaHead()}
   .topbar { box-shadow: 0 1px 0 var(--line); }
   .btn.btn-primary, .btn.primary { box-shadow: none; }
   .empty { padding: 56px 20px; border: 1px dashed var(--line); border-radius: 18px; background: color-mix(in srgb, var(--surface) 70%, transparent); }
-  .empty .btn { margin-top: 14px; }
+  /* The empty state is centred text, so its call to action has to be its own
+     centred line rather than trailing the sentence. */
+  .empty .btn { display: block; width: max-content; margin: 14px auto 0; }
   .empty.loading { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 12px; }
   .home-card { background: var(--surface) !important; transition: border-color .16s ease; }
   .home-card:hover { border-color: var(--line-strong); }
@@ -1322,6 +1333,9 @@ ${pwaHead()}
     border: 0 !important; border-top: 1px solid var(--line) !important;
     border-radius: 0 !important; background: transparent !important; box-shadow: none !important;
   }
+  /* A hairline section rule is the page's rhythm, but the first one lands right
+     under the header rule and reads as a stray double line. */
+  .insights-card:first-child { border-top: 0 !important; padding-top: 0 !important; }
   .settings-grid { grid-template-columns: 1fr; gap: 0; max-width: 780px; }
   .settings-card h2 { font-family: var(--read); font-size: 19px; font-weight: 600; letter-spacing: -.01em; }
 
@@ -1362,6 +1376,9 @@ ${pwaHead()}
   .passport-stamp { padding: 16px 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; box-shadow: none; }
   .passport-stamp:hover { transform: none; border-color: var(--line); }
   .achievement-grid { gap: 0; }
+  /* With 6px the empty 0% track sat directly under the description and read as
+     an underline instead of a progress bar. */
+  .achievement-track { margin: 10px 0 4px; }
   .achievement { padding: 12px 0; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: transparent; }
   .achievement.earned { border-color: var(--line); background: transparent; }
   .achievement-icon { display: none; }
@@ -1470,6 +1487,9 @@ ${pwaHead()}
   .settings-toc::-webkit-scrollbar { display: none; }
   .settings-toc a { flex: 0 0 auto; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11.5px; text-decoration: none; white-space: nowrap; }
   .settings-toc a:hover { color: var(--ink); border-color: var(--line-strong); }
+  /* Six pills just overflow a phone, and a hidden scrollbar gives no clue that
+     "回收站" is off-screen. Let them wrap instead. */
+  @media (max-width: 760px) { .settings-toc { flex-wrap: wrap; overflow-x: visible; } }
   .settings-about-copy { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.7; max-width: 64ch; }
   .settings-about-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
   .settings-about-meta { margin-top: 12px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
@@ -1693,7 +1713,6 @@ ${pwaHead()}
 
   <section class="view" id="view-feedback">
     <div class="feedback-intro">
-      <h2>意见墙</h2>
       <p>想加的功能、用着别扭的地方、碰到的 bug，都可以写在这里。别人也能「加一」，作者会更新状态。</p>
     </div>
     <form class="feedback-form" id="feedback-form">
@@ -1788,12 +1807,12 @@ ${pwaHead()}
       </div>
     </details>
     <label class="selection-size">
-      写作风格
+      <span class="selection-size-label">写作风格</span>
       ${customSelectMarkup('build-style', '', [{ value: '', label: '默认风格' }], 'cselect-size')}
       <small>使用 styles/ 下的风格 profile；留空时用默认 unified 风格。</small>
     </label>
     <label class="selection-size">
-      选词量
+      <span class="selection-size-label">选词量</span>
       ${customSelectMarkup(
         'selection-size',
         'auto',
