@@ -35,7 +35,8 @@ It is a reading workspace, not a chat tutor, and not a flashcard app with articl
 
 ### Read
 
-- PDF with a text layer, EPUB, MOBI/AZW/AZW3, DOCX, article URLs, RSS/Atom feeds, pasted text/Markdown and timestamped transcripts.
+- PDF with a text layer, EPUB, MOBI/AZW/AZW3, DOCX, HTML, TXT/Markdown, article URLs, RSS/Atom feeds and timestamped transcripts.
+- Plain text and Markdown split on `# Heading`, `第 3 章`, `Chapter IV` and `【Section】`; reference lists, notes and indexes are dropped instead of being read as body text.
 - A bilingual reading page: English title, Chinese title, standfirst and paragraph-by-paragraph translation.
 - A reading guide before the text: article map, author stance, language threads and one concrete reading strategy.
 - Paragraph notes: role, key sentence, grammar, connectors, background and a question that sends you back to the text.

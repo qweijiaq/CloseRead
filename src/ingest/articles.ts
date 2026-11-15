@@ -46,23 +46,60 @@ export function makeArticle(
   }
 }
 
-/** Split older resources that have no stored chapter boundaries, using level-1 Markdown headings. */
+/**
+ * Chapter headings that survive in plain text: `# Title`, `第3章 ...`,
+ * `Chapter IV`, `【标题】`, and the usual front/back matter.
+ */
+const CHAPTER_HEADING =
+  /^(?:#{1,4}\s+.+|第\s*[0-9一二三四五六七八九十百千零两]+\s*[章回卷部篇节](?:\s+.*)?|[上下中]篇(?:\s+.*)?|序言?|自序|前言|引言|导言|后记|尾声|结语|附录(?:\s+.*)?|Chapter\s+[0-9ivxlcdm]+(?:\s+.*)?|Part\s+[0-9ivxlcdm]+(?:\s+.*)?|【[^】]{2,40}】)$/i
+
+/** Back matter that is never worth reading in an intensive-reading pack. */
+const REFERENCE_HEADING =
+  /^(?:参考文献|参考书目|引用文献|文献目录|书目|注释|尾注|脚注|索引|延伸阅读|推荐阅读|进一步阅读|注释与参考|References?|Bibliography|Notes?|Endnotes?|Footnotes?|Index|Further\s+Reading)(?:$|[与和及、\s：:].*)/i
+
+export function isChapterHeading(line: string): boolean {
+  const text = line.trim()
+  return text.length >= 2 && text.length <= 90 && CHAPTER_HEADING.test(text)
+}
+
+function isReferenceHeading(line: string): boolean {
+  return REFERENCE_HEADING.test(cleanTitle(line))
+}
+
+/**
+ * Split a text resource into articles. Handles Markdown headings plus the
+ * chapter markers people actually use in .txt books, and drops reference
+ * sections instead of shipping them as a chapter.
+ */
 export function splitResourceByHeadings(resource: Resource): ResourceArticle[] {
   const chunks: Array<{ title: string; lines: string[] }> = []
   let title = resource.title
   let lines: string[] = []
+  let skippingReferences = false
 
   const push = () => {
     const text = lines.join('\n').trim()
     if (text.replace(/\s/g, '').length >= 40) chunks.push({ title, lines: [...lines] })
   }
 
+  const skipReferences = () => {
+    push()
+    lines = []
+    skippingReferences = true
+  }
+
   for (const line of resource.text.split('\n')) {
-    const heading = /^#\s+(.+)$/.exec(line)
-    if (heading) {
+    if (isReferenceHeading(line)) {
+      // References usually sit at the end of a section; drop them without
+      // splitting the chapter they belong to.
+      skipReferences()
+      continue
+    }
+    if (skippingReferences) continue
+    if (isChapterHeading(line)) {
       push()
-      title = heading[1]!.trim() || resource.title
-      lines = [line]
+      title = cleanTitle(line) || resource.title
+      lines = []
       continue
     }
     lines.push(line)
