@@ -7,6 +7,8 @@
  * workspace can be hydrated back after a restart or moved to another device.
  */
 
+import { strFromU8, strToU8, unzipSync, zipSync } from './vendor/fflate.js'
+
 const DB_NAME = 'closeread'
 const DB_VERSION = 1
 const STORE = 'files'
@@ -106,6 +108,47 @@ export async function summary() {
   for (const file of paths) if (/(^|\/)packs\/[^/]+\/pack\.json$/.test(file)) packs += 1
   const bytes = paths.reduce((total, file) => total + (files[file] || '').length, 0)
   return { files: paths.length, packs, bytes }
+}
+
+/** A zip with `manifest.json` plus every workspace file under `files/`. */
+export async function exportZip() {
+  const files = await loadAll()
+  const entries = {}
+  for (const [name, content] of Object.entries(files)) entries[`files/${name}`] = strToU8(content)
+  entries['manifest.json'] = strToU8(
+    JSON.stringify({
+      kind: SNAPSHOT_KIND,
+      version: SNAPSHOT_VERSION,
+      exportedAt: new Date().toISOString(),
+      app: 'closeread',
+      files: Object.keys(files).length,
+    }),
+  )
+  return zipSync(entries, { level: 6 })
+}
+
+/** Accept both the zip format and the older single JSON file. */
+export async function importAny(input) {
+  if (input instanceof Uint8Array) {
+    const unzipped = unzipSync(input)
+    const manifestRaw = unzipped['manifest.json']
+    if (!manifestRaw) throw new Error('压缩包里缺少 manifest.json。')
+    const manifest = JSON.parse(strFromU8(manifestRaw))
+    if (manifest.kind !== SNAPSHOT_KIND) throw new Error('这不是 CloseRead 的迁移包。')
+    const files = {}
+    for (const [name, data] of Object.entries(unzipped)) {
+      if (!name.startsWith('files/')) continue
+      const relative = name.slice('files/'.length)
+      if (!isSafePath(relative)) continue
+      files[relative] = strFromU8(data)
+    }
+    const count = Object.keys(files).length
+    if (count === 0) throw new Error('压缩包里没有可用的内容。')
+    await clearAll()
+    await saveFiles(Object.entries(files).map(([path, content]) => ({ path, content })))
+    return { files: count }
+  }
+  return importText(String(input))
 }
 
 export async function exportText() {

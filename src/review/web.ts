@@ -561,6 +561,32 @@ ${pwaHead()}
   .pack-actions .btn { white-space: nowrap; }
   .pack-shared-tag { padding: 4px 9px; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 999px; color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
   .library-note { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 1.7; max-width: 68ch; }
+  .feedback-intro { margin-bottom: 16px; }
+  .feedback-intro h2 { margin: 0 0 6px; font-family: var(--display); font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
+  .feedback-intro p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.7; max-width: 66ch; }
+  .feedback-form { margin: 0 0 24px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+  .feedback-kinds { display: flex; gap: 8px; margin-bottom: 10px; }
+  .feedback-kinds button { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 5px 14px; font: inherit; font-size: 12px; cursor: pointer; }
+  .feedback-kinds button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+  .feedback-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); padding: 10px 12px; font: inherit; font-size: 13px; line-height: 1.7; resize: vertical; outline: none; }
+  .feedback-form textarea:focus { border-color: var(--accent); }
+  .feedback-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
+  .feedback-item { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .feedback-vote { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 2px; width: 54px; padding: 8px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--muted); font: inherit; font-size: 11px; cursor: pointer; }
+  .feedback-vote b { font-family: var(--mono); font-size: 14px; color: var(--ink); }
+  .feedback-vote.voted { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); }
+  .feedback-vote.voted b { color: var(--accent-strong); }
+  .feedback-body { min-width: 0; flex: 1 1 auto; }
+  .feedback-body p { margin: 0 0 6px; font-size: 13px; line-height: 1.75; word-break: break-word; }
+  .feedback-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; }
+  .feedback-chip { padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); font-family: var(--ui); font-size: 10px; letter-spacing: 0; }
+  .feedback-chip.open { color: var(--muted); }
+  .feedback-chip.planned { color: var(--accent-strong); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--accent-soft); }
+  .feedback-chip.fixed { color: #2f7a4d; border-color: color-mix(in srgb, #2f7a4d 40%, var(--line)); background: color-mix(in srgb, #2f7a4d 8%, var(--surface)); }
+  .feedback-chip.declined { color: var(--muted); opacity: .75; }
+  .feedback-reply { margin-top: 8px; padding: 8px 10px; border-left: 2px solid var(--accent); background: var(--surface-2); border-radius: 0 8px 8px 0; color: var(--ink-70); font-size: 12px; line-height: 1.7; }
+  .feedback-status-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .feedback-status-actions button { border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--muted); padding: 3px 8px; font: inherit; font-size: 10.5px; cursor: pointer; }
   .prefetch-modal { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(12,16,13,.45); }
   .prefetch-card { width: min(420px, 100%); padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 24px 70px rgba(0,0,0,.24); }
   .prefetch-card h3 { margin: 0 0 8px; font-family: var(--display); font-size: 18px; font-weight: 700; }
@@ -1450,6 +1476,7 @@ ${pwaHead()}
       <nav class="side-nav side-more-list" aria-label="更多">
         <button data-tab="passport" type="button"><span>成长</span></button>
         <button data-tab="insights" type="button"><span>复盘</span></button>
+        <button data-tab="feedback" type="button"><span>意见墙</span></button>
       </nav>
     </details>
     <div class="sidebar-spacer"></div>
@@ -1618,6 +1645,25 @@ ${pwaHead()}
     </div>
   </section>
 
+  <section class="view" id="view-feedback">
+    <div class="feedback-intro">
+      <h2>意见墙</h2>
+      <p>想加的功能、用着别扭的地方、碰到的 bug，都可以写在这里。别人也能「加一」，作者会更新状态。</p>
+    </div>
+    <form class="feedback-form" id="feedback-form">
+      <div class="feedback-kinds" role="group" aria-label="类型">
+        <button type="button" class="active" data-feedback-kind="idea">想法</button>
+        <button type="button" data-feedback-kind="bug">Bug</button>
+      </div>
+      <textarea id="feedback-body" maxlength="1000" rows="3" placeholder="例如：想要按章节导出；导入某个网页时正文没抓全…"></textarea>
+      <div class="feedback-actions">
+        <button class="btn btn-primary" type="submit" id="feedback-submit">提交</button>
+        <span class="small muted" id="feedback-status"></span>
+      </div>
+    </form>
+    <div class="feedback-list" id="feedback-list"></div>
+  </section>
+
   <section class="view" id="view-shared">
     <p class="library-note">公共库由所有访客贡献。打开某个学习包时，服务器会把它复制进你的空间，之后的进度和批注只属于你。</p>
     <div id="library-list"></div>
@@ -1741,6 +1787,7 @@ ${pwaHead()}
       <div class="mobile-more-head"><strong>更多</strong><button class="link-button" data-mobile-more-close type="button">关闭</button></div>
       <button data-tab="passport" type="button">成长</button>
       <button data-tab="insights" type="button">复盘</button>
+      <button data-tab="feedback" type="button">意见墙</button>
       <button data-tab="settings" type="button">设置</button>
       <a href="${GITHUB_REPO}" target="_blank" rel="noopener noreferrer">GitHub 开源仓库 <span aria-hidden="true">↗</span></a>
     </div>
@@ -2115,10 +2162,17 @@ ${pwaHead()}
     box.hidden = !localSync.failed;
   }
 
+  // Only a visible page counts as "online": a tab left in the background for
+  // days should not keep inflating the number.
+  function pingCommunity() {
+    if (document.visibilityState === 'hidden') return Promise.resolve();
+    return fetch('/api/public/ping', { cache: 'no-store' }).catch(function () {});
+  }
+
   function loadCommunityStats() {
     var hosts = [els.community, els.communityInline].filter(function (node) { return Boolean(node); });
     if (!hosts.length) return;
-    api('/api/public/stats').then(function (data) {
+    pingCommunity().then(function () { return api('/api/public/stats'); }).then(function (data) {
       var visible = Boolean(data) && data.mode === 'public';
       var total = visible ? Number(data.totalUsers || 0) : 0;
       var online = visible ? Number(data.online || 0) : 0;
@@ -2862,7 +2916,7 @@ ${pwaHead()}
           ? '<p class="muted">你的文章、学习项、阅读进度和批注都存在这个浏览器里。换手机或换电脑时，先在这里导出，再在新设备上导入。</p>'
           : '<p class="muted">换手机或换电脑时，在这里导出全部内容，再在新设备上导入。</p>') +
         '<div class="settings-actions"><button class="btn btn-primary" id="settings-backup" type="button">导出到本机</button></div>' +
-        '<div class="settings-file"><input type="file" id="settings-restore-file" accept="application/json,.json">' +
+        '<div class="settings-file"><input type="file" id="settings-restore-file" accept=".zip,application/zip,application/json,.json">' +
         '<button class="btn" id="settings-restore-run" type="button">从文件导入</button>' +
         '<span id="settings-restore-status"></span></div>' +
         '<p class="small muted">导入会覆盖当前的文章、学习项和阅读进度，请先导出一份。模型 Key 不包含在文件里，需要在新设备上重新填写。</p>' +
@@ -3059,16 +3113,21 @@ ${pwaHead()}
     checkpointNow()
       .then(function () { return localDb(); })
       .then(function (db) {
-        return db.exportText().then(function (text) {
-          var blob = new Blob([text], { type: 'application/json' });
+        return db.exportZip().then(function (zipped) {
+          if (!zipped || zipped.length < 200) {
+            throw new Error('这个浏览器里还没有可导出的内容');
+          }
+          var blob = new Blob([zipped], { type: 'application/zip' });
           var url = URL.createObjectURL(blob);
           var link = document.createElement('a');
           link.href = url;
-          link.download = 'closeread-' + new Date().toISOString().slice(0, 10) + '.json';
+          link.download = 'closeread-' + new Date().toISOString().slice(0, 10) + '.zip';
+          document.body.appendChild(link);
           link.click();
-          setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+          link.remove();
+          setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
           markExported();
-          toast('已导出 ' + Math.round(blob.size / 1024) + ' KB 到下载目录，在新设备上用「从文件导入」恢复');
+          toast('已导出 ' + Math.max(1, Math.round(blob.size / 1024)) + ' KB（zip）到下载目录');
         });
       })
       .catch(function (error) { toast('导出失败：' + error.message); })
@@ -3079,10 +3138,12 @@ ${pwaHead()}
     if (!confirm('导入会覆盖这个浏览器里的全部内容，确认继续？')) return;
     if (button) setBusy(button, true, '导入中…');
     if (status) status.textContent = '导入中…';
-    file.text()
-      .then(function (text) {
+    file.arrayBuffer()
+      .then(function (buffer) {
+        var bytes = new Uint8Array(buffer);
+        var isZip = bytes.length > 3 && bytes[0] === 0x50 && bytes[1] === 0x4b;
         return localDb().then(function (db) {
-          return db.importText(text).then(function (result) {
+          return db.importAny(isZip ? bytes : new TextDecoder().decode(bytes)).then(function (result) {
             return db.loadAll().then(function (files) {
               return api('/api/hydrate', {
                 method: 'POST',
@@ -3495,6 +3556,115 @@ ${pwaHead()}
     input.value = value || '';
     if (wrap._sync) wrap._sync();
   }
+
+
+  var FEEDBACK_STATUS_LABEL = { open: '待处理', planned: '已采纳', fixed: '已修复', declined: '已驳回' };
+  var feedbackKind = 'idea';
+
+  function renderFeedbackItem(item, owner) {
+    var label = FEEDBACK_STATUS_LABEL[item.status] || item.status;
+    var statusActions = owner
+      ? '<div class="feedback-status-actions">' +
+          ['open', 'planned', 'fixed', 'declined'].map(function (status) {
+            return '<button type="button" data-feedback-set="' + item.id + '" data-feedback-status="' + status + '">' +
+              (FEEDBACK_STATUS_LABEL[status] || status) + '</button>';
+          }).join('') +
+        '</div>'
+      : '';
+    return '<div class="feedback-item">' +
+      '<button type="button" class="feedback-vote' + (item.voted ? ' voted' : '') + '" data-feedback-vote="' + escapeHtml(item.id) + '" aria-pressed="' + (item.voted ? 'true' : 'false') + '">' +
+        '<b>' + item.votes + '</b><span>加一</span>' +
+      '</button>' +
+      '<div class="feedback-body">' +
+        '<p>' + escapeHtml(item.body) + '</p>' +
+        '<div class="feedback-meta">' +
+          '<span class="feedback-chip ' + item.status + '">' + label + '</span>' +
+          '<span>' + (item.kind === 'bug' ? 'BUG' : '想法') + '</span>' +
+          '<span>' + escapeHtml(item.author) + '</span>' +
+          '<span>' + escapeHtml((item.createdAt || '').slice(0, 10)) + '</span>' +
+        '</div>' +
+        (item.reply ? '<div class="feedback-reply">' + escapeHtml(item.reply) + '</div>' : '') +
+        statusActions +
+      '</div>' +
+    '</div>';
+  }
+
+  function loadFeedback() {
+    var host = document.getElementById('feedback-list');
+    if (!host) return;
+    if (!host.innerHTML.trim()) host.innerHTML = '<div class="empty loading">正在加载…</div>';
+    api('/api/feedback').then(function (data) {
+      var items = (data && data.items) || [];
+      if (!items.length) {
+        host.innerHTML = '<div class="empty">还没有人提意见，你可以是第一个。</div>';
+        return;
+      }
+      host.innerHTML = items.map(function (item) { return renderFeedbackItem(item, data.owner); }).join('');
+    }).catch(function (error) {
+      host.innerHTML = '<div class="empty">加载失败：' + escapeHtml(error.message) + '</div>';
+    });
+  }
+
+  function bindFeedback() {
+    var form = document.getElementById('feedback-form');
+    if (!form || form.getAttribute('data-bound') === '1') return;
+    form.setAttribute('data-bound', '1');
+
+    form.querySelectorAll('[data-feedback-kind]').forEach(function (button) {
+      button.addEventListener('click', function () {
+        feedbackKind = button.getAttribute('data-feedback-kind');
+        form.querySelectorAll('[data-feedback-kind]').forEach(function (other) {
+          other.classList.toggle('active', other === button);
+        });
+      });
+    });
+
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      var body = document.getElementById('feedback-body');
+      var status = document.getElementById('feedback-status');
+      var text = body ? body.value.trim() : '';
+      if (text.length < 4) { if (status) status.textContent = '再写长一点点吧。'; return; }
+      if (status) status.textContent = '提交中…';
+      api('/api/feedback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ kind: feedbackKind, body: text })
+      }).then(function () {
+        if (body) body.value = '';
+        if (status) status.textContent = '已提交，谢谢';
+        toast('已提交到意见墙');
+        loadFeedback();
+      }).catch(function (error) {
+        if (status) status.textContent = '提交失败：' + error.message;
+      });
+    });
+
+    document.getElementById('feedback-list').addEventListener('click', function (event) {
+      var vote = event.target.closest('[data-feedback-vote]');
+      if (vote) {
+        var id = vote.getAttribute('data-feedback-vote');
+        api('/api/feedback/' + encodeURIComponent(id) + '/vote', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: '{}'
+        }).then(function () { loadFeedback(); })
+          .catch(function (error) { toast(error.message); });
+        return;
+      }
+      var setter = event.target.closest('[data-feedback-set]');
+      if (setter) {
+        api('/api/feedback/' + encodeURIComponent(setter.getAttribute('data-feedback-set')) + '/status', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ status: setter.getAttribute('data-feedback-status') })
+        }).then(function () { loadFeedback(); })
+          .catch(function (error) { toast(error.message); });
+      }
+    });
+  }
+
+  bindFeedback();
 
   function loadShared() {
     var host = document.getElementById('library-list');
@@ -5265,6 +5435,7 @@ ${pwaHead()}
     read: ['READ', '精读'],
     packs: ['READ', '文章'],
     shared: ['LIBRARY', '公共库'],
+    feedback: ['FEEDBACK', '意见墙'],
     passport: ['PROGRESS', '成长'],
     insights: ['WEEKLY REVIEW', '复盘'],
     import: ['NEW MATERIAL', '导入文章'],
@@ -5275,6 +5446,7 @@ ${pwaHead()}
     read: 'view-home',
     packs: 'view-packs',
     shared: 'view-shared',
+    feedback: 'view-feedback',
     import: 'view-import',
     settings: 'view-settings',
     passport: 'view-passport',
@@ -5289,7 +5461,7 @@ ${pwaHead()}
     if (tab === 'read' || tab === 'import') return 'read';
     if (tab === 'packs') return 'packs';
     if (tab === 'shared') return 'shared';
-    if (tab === 'passport' || tab === 'insights') return 'more';
+    if (tab === 'passport' || tab === 'insights' || tab === 'feedback') return 'more';
     return '';
   }
 
@@ -5326,6 +5498,7 @@ ${pwaHead()}
     if (tab === 'read') loadPlan();
     if (tab === 'packs') loadPacks();
     if (tab === 'shared') loadShared();
+    if (tab === 'feedback') loadFeedback();
     if (tab === 'passport') { loadPassport(); loadGrowthWeekly(); }
     if (tab === 'insights') loadInsights();
     if (tab === 'import') loadRecentImports();
@@ -5669,6 +5842,7 @@ ${pwaHead()}
   });
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden') checkpointNow();
+    else loadCommunityStats();
   });
   window.setInterval(function () {
     if (document.visibilityState === 'visible') checkpointNow();

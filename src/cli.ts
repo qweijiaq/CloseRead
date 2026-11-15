@@ -18,6 +18,8 @@ import { writePack } from './pack/build.js'
 import { loadPack } from './pack/mutate.js'
 import { renderHtml } from './pack/html.js'
 import { prefetchPack } from './pack/prefetch.js'
+import { FeedbackBoard } from './community/feedback.js'
+import type { FeedbackStatus } from './community/feedback.js'
 import { startReviewServer } from './review/server.js'
 import { VisitorRegistry, pruneWorkspaces } from './review/visitors.js'
 import { restoreLibraryBackup, writeLibraryBackup } from './store/backup.js'
@@ -74,6 +76,7 @@ Usage:
   pnpm dev prefetch <id|latest> [--expand] [--sentences]
                                       Pre-generate answers the reader would ask for
   pnpm dev unpublish <id|title>       Remove a pack from the shared library
+  pnpm dev feedback [status <id> <s>] List the feedback board or move a status
 
 Add options:
   --title <name>   Override the resource title
@@ -605,6 +608,46 @@ async function commandStyle(
  */
 
 /** Remove a pack from the shared library (works for any pack, including seeds). */
+
+/** Inspect the feedback board, or move an item's status. */
+async function commandFeedback(args: string[]): Promise<void> {
+  const board = new FeedbackBoard(path.join(config.dataDir, 'community', 'feedback.json'))
+  const [action, id, status] = args
+  if (action === 'status') {
+    if (!id || !status) {
+      console.error('用法: pnpm dev feedback status <id> <open|planned|fixed|declined>')
+      process.exitCode = 1
+      return
+    }
+    if (!['open', 'planned', 'fixed', 'declined'].includes(status)) {
+      console.error('状态只能是 open / planned / fixed / declined')
+      process.exitCode = 1
+      return
+    }
+    const item = await board.find(id)
+    if (!item) {
+      console.error('没有找到这条意见。')
+      process.exitCode = 1
+      return
+    }
+    await board.setStatus(item.id, status as FeedbackStatus)
+    console.log(`已更新 ${item.id} → ${status}`)
+    return
+  }
+  const list = await board.list('')
+  if (list.items.length === 0) {
+    console.log('意见墙还是空的。')
+    return
+  }
+  console.log('ID        状态      加一  内容')
+  for (const item of list.items) {
+    const label = { open: '待处理', planned: '已采纳', fixed: '已修复', declined: '已驳回' }[item.status]
+    console.log(
+      `${item.id.padEnd(9)} ${label.padEnd(6)} ${String(item.votes).padStart(3)}   ${item.body.replace(/\s+/g, ' ').slice(0, 60)}`,
+    )
+  }
+}
+
 async function commandUnpublish(target: string | undefined): Promise<void> {
   const store = await Store.open(storePath())
   const pack = target
@@ -883,6 +926,9 @@ async function main(): Promise<void> {
       break
     case 'backup':
       await commandBackup(positionals[1] ?? values.out)
+      break
+    case 'feedback':
+      await commandFeedback(positionals.slice(1))
       break
     case 'unpublish':
       await commandUnpublish(positionals[1])

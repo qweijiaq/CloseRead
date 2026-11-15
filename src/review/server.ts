@@ -99,6 +99,9 @@ import { DIAGNOSIS_WORDS, computeDiagnosisLevel, sampleDiagnosisWords } from './
 import { weeklyPayload } from './weekly.js'
 import { renderReviewApp } from './web.js'
 import { VisitorRegistry, assertWorkspaceCapacity } from './visitors.js'
+import { FeedbackBoard } from '../community/feedback.js'
+import type { FeedbackStatus } from '../community/feedback.js'
+import { rootDataDir } from '../config.js'
 
 function dueLabel(item: StoredItem, now: Date = new Date()): string {
   if (item.status === 'known') return '已掌握'
@@ -441,6 +444,8 @@ function pruneJobs(): void {
     if (Date.parse(job.startedAt) < cutoff) buildJobs.delete(id)
   }
 }
+
+const feedbackBoard = new FeedbackBoard(path.join(rootDataDir, 'community', 'feedback.json'))
 
 const COMPILE_WINDOW_MS = 60_000
 const COMPILE_PER_WINDOW = 6
@@ -1326,6 +1331,7 @@ async function handle(
   requireToken: boolean,
   visitors: VisitorRegistry,
   shared: Store,
+  visitorId: string,
 ): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://localhost')
   const method = request.method ?? 'GET'
@@ -1392,7 +1398,8 @@ async function handle(
 
   // The read-only demo (used by bots and by visitors who have not written yet)
   // must never accept writes: a script could otherwise pollute the shared library.
-  if (currentWorkspace().readOnly && method !== 'GET' && method !== 'HEAD') {
+  const feedbackPath = url.pathname === '/api/feedback' || url.pathname.startsWith('/api/feedback/')
+  if (currentWorkspace().readOnly && method !== 'GET' && method !== 'HEAD' && !feedbackPath) {
     sendJson(response, 403, { error: '演示空间是只读的，请先创建自己的空间。' })
     return
   }
@@ -1492,6 +1499,21 @@ async function handle(
     } catch (error) {
       response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
       response.end(error instanceof Error ? error.message : String(error))
+    }
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/vendor/fflate.js') {
+    try {
+      const content = await fs.readFile(path.join(projectRoot, 'src', 'review', 'vendor', 'fflate.js'), 'utf8')
+      response.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'cache-control': 'public, max-age=86400',
+      })
+      response.end(content)
+    } catch {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Vendor asset not found')
     }
     return
   }
@@ -1833,6 +1855,64 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
 </main></body></html>`
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
     response.end(html)
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/feedback') {
+    const list = await feedbackBoard.list(visitorId)
+    sendJson(response, 200, { ...list, owner: visitorId === 'owner-main' })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/feedback') {
+    try {
+      const body = await readJson(request, 20_000)
+      const result = await feedbackBoard.add(visitorId, {
+        kind: body.kind === 'bug' ? 'bug' : 'idea',
+        body: typeof body.body === 'string' ? body.body : '',
+      })
+      if (!result.ok) {
+        sendJson(response, 400, { error: result.error })
+        return
+      }
+      sendJson(response, 200, { ok: true, item: result.item })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const voteMatch = /^\/api\/feedback\/([^/]+)\/vote$/.exec(url.pathname)
+  if (method === 'POST' && voteMatch) {
+    const result = await feedbackBoard.vote(decodeURIComponent(voteMatch[1]!), visitorId)
+    sendJson(response, result.ok ? 200 : 400, result.ok ? result : { error: result.error })
+    return
+  }
+
+  const statusMatch = /^\/api\/feedback\/([^/]+)\/status$/.exec(url.pathname)
+  if (method === 'POST' && statusMatch) {
+    if (visitorId !== 'owner-main') {
+      sendJson(response, 403, { error: '只有站点作者能改状态。' })
+      return
+    }
+    const body = await readJson(request, 5_000).catch(() => ({} as Record<string, unknown>))
+    const status = String(body.status ?? '') as FeedbackStatus
+    if (!['open', 'planned', 'fixed', 'declined'].includes(status)) {
+      sendJson(response, 400, { error: '未知状态。' })
+      return
+    }
+    const ok = await feedbackBoard.setStatus(
+      decodeURIComponent(statusMatch[1]!),
+      status,
+      typeof body.reply === 'string' ? body.reply : undefined,
+    )
+    sendJson(response, ok ? 200 : 404, ok ? { ok: true } : { error: '这条意见不在了。' })
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/api/public/ping') {
+    visitors.heartbeat(visitorId)
+    sendJson(response, 200, { ok: true })
     return
   }
 
@@ -5102,7 +5182,7 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
         // (and no cookie) should be created for it.
         if ((request.url ?? '').startsWith('/api/compile')) {
           await runInWorkspace(rootWorkspaceRef(), () =>
-            handle(request, response, store, lan, requireToken, visitors, store),
+            handle(request, response, store, lan, requireToken, visitors, store, ''),
           )
           return
         }
@@ -5116,7 +5196,7 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
           return
         }
         await runInWorkspace(context.workspace, () =>
-          handle(request, response, context.store, lan, requireToken, visitors, store),
+          handle(request, response, context.store, lan, requireToken, visitors, store, context.visitorId),
         )
         // Any write inside the scratch workspace is captured here so the
         // browser can pull it even when the reader page made the change.

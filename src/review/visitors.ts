@@ -11,7 +11,7 @@ import type { PackRecord } from '../types.js'
 
 const VISITOR_COOKIE = 'cr_visitor'
 const OWNER_VISITOR_ID = 'owner-main'
-const ONLINE_WINDOW_MS = 5 * 60 * 1000
+const ONLINE_WINDOW_MS = 3 * 60 * 1000
 const FLUSH_INTERVAL_MS = 15 * 1000
 const COOKIE_MAX_AGE = 2 * 365 * 24 * 60 * 60
 
@@ -27,6 +27,8 @@ const STORE_IDLE_MS = 10 * 60 * 1000
 interface VisitRecord {
   first: number
   last: number
+  /** Last time an open, visible page said hello. Drives "online". */
+  active?: number
   claimed?: boolean
 }
 
@@ -163,7 +165,12 @@ export class VisitorRegistry {
           if (!record || typeof record !== 'object') continue
           const first = Number(record.first) || Date.now()
           const last = Number(record.last) || first
-          this.visits.set(id, { first, last, claimed: record.claimed === true })
+          this.visits.set(id, {
+            first,
+            last,
+            ...(Number(record.active) ? { active: Number(record.active) } : {}),
+            claimed: record.claimed === true,
+          })
         }
       }
     } catch {
@@ -385,11 +392,22 @@ export class VisitorRegistry {
     return { ok: true }
   }
 
+  /** Called when a page is open and visible; this is what "online" means. */
+  heartbeat(id: string): void {
+    const record = this.visits.get(id)
+    if (!record) return
+    const now = Date.now()
+    if (record.active && now - record.active < 30 * 1000) return
+    record.active = now
+    record.last = now
+    this.markDirty()
+  }
+
   stats(): PublicStats {
     const now = Date.now()
     let online = 0
     for (const record of this.visits.values()) {
-      if (now - record.last <= this.demoIntervalMs) online += 1
+      if (record.active && now - record.active <= this.demoIntervalMs) online += 1
     }
     return { totalUsers: this.visits.size, online }
   }
@@ -443,7 +461,10 @@ export class VisitorRegistry {
 
     const personal = await this.hasWorkspace(id)
     if (!personal) {
-      if (!isWriteMethod(method)) {
+      // Feedback is stored server-side and must not force a workspace claim.
+      const feedbackWrite =
+        isWriteMethod(method) && (request.url ?? '').startsWith('/api/feedback')
+      if (!isWriteMethod(method) || feedbackWrite) {
         return { workspace: this.demo(), store: this.demoStore, visitorId: id, personal: false }
       }
       const claimed = await this.claim(id, ip, created === false)
