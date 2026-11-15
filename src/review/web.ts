@@ -36,7 +36,7 @@ function customSelectMarkup(
   return `<div class="cselect ${className}" data-cselect>
     <input type="hidden" id="${escapeAttr(id)}" value="${escapeAttr(selected?.value ?? '')}">
     <button class="cselect-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
-      <span class="cselect-label">${escapeText(selected?.label ?? '')}</span><span class="cselect-arrow">⌄</span>
+      <span class="cselect-label">${escapeText(selected?.label ?? '')}</span><span class="cselect-arrow" aria-hidden="true"><svg viewBox="0 0 10 6" width="9" height="6"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
     </button>
     <div class="cselect-menu" role="listbox" hidden>
       ${options
@@ -630,7 +630,8 @@ ${pwaHead()}
   .cselect-trigger { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 9px; padding: 7px 10px; font: inherit; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
   .cselect-trigger:hover { border-color: var(--accent); }
   .cselect-trigger[aria-expanded="true"] { border-color: var(--accent); }
-  .cselect-arrow { color: var(--muted); font-size: 10px; }
+  .cselect-arrow { display: inline-flex; align-items: center; justify-content: center; width: 10px; height: 6px; color: var(--muted); }
+  .cselect-arrow svg { display: block; }
   .cselect-menu { position: absolute; left: 0; top: calc(100% + 4px); z-index: 80; min-width: 100%; max-height: 240px; overflow: auto; padding: 5px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); box-shadow: 0 10px 30px rgba(28,26,22,.16); }
   .cselect-option { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); text-align: left; padding: 7px 9px; border-radius: 6px; font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer; }
   .cselect-option:hover, .cselect-option.is-selected { background: var(--paper-2); color: var(--accent); }
@@ -1454,6 +1455,7 @@ ${pwaHead()}
   .cmdk-item.active { background: var(--accent-soft); color: var(--accent-strong); }
   .cmdk-item.active small { color: var(--accent-strong); }
   .cmdk-empty { padding: 16px 12px; color: var(--muted); font-size: 12.5px; }
+  .import-option input[disabled] + span { opacity: .55; }
   .import-preview { margin: 8px 0 2px; padding: 8px 11px; border: 1px dashed var(--line-strong); border-radius: 9px; background: var(--surface-2); color: var(--muted); font-size: 11.5px; line-height: 1.6; }
   .import-preview b { color: var(--ink); font-weight: 600; }
   .import-preview[hidden] { display: none; }
@@ -2011,7 +2013,7 @@ ${pwaHead()}
     return '<div class="cselect ' + (className || '') + '" data-cselect>' +
       '<input type="hidden" id="' + escapeHtml(id) + '" value="' + escapeHtml(selected ? selected.value : '') + '">' +
       '<button class="cselect-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">' +
-        '<span class="cselect-label">' + escapeHtml(selected ? selected.label : '') + '</span><span class="cselect-arrow">⌄</span>' +
+        '<span class="cselect-label">' + escapeHtml(selected ? selected.label : '') + '</span><span class="cselect-arrow" aria-hidden="true"><svg viewBox="0 0 10 6" width="9" height="6"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' +
       '</button>' +
       '<div class="cselect-menu" role="listbox" hidden>' +
         options.map(function (option) {
@@ -4371,8 +4373,19 @@ ${pwaHead()}
     });
   }
 
+  // "清理正文" calls the model; without a key it would silently do nothing.
+  function applyAiCleanAvailability(configured) {
+    ['import-text-ai-clean', 'import-url-ai-clean'].forEach(function (id) {
+      var box = document.getElementById(id);
+      if (!box) return;
+      box.disabled = !configured;
+      if (!configured) box.checked = false;
+    });
+  }
+
   function renderImportMode(llm, model, provider) {
     state.llmConfigured = Boolean(llm);
+    applyAiCleanAvailability(Boolean(llm));
     els.importMode.innerHTML = llm
       ? '当前使用 <strong>' + escapeHtml(provider || 'LLM') + '</strong> · ' + escapeHtml(model) +
         ' 分析，生成通常需要 1–3 分钟。<br>内容只保存在你的浏览器里，服务器不留存。'

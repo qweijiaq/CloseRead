@@ -64,6 +64,14 @@ It is a reading workspace, not a chat tutor, and not a flashcard app with articl
 
 *The reading passport, weekly review and achievements are derived from existing reading records.*
 
+### Public library and feedback wall
+
+- The **public library** is a shared shelf on the server. Anyone can read it, including visitors with no model key: answers and translations are generated before publishing.
+- A pack you built can be published with one click; you (or the site owner) can take it back down.
+- Opening a shared pack copies it into your own workspace, so progress, notes and cards stay yours.
+- The library supports title search, CEFR filtering and sorting.
+- The **feedback wall** takes ideas and bug reports with screenshots, lets others vote "＋1", and tracks 待处理 / 已采纳 / 已修复 / 已驳回 with an owner reply.
+
 ### Export
 
 - Interactive HTML, EPUB, PDF (comfortable or compact) and PNG (single image or page-by-page ZIP).
@@ -203,7 +211,7 @@ The local server binds to `127.0.0.1` and has no login. Do not expose it directl
 | Anki CSV | Import cards into Anki |
 | Markdown | Standalone pack or reading notes for Obsidian and other editors |
 | Weekly report | Markdown summary of the last seven days |
-| Backup JSON | Full archive for moving or restoring the workspace |
+| Migration zip | `manifest.json` plus every file; import it on another device |
 
 The pack folder also keeps `pack.json`, `meta.json`, `pack.md`, `notes.md`, `anki.csv` and `index.html`, so a pack can be inspected or moved without the app. `meta.json` records the input hash, mode, provider/model, prompt version, timestamp and warnings, but no API keys.
 

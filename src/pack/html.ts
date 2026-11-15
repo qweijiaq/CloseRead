@@ -699,7 +699,8 @@ ${exportMode ? '' : themeBootScript()}
   .cselect { position: relative; }
   .cselect-trigger { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 12px; cursor: pointer; }
   .cselect-trigger:hover, .cselect-trigger[aria-expanded="true"] { border-color: var(--cinnabar); }
-  .cselect-arrow { color: var(--ink-45); font-size: 10px; }
+  .cselect-arrow { display: inline-flex; align-items: center; justify-content: center; width: 10px; height: 6px; color: inherit; }
+  .cselect-arrow svg { display: block; }
   .cselect-menu { position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 90; max-height: 220px; overflow: auto; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); box-shadow: 0 10px 30px rgba(28,26,22,.18); }
   .cselect-option { display: block; width: 100%; border: 0; background: transparent; color: var(--ink); text-align: left; padding: 7px 8px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; }
   .cselect-option:hover, .cselect-option.is-selected { background: var(--paper-2); color: var(--cinnabar); }
@@ -915,8 +916,8 @@ ${exportMode ? '' : themeBootScript()}
   .para-items-wrap summary { cursor: pointer; color: var(--indigo); font-size: 12px; }
   .para-items-wrap .para-items { margin-top: 8px; }
   .item { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 12px 14px; }
-  .item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-  .item-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+  .item-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 6px 12px; }
+  .item-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; flex: 1 1 auto; min-width: 0; }
   .item-word { font-family: var(--serif); font-size: 19px; font-weight: 600; }
   .item .ipa { font-family: var(--sans); font-size: 12px; color: var(--ink-45); }
   .tag {
@@ -931,7 +932,8 @@ ${exportMode ? '' : themeBootScript()}
   }
   .star { border: 0; background: transparent; color: var(--line-strong); font-size: 16px; cursor: pointer; padding: 0 2px; line-height: 1; }
   .star.active { color: var(--cinnabar); }
-  .item-actions { display: flex; align-items: center; gap: 4px; }
+  .item-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px; flex: 0 0 auto; }
+  .item-actions button { white-space: nowrap; }
   .remove { border: 0; background: transparent; color: var(--line-strong); font-size: 16px; cursor: pointer; padding: 0 2px; line-height: 1; }
   .remove:hover { color: var(--cinnabar); }
   .expand { border: 1px solid var(--line); background: transparent; color: var(--indigo); border-radius: 999px; padding: 1px 8px; font: inherit; font-size: 10.5px; cursor: pointer; }
@@ -1491,17 +1493,10 @@ ${exportMode ? '' : themeBootScript()}
   .export-progress { border-radius: 2px; }
   .para-items > .item:last-child:nth-child(odd),
   .front-items > .item:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  /* A single card used to put its head in a 140-190px column, which squeezed the
+     action buttons until each label wrapped onto its own line. */
   .para-items > .item:only-child,
-  .front-items > .item:only-child {
-    display: grid;
-    grid-template-columns: minmax(140px, 190px) minmax(0, 1fr);
-    column-gap: 24px;
-    align-items: start;
-  }
-  .para-items > .item:only-child > *:not(.item-head),
-  .front-items > .item:only-child > *:not(.item-head) { grid-column: 2; }
-  .para-items > .item:only-child > .item-head,
-  .front-items > .item:only-child > .item-head { grid-column: 1; grid-row: 1 / span 3; align-self: start; }
+  .front-items > .item:only-child { display: block; }
   @media (max-width: 680px) {
     .para-text, .para-items { grid-template-columns: minmax(0, 1fr); gap: 10px; }
     .translation { border-left: 0; padding-left: 0; }
@@ -1811,7 +1806,7 @@ ${exportMode ? '' : themeBootScript()}
               <div class="cselect export-word-cselect" data-cselect>
                 <input type="hidden" id="export-word-count" value="">
                 <button class="cselect-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
-                  <span class="cselect-label">全部 ${exportWordTotal} 个</span><span class="cselect-arrow">⌄</span>
+                  <span class="cselect-label">全部 ${exportWordTotal} 个</span><span class="cselect-arrow" aria-hidden="true"><svg viewBox="0 0 10 6" width="9" height="6"><path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
                 </button>
                 <div class="cselect-menu" role="listbox" hidden>
                   <button type="button" role="option" class="cselect-option is-selected" data-value="">全部 ${exportWordTotal} 个</button>

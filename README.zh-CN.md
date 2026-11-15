@@ -36,6 +36,8 @@
 ### 读
 
 - 支持带文字层的 PDF、EPUB、MOBI/AZW/AZW3、DOCX、HTML、TXT/Markdown、文章链接、RSS/Atom 订阅和带时间戳的转录。
+- 粘贴正文后会先估算「预计几项、几段、什么难度、读多久」，再决定要不要生成。
+- 按 `Cmd/Ctrl + K` 打开命令面板，直接跳到精读 / 文章 / 公共库 / 意见墙 / 设置，或导出。
 - 纯文本和 Markdown 会按 `# 标题`、`第 3 章`、`Chapter IV`、`【小标题】` 切开，参考文献、索引和尾注会被丢掉，不会当成正文读。
 - 双语阅读页：英文标题、中文标题、导语和逐段译文。
 - 读前导读：文章地图、作者立场、语言线索和一个具体的阅读策略。
@@ -63,6 +65,14 @@
 ![阅读护照](assets/screenshots/growth.png)
 
 *阅读护照、每周复盘和成就都从已有阅读记录派生。*
+
+### 公共库与意见墙
+
+- **公共库**是服务器上的共享书库：任何人（包括没有模型 Key 的访客）都能直接读，答案和翻译在发布前已经预生成好。
+- 自己生成的学习包可以点「公开」放进公共库；作者本人或站点作者可以「取消公开」。
+- 打开公共库里的文章时，服务器会把这份包复制进你的空间，之后的进度、批注和词卡都归你自己。
+- 公共库支持按标题搜索、按难度筛选、按发布时间或篇数排序。
+- **意见墙**：提交想法或 bug，支持附加截图；别人可以「加一」，状态分 待处理 / 已采纳 / 已修复 / 已驳回，作者可以回复。
 
 ### 导出
 
@@ -203,7 +213,7 @@ CloseRead 没有账号、埋点、统计、广告或云同步。只有你主动�
 | Anki CSV | 导入 Anki 的卡片 |
 | Markdown | 独立学习包，或给 Obsidian 等编辑器的精读笔记 |
 | 周报 | 最近 7 天的 Markdown 复盘 |
-| 备份 JSON | 迁移或恢复整个空间（换设备用） |
+| 迁移包 | 一个 zip（`manifest.json` + 全部文件），换设备时导入即可 |
 
 学习包目录里也保留 `pack.json`、`meta.json`、`pack.md`、`notes.md`、`anki.csv` 和 `index.html`，不依赖应用也能检查或迁移。`meta.json` 记录输入 hash、模式、服务商/模型、prompt 版本、生成时间和警告，但不含 API Key。
 
@@ -256,6 +266,7 @@ CloseRead 没有账号、埋点、统计、广告或云同步。只有你主动�
 | `pnpm dev guests` | 查看当前进程的临时工作区（诊断用） |
 | `pnpm dev prefetch <id\|latest>` | 预生成答案；`--expand` 单词展开，`--sentences` 逐句翻译 |
 | `pnpm dev unpublish <id\|标题>` | 从公共库移除一个学习包 |
+| `pnpm dev feedback` | 查看意见墙；`status <id> <planned\|fixed\|declined>` 改状态，`delete <id>` 删除 |
 | `pnpm dev demo` | 用示例文章跑完整流程 |
 
 `pnpm dev --help` 里还有 `--no-llm`、`--limit`、`--style`、`--audio`、`--no-source` 等生成选项。
