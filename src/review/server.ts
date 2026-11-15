@@ -3195,7 +3195,9 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
   if (
     method === 'POST' &&
     publicModeEnabled() &&
-    (url.pathname.startsWith('/api/import/') || url.pathname === '/api/build')
+    (url.pathname.startsWith('/api/import/') ||
+      url.pathname === '/api/build' ||
+      /^\/api\/resources\/[^/]+\/build$/.test(url.pathname))
   ) {
     try {
       await assertWorkspaceCapacity(currentWorkspace())
