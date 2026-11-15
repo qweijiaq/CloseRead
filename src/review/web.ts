@@ -1891,6 +1891,11 @@ ${pwaHead()}
         if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
         var method = (options && options.method) || 'GET';
         if (method !== 'GET' && method !== 'HEAD') scheduleCheckpoint();
+        // Build jobs finish after their request returned, so pull the result
+        // as soon as the job reports done.
+        if (path.indexOf('/api/jobs/') === 0 && data && (data.status === 'done' || (data.job && data.job.status === 'done'))) {
+          scheduleCheckpoint();
+        }
         return data;
       });
     });

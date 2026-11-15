@@ -1815,7 +1815,8 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       sendJson(response, 200, { files: [] })
       return
     }
-    if (!visitors.hasSynced(workspace.id)) await visitors.capture(workspace.id)
+    // Always rescan: background build jobs finish after their request returned.
+    await visitors.capture(workspace.id)
     sendJson(response, 200, { files: visitors.takeChanges(workspace.id) })
     return
   }

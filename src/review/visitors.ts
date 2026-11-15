@@ -513,10 +513,6 @@ export class VisitorRegistry {
     return (this.pendingChanges.get(id)?.size ?? 0) > 0
   }
 
-  hasSynced(id: string): boolean {
-    return this.syncState.has(id)
-  }
-
   /** Number of private workspaces on disk, used by the guests CLI. */
   static async listWorkspaces(): Promise<{ id: string; size: number; packs: number }[]> {
     const root = path.join(rootDataDir, 'users')
