@@ -1157,7 +1157,7 @@ ${pwaHead()}
     .passport-head { padding: 20px; }
     .passport-head h1 { font-size: 28px; }
     .passport-stats { grid-template-columns: repeat(2, 1fr); }
-    input, textarea, select, .cselect-trigger, .graph-controls input[type="search"] { font-size: 16px; }
+    input, textarea, select, .graph-controls input[type="search"] { font-size: 16px; }
     .btn, .icon-btn, .link-button, .article-override { touch-action: manipulation; }
     .article-actions .btn, .result-actions .btn, .row .btn, .settings-save { min-height: 42px; }
     .graph-controls { gap: 8px; }
@@ -3438,10 +3438,10 @@ ${pwaHead()}
               ? '第 ' + pack.chapter.index + ' / ' + pack.chapter.total + ' 篇'
               : '文章';
           var rebuild = pack.articleIndex === null || pack.articleIndex === undefined
-            ? ''
+            ? '<button class="btn" data-build="' + escapeHtml(pack.resourceId) + '">重新生成</button>'
             : '<button class="btn" data-rebuild-resource="' +
               escapeHtml(pack.parentResourceId || pack.resourceId) +
-              '" data-rebuild-article="' + pack.articleIndex + '">重生成</button>';
+              '" data-rebuild-article="' + pack.articleIndex + '">重新生成</button>';
           return '<div class="pack-row">' +
             '<div><a href="' + escapeHtml(pack.url) + '">' + escapeHtml(pack.title) + '</a>' +
             '<div class="due">' + label + ' · ' + pack.itemCount + ' 项 · ' + escapeHtml((pack.createdAt || '').slice(0, 10)) + '</div></div>' +
