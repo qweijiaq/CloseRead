@@ -1757,7 +1757,7 @@ ${pwaHead()}
     importResource: null, importArticle: null, importArticlesView: false,
     upload: null, lastUpload: null
   };
-  var LLM_PRESETS = ${JSON.stringify(LLM_PROVIDERS.map((provider) => ({ id: provider.id, label: provider.label, baseUrl: provider.baseUrl, model: provider.model, models: provider.models, api: provider.api })))};
+  var LLM_PRESETS = ${JSON.stringify(LLM_PROVIDERS.map((provider) => ({ id: provider.id, label: provider.label, baseUrl: provider.baseUrl, model: provider.model, models: provider.models, api: provider.api, hint: provider.hint ?? '' })))};
   var TTS_PRESETS = ${JSON.stringify(TTS_PROVIDERS.map((provider) => ({ id: provider.id, label: provider.label, baseUrl: provider.baseUrl, model: provider.model, voice: provider.voice, voices: provider.voices, instructions: provider.instructions, hint: provider.hint })))};
   var els = {
     stats: document.getElementById('stats'),
