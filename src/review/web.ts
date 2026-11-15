@@ -2496,7 +2496,7 @@ ${pwaHead()}
     var appHost = document.getElementById('settings-app');
     if (appHost) {
       appHost.innerHTML = '<h2>应用</h2>' +
-        '<p class="muted">把 CloseRead 添加到桌面或手机主屏，打开时更像一个独立应用；数据仍然只留在本机。</p>' +
+        '<p class="muted">把 CloseRead 添加到桌面或手机主屏，打开时更像一个独立应用；你的空间和进度不会跳转到别的设备。</p>' +
         '<div class="settings-actions"><button class="btn" id="settings-install" type="button" hidden>添加到桌面</button></div>' +
         '<p class="small muted">手机：浏览器菜单 → 添加到主屏幕。电脑：地址栏右侧的安装图标。</p>';
       var installButton = document.getElementById('settings-install');
@@ -2516,9 +2516,12 @@ ${pwaHead()}
     var dataHost = document.getElementById('settings-data');
     if (dataHost) {
       var warnings = (data.warnings || []).map(function (warning) { return escapeHtml(warning.message || ''); }).join('<br>');
+      var isPublic = data.workspace && data.workspace.mode === 'public';
       dataHost.innerHTML = '<h2>数据与学习包</h2>' +
-        settingsRow('数据目录', '<code>' + escapeHtml(data.dataDir || '') + '</code>') +
-        settingsRow('学习包目录', '<code>' + escapeHtml(data.packsDir || '') + '</code>') +
+        (isPublic
+          ? settingsRow('专属空间', data.workspace.readOnly ? '演示空间（只读）' : '本浏览器空间 · 其他访客看不到')
+          : settingsRow('数据目录', '<code>' + escapeHtml(data.dataDir || '') + '</code>') +
+            settingsRow('学习包目录', '<code>' + escapeHtml(data.packsDir || '') + '</code>')) +
         settingsRow('学习包 / 回收站', (data.counts && data.counts.packs || 0) + ' 篇 / ' + (data.trash ? data.trash.length + ' 个回收站条目' : '0')) +
         (warnings ? '<div class="settings-row"><b>提醒</b><span>' + warnings + '</span></div>' : '');
     }
