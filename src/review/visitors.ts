@@ -363,11 +363,13 @@ export class VisitorRegistry {
   }
 
   /** Create the private workspace. Called on the visitor's first write. */
-  async claim(id: string, ip: string): Promise<ClaimResult> {
+  async claim(id: string, ip: string, returning = false): Promise<ClaimResult> {
     if (this.workspaces.size >= MAX_WORKSPACES) {
       return { ok: false, error: '公开体验名额已满，请稍后再试。' }
     }
-    if (!this.mayClaim(ip)) {
+    // Only new identities count against the IP budget. A returning visitor lost
+    // its scratch workspace to a restart, and must always get it back.
+    if (!returning && !this.mayClaim(ip)) {
       return { ok: false, error: '今天创建的独立空间太多了，请明天再试。' }
     }
     const target = this.workspaceDir(id)
@@ -444,7 +446,7 @@ export class VisitorRegistry {
       if (!isWriteMethod(method)) {
         return { workspace: this.demo(), store: this.demoStore, visitorId: id, personal: false }
       }
-      const claimed = await this.claim(id, ip)
+      const claimed = await this.claim(id, ip, created === false)
       if (!claimed.ok) {
         return {
           workspace: this.demo(),
