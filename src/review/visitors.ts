@@ -179,7 +179,7 @@ export class VisitorRegistry {
     return this.flushChain
   }
 
-  private noteVisit(id: string): void {
+  private noteVisit(id: string, ip: string, created: boolean): void {
     const now = Date.now()
     const existing = this.visits.get(id)
     if (existing) {
@@ -190,6 +190,9 @@ export class VisitorRegistry {
       return
     }
     if (this.visits.size >= MAX_VISITORS) return
+    // Cookie-blocked clients mint an identity per request; record at most a few
+    // per IP so the counter stays meaningful without breaking their workspace.
+    if (created && !this.mayCreateId(ip)) return
     this.visits.set(id, { first: now, last: now })
     this.markDirty()
   }
@@ -402,22 +405,18 @@ export class VisitorRegistry {
         created = true
       }
     }
+    // A device must always get its own identity. Sharing one by IP would merge
+    // two people's workspaces, which is far worse than an inflated counter.
     if (!id || !isSafeVisitorId(id)) {
-      if (!this.mayCreateId(ip)) {
-        // Cookie-blocked client: fall back to a per-day, per-IP identity.
-        id = `ip-${Buffer.from(ip).toString('base64url').slice(0, 18)}-${dayKey(Date.now())}`
-        id = id.replace(/[^A-Za-z0-9_-]/g, '')
-      } else {
-        id = newVisitorId()
-        created = true
-      }
+      id = newVisitorId()
+      created = true
     }
-    if (!isSafeVisitorId(id)) id = 'anon-fallback'
+    if (isSafeVisitorId(id) === false) id = newVisitorId()
 
-    if (created || readCookie(request, VISITOR_COOKIE) !== id) {
+    if (readCookie(request, VISITOR_COOKIE) !== id) {
       response.setHeader('set-cookie', visitorCookie(id, secure))
     }
-    this.noteVisit(id)
+    this.noteVisit(id, ip, created)
 
     const personal = await this.hasWorkspace(id)
     if (!personal) {
