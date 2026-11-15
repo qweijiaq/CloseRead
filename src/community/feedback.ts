@@ -49,15 +49,29 @@ interface FeedbackFile {
  */
 export class FeedbackBoard {
   private items: FeedbackItem[] = []
-  private loaded = false
+  /** mtime+size of the file we last read or wrote; detects outside edits. */
+  private stamp = ''
   private chain: Promise<void> = Promise.resolve()
   private submissions = new Map<string, { count: number; resetAt: number }>()
 
   constructor(private readonly file: string) {}
 
   private async load(): Promise<void> {
-    if (this.loaded) return
-    this.loaded = true
+    await this.ensureFresh()
+  }
+
+  /** Re-read when the file changed underneath us (e.g. the CLI edited it). */
+  private async ensureFresh(): Promise<void> {
+    let stamp = ''
+    try {
+      const stat = await fs.stat(this.file)
+      stamp = `${stat.mtimeMs}:${stat.size}`
+    } catch {
+      // No file yet: keep whatever we have in memory.
+      this.stamp = ''
+      return
+    }
+    if (stamp === this.stamp) return
     try {
       const raw = await fs.readFile(this.file, 'utf8')
       const parsed = JSON.parse(raw) as FeedbackFile
@@ -66,8 +80,9 @@ export class FeedbackBoard {
           (item) => item && typeof item.id === 'string' && typeof item.body === 'string',
         )
       }
+      this.stamp = stamp
     } catch {
-      // An empty or unreadable board is simply empty.
+      // An unreadable file leaves the previous contents untouched.
     }
   }
 
@@ -79,6 +94,8 @@ export class FeedbackBoard {
       const temp = `${this.file}.${process.pid}.tmp`
       await fs.writeFile(temp, text)
       await fs.rename(temp, this.file)
+      const stat = await fs.stat(this.file)
+      this.stamp = `${stat.mtimeMs}:${stat.size}`
     }).catch(() => {})
     return this.chain
   }

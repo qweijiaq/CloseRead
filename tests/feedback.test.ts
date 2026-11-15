@@ -80,6 +80,23 @@ describe('feedback board', () => {
     assert.equal(list.counts.planned, 1)
   })
 
+  it('sees changes made by another process', async () => {
+    const file = path.join(dir, 'outside.json')
+    const board = new FeedbackBoard(file)
+    const added = await board.add('visitor-a', { kind: 'idea', body: '外部修改应该生效' })
+    assert.ok(added.ok)
+    const id = added.ok ? added.item.id : ''
+    assert.equal((await board.list('visitor-a')).items[0]!.status, 'open')
+
+    // Simulate the CLI editing the same file from another process.
+    const other = new FeedbackBoard(file)
+    await other.setStatus(id, 'fixed', '已经修复了')
+
+    const list = await board.list('visitor-a')
+    assert.equal(list.items[0]!.status, 'fixed')
+    assert.equal(list.items[0]!.reply, '已经修复了')
+  })
+
   it('finds an item by id prefix for the CLI', async () => {
     const board = new FeedbackBoard(path.join(dir, 'find.json'))
     const added = await board.add('visitor-a', { kind: 'idea', body: '支持导出 zip' })
