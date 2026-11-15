@@ -5418,6 +5418,38 @@ ${exportMode ? '' : i18nScript('pack')}
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape' && !sheet.hidden) closeSheet();
   });
+  // Hide actions that need a model key the visitor has not configured.
+  Promise.all([
+    fetch('/api/llm').then(function (r) { return r.json(); }).catch(function () { return {}; }),
+    fetch('/api/settings').then(function (r) { return r.json(); }).catch(function () { return {}; })
+  ]).then(function (results) {
+    var status = (results[0] || {}).status || {};
+    var tts = (results[1] || {}).tts || {};
+    if (!status.configured) document.body.classList.add('no-key');
+    if (!tts.configured) {
+      ['audio-open'].forEach(function (id) {
+        var node = document.getElementById(id);
+        if (node) node.remove();
+      });
+      Array.prototype.forEach.call(
+        document.querySelectorAll('[data-pack-action="audio-open"]'),
+        function (node) { node.remove(); },
+      );
+    }
+  }).catch(function () {});
+
+  document.addEventListener('click', function (event) {
+    if (!document.body.classList.contains('no-key')) return;
+    var target = event.target;
+    if (!target || !target.closest) return;
+    var guarded = target.closest(
+      '[data-expand-word],[data-word-story],[data-rewrite-sentence],[data-practice-word],[data-enrich-reading],[data-repair-reading]',
+    );
+    if (!guarded) return;
+    event.preventDefault();
+    event.stopPropagation();
+    showToast('这个功能需要模型 Key，配置后再试；公共库里已经生成好的答案仍然可以看。');
+  }, true);
 })();
 </script>
 </body>

@@ -559,9 +559,25 @@ ${pwaHead()}
   .pack-group-head span { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; white-space: nowrap; }
   .pack-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex: none; }
   .pack-actions .btn { white-space: nowrap; }
-  .pack-shared-tag { padding: 4px 9px; border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--line)); border-radius: 999px; color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
+  .pack-shared-tag { display: inline-flex; align-items: center; gap: 5px; padding: 0 2px; color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
+  .pack-shared-tag::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
   .library-note { margin: 0 0 16px; color: var(--muted); font-size: 12px; line-height: 1.7; max-width: 68ch; }
+  .library-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 16px; }
+  .library-toolbar input[type="search"] { flex: 1 1 220px; min-width: 160px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); padding: 8px 11px; font: inherit; font-size: 12.5px; outline: none; }
+  .library-toolbar input[type="search"]:focus { border-color: var(--accent); }
+  .library-toolbar select { border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); padding: 8px 9px; font: inherit; font-size: 12px; }
+  .library-levels { display: flex; gap: 6px; }
+  .library-levels button { border: 1px solid var(--line); border-radius: 999px; background: transparent; color: var(--muted); padding: 5px 11px; font: inherit; font-size: 11.5px; cursor: pointer; }
+  .library-levels button.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+  .library-owned { color: var(--accent); font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; white-space: nowrap; }
   .feedback-intro { margin-bottom: 16px; }
+  .feedback-attach { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .feedback-file { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); padding: 6px 12px; font-size: 12px; cursor: pointer; }
+  .feedback-file:hover { border-color: var(--accent); }
+  .feedback-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
+  .feedback-toolbar select { border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--ink); padding: 6px 9px; font: inherit; font-size: 12px; }
+  .feedback-more { display: flex; justify-content: center; padding: 14px 0 0; }
+  .feedback-image { display: block; max-width: min(100%, 360px); margin: 8px 0 0; border: 1px solid var(--line); border-radius: 10px; }
   .feedback-intro h2 { margin: 0 0 6px; font-family: var(--display); font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
   .feedback-intro p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.7; max-width: 66ch; }
   .feedback-form { margin: 0 0 24px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
@@ -626,11 +642,11 @@ ${pwaHead()}
   .llm-settings summary span { margin-left: 8px; color: var(--muted); font-weight: 400; font-size: 11.5px; }
   .llm-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; margin-top: 12px; }
   .llm-field { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 11.5px; }
-  .llm-field input { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 2px; padding: 7px 9px; font: inherit; font-size: 12.5px; outline: none; }
+  .llm-field input { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 9px; padding: 7px 9px; font: inherit; font-size: 12.5px; outline: none; }
   .llm-field input:focus { border-color: var(--accent); }
   .llm-field .cselect, .llm-field .cselect-trigger { width: 100%; }
   .llm-model-options { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
-  .llm-model-option { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 2px; padding: 2px 6px; font: inherit; font-size: 10.5px; cursor: pointer; }
+  .llm-model-option { border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 8px; padding: 2px 6px; font: inherit; font-size: 10.5px; cursor: pointer; }
   .llm-model-option:hover, .llm-model-option.is-active { border-color: var(--accent); color: var(--accent); }
   .llm-model-refresh { display: flex; align-items: center; gap: 8px; margin-top: 5px; }
   .llm-model-refresh .btn { min-height: 28px; padding: 4px 8px; font-size: 10px; }
@@ -1434,6 +1450,11 @@ ${pwaHead()}
     .community-inline { display: flex; margin: 0 2px 18px; font-size: 11.5px; gap: 0 10px; }
     .community-inline b { font-size: 13px; }
   }
+  .btn[disabled], .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
+  .settings-toc { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 14px; padding-bottom: 2px; scrollbar-width: none; }
+  .settings-toc::-webkit-scrollbar { display: none; }
+  .settings-toc a { flex: 0 0 auto; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 11.5px; text-decoration: none; white-space: nowrap; }
+  .settings-toc a:hover { color: var(--ink); border-color: var(--line-strong); }
   .settings-about-copy { margin: 0 0 12px; color: var(--muted); font-size: 12.5px; line-height: 1.7; max-width: 64ch; }
   .settings-about-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
   .settings-about-meta { margin-top: 12px; color: var(--muted); font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em; }
@@ -1576,6 +1597,14 @@ ${pwaHead()}
   </section>
 
   <section class="view" id="view-settings">
+    <nav class="settings-toc" aria-label="设置分区">
+      <a href="#settings-goals">阅读目标</a>
+      <a href="#settings-data">数据</a>
+      <a href="#settings-llm">模型</a>
+      <a href="#settings-tts">语音</a>
+      <a href="#settings-backup">迁移</a>
+      <a href="#settings-trash">回收站</a>
+    </nav>
     <div class="settings-grid">
       <div class="home-card settings-card" id="settings-goals">加载中…</div>
       <div class="home-card settings-card" id="settings-app">加载中…</div>
@@ -1658,16 +1687,51 @@ ${pwaHead()}
         <button type="button" data-feedback-kind="bug">Bug</button>
       </div>
       <textarea id="feedback-body" maxlength="1000" rows="3" placeholder="例如：想要按章节导出；导入某个网页时正文没抓全…"></textarea>
+      <div class="feedback-attach">
+        <label class="feedback-file">
+          添加截图
+          <input type="file" id="feedback-image" accept="image/png,image/jpeg,image/webp" hidden>
+        </label>
+        <span class="small muted" id="feedback-image-name"></span>
+      </div>
       <div class="feedback-actions">
         <button class="btn btn-primary" type="submit" id="feedback-submit">提交</button>
         <span class="small muted" id="feedback-status"></span>
       </div>
     </form>
+    <div class="feedback-toolbar">
+      ${customSelectMarkup(
+        'feedback-sort',
+        'votes',
+        [
+          { value: 'votes', label: '按加一和状态' },
+          { value: 'new', label: '最新优先' },
+        ],
+        'cselect-compact',
+      )}
+      <span class="small muted" id="feedback-count"></span>
+    </div>
     <div class="feedback-list" id="feedback-list"></div>
+    <div class="feedback-more"><button class="btn" type="button" id="feedback-more" hidden>加载更多</button></div>
   </section>
 
   <section class="view" id="view-shared">
     <p class="library-note">公共库由所有访客贡献。打开某个学习包时，服务器会把它复制进你的空间，之后的进度和批注只属于你。</p>
+    <div class="library-toolbar">
+      <input type="search" id="library-query" placeholder="搜索标题…" autocomplete="off">
+      <div class="library-levels" id="library-levels" role="group" aria-label="按难度筛选"></div>
+      ${customSelectMarkup(
+        'library-sort',
+        'new',
+        [
+          { value: 'new', label: '最新发布' },
+          { value: 'short', label: '篇数少的先' },
+          { value: 'title', label: '按标题' },
+        ],
+        'cselect-compact',
+      )}
+      <span class="small muted" id="library-count"></span>
+    </div>
     <div id="library-list"></div>
   </section>
 
@@ -1730,7 +1794,7 @@ ${pwaHead()}
       )}
       <small>默认按文章长度建议 8–16 项（约 20–25 分钟），也可以按 5 个一档手动指定。</small>
     </label>
-    <label class="article-toggle audio-toggle"><input type="checkbox" id="build-audio"> 生成音频（macOS）</label>
+    <label class="article-toggle audio-toggle" id="build-audio-row" hidden><input type="checkbox" id="build-audio"> <span id="build-audio-label">生成音频</span></label>
     <label class="article-toggle audio-toggle"><input type="checkbox" id="only-new"> 只选生词（已收录的词不进入本包）</label>
     <div class="queue-banner" id="queue-banner" hidden>
       <span id="queue-banner-text"></span>
@@ -2183,7 +2247,7 @@ ${pwaHead()}
         if (!visible) { host.innerHTML = ''; return; }
         host.innerHTML =
           '<span><b>' + total.toLocaleString('en-US') + '</b> 人用过</span>' +
-          '<span><i class="live"></i><b>' + online.toLocaleString('en-US') + '</b> 人在线</span>';
+          '<span title="只有页面打开且在前台时才算在线"><i class="live"></i><b>' + online.toLocaleString('en-US') + '</b> 人在线</span>';
       });
     }).catch(function () {});
   }
@@ -3090,7 +3154,7 @@ ${pwaHead()}
       }
       if (!isPersisted) {
         rows += '<div class="settings-actions"><button class="btn small" id="settings-persist" type="button">申请持久化存储</button></div>' +
-          '<p class="small muted">申请后浏览器更不容易在空间紧张时清理这些数据；能否通过由浏览器决定。</p>';
+          '<p class="small muted">点一下告诉浏览器「这些别自动清掉」。能不能批准由浏览器决定，导出的 zip 始终是最可靠的备份。</p>';
       }
       host.innerHTML = '<h3>本浏览器占用</h3>' + rows;
       host.hidden = false;
@@ -3562,6 +3626,7 @@ ${pwaHead()}
 
   var FEEDBACK_STATUS_LABEL = { open: '待处理', planned: '已采纳', fixed: '已修复', declined: '已驳回' };
   var feedbackKind = 'idea';
+  var feedbackState = { sort: 'votes', offset: 0, total: 0, items: [], owner: false, image: '' };
 
   function renderFeedbackItem(item, owner) {
     var label = FEEDBACK_STATUS_LABEL[item.status] || item.status;
@@ -3571,15 +3636,17 @@ ${pwaHead()}
             return '<button type="button" data-feedback-set="' + item.id + '" data-feedback-status="' + status + '">' +
               (FEEDBACK_STATUS_LABEL[status] || status) + '</button>';
           }).join('') +
+          '<button type="button" data-feedback-reply="' + item.id + '" data-feedback-cur="' + item.status + '">回复</button>' +
           '<button type="button" data-feedback-delete="' + item.id + '">删除</button>' +
         '</div>'
       : '';
     return '<div class="feedback-item">' +
-      '<button type="button" class="feedback-vote' + (item.voted ? ' voted' : '') + '" data-feedback-vote="' + escapeHtml(item.id) + '" aria-pressed="' + (item.voted ? 'true' : 'false') + '">' +
+      '<button type="button" class="feedback-vote' + (item.voted ? ' voted' : '') + '" data-feedback-vote="' + escapeHtml(item.id) + '" aria-pressed="' + (item.voted ? 'true' : 'false') + '" title="' + (item.voted ? '再点一次取消' : '我也遇到过 / 我也想要') + '">' +
         '<b>' + item.votes + '</b><span>加一</span>' +
       '</button>' +
       '<div class="feedback-body">' +
         '<p>' + escapeHtml(item.body) + '</p>' +
+        (item.image ? '<img class="feedback-image" src="/api/feedback/image/' + encodeURIComponent(item.image) + '" alt="附带的截图" loading="lazy">' : '') +
         '<div class="feedback-meta">' +
           '<span class="feedback-chip ' + item.status + '">' + label + '</span>' +
           '<span>' + (item.kind === 'bug' ? 'BUG' : '想法') + '</span>' +
@@ -3592,17 +3659,38 @@ ${pwaHead()}
     '</div>';
   }
 
-  function loadFeedback() {
+  function renderFeedbackItems(append) {
     var host = document.getElementById('feedback-list');
     if (!host) return;
-    if (!host.innerHTML.trim()) host.innerHTML = '<div class="empty loading">正在加载…</div>';
-    api('/api/feedback').then(function (data) {
-      var items = (data && data.items) || [];
-      if (!items.length) {
-        host.innerHTML = '<div class="empty">还没有人提意见，你可以是第一个。</div>';
-        return;
-      }
-      host.innerHTML = items.map(function (item) { return renderFeedbackItem(item, data.owner); }).join('');
+    var items = feedbackState.items;
+    if (!items.length) {
+      host.innerHTML = '<div class="empty">还没有人提意见，你可以是第一个。</div>';
+    } else {
+      host.innerHTML = items.map(function (item) { return renderFeedbackItem(item, feedbackState.owner); }).join('');
+    }
+    var count = document.getElementById('feedback-count');
+    if (count) count.textContent = items.length + ' / ' + feedbackState.total + ' 条';
+    var more = document.getElementById('feedback-more');
+    if (more) more.hidden = items.length >= feedbackState.total;
+  }
+
+  function loadFeedback(append) {
+    var host = document.getElementById('feedback-list');
+    if (!host) return;
+    if (!append) {
+      feedbackState.offset = 0;
+      feedbackState.items = [];
+      host.innerHTML = '<div class="empty loading">正在加载…</div>';
+    }
+    var query = '/api/feedback?sort=' + encodeURIComponent(feedbackState.sort) +
+      '&limit=20&offset=' + (append ? feedbackState.offset : 0);
+    api(query).then(function (data) {
+      feedbackState.owner = Boolean(data && data.owner);
+      feedbackState.total = Number((data && data.total) || 0);
+      var incoming = (data && data.items) || [];
+      feedbackState.items = append ? feedbackState.items.concat(incoming) : incoming;
+      feedbackState.offset = feedbackState.items.length;
+      renderFeedbackItems();
     }).catch(function (error) {
       host.innerHTML = '<div class="empty">加载失败：' + escapeHtml(error.message) + '</div>';
     });
@@ -3610,98 +3698,164 @@ ${pwaHead()}
 
   function bindFeedback() {
     var form = document.getElementById('feedback-form');
-    if (!form || form.getAttribute('data-bound') === '1') return;
-    form.setAttribute('data-bound', '1');
+    if (form && form.getAttribute('data-bound') !== '1') {
+      form.setAttribute('data-bound', '1');
 
-    form.querySelectorAll('[data-feedback-kind]').forEach(function (button) {
-      button.addEventListener('click', function () {
-        feedbackKind = button.getAttribute('data-feedback-kind');
-        form.querySelectorAll('[data-feedback-kind]').forEach(function (other) {
-          other.classList.toggle('active', other === button);
+      form.querySelectorAll('[data-feedback-kind]').forEach(function (button) {
+        button.addEventListener('click', function () {
+          feedbackKind = button.getAttribute('data-feedback-kind');
+          form.querySelectorAll('[data-feedback-kind]').forEach(function (other) {
+            other.classList.toggle('active', other === button);
+          });
         });
       });
-    });
 
-    form.addEventListener('submit', function (event) {
-      event.preventDefault();
-      var body = document.getElementById('feedback-body');
-      var status = document.getElementById('feedback-status');
-      var text = body ? body.value.trim() : '';
-      if (text.length < 4) { if (status) status.textContent = '再写长一点点吧。'; return; }
-      if (status) status.textContent = '提交中…';
-      api('/api/feedback', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ kind: feedbackKind, body: text })
-      }).then(function () {
-        if (body) body.value = '';
-        if (status) status.textContent = '已提交，谢谢';
-        toast('已提交到意见墙');
-        loadFeedback();
-      }).catch(function (error) {
-        if (status) status.textContent = '提交失败：' + error.message;
+      var imageInput = document.getElementById('feedback-image');
+      if (imageInput) {
+        imageInput.addEventListener('change', function () {
+          var file = imageInput.files && imageInput.files[0];
+          var name = document.getElementById('feedback-image-name');
+          if (!file) { feedbackState.image = ''; if (name) name.textContent = ''; return; }
+          if (file.size > 2 * 1024 * 1024) {
+            if (name) name.textContent = '图片不能超过 2 MB';
+            imageInput.value = '';
+            return;
+          }
+          if (name) name.textContent = file.name;
+        });
+      }
+
+      form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        var body = document.getElementById('feedback-body');
+        var status = document.getElementById('feedback-status');
+        var text = body ? body.value.trim() : '';
+        if (text.length < 4) { if (status) status.textContent = '再写长一点点吧。'; return; }
+        if (status) status.textContent = '提交中…';
+
+        var upload = Promise.resolve('');
+        var file = imageInput && imageInput.files && imageInput.files[0];
+        if (file) {
+          upload = file.arrayBuffer().then(function (buffer) {
+            return fetch('/api/feedback/image', {
+              method: 'POST',
+              headers: { 'content-type': file.type || 'image/png' },
+              body: buffer
+            }).then(function (response) {
+              return response.json().catch(function () { return {}; });
+            }).then(function (data) {
+              if (data.error) throw new Error(data.error);
+              return data.image || '';
+            });
+          });
+        }
+
+        upload.then(function (image) {
+          return api('/api/feedback', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ kind: feedbackKind, body: text, ...(image ? { image: image } : {}) })
+          });
+        }).then(function () {
+          if (body) body.value = '';
+          if (imageInput) imageInput.value = '';
+          var name = document.getElementById('feedback-image-name');
+          if (name) name.textContent = '';
+          if (status) status.textContent = '已提交，谢谢';
+          toast('已提交到意见墙');
+          loadFeedback(false);
+        }).catch(function (error) {
+          if (status) status.textContent = '提交失败：' + error.message;
+        });
       });
-    });
+    }
 
-    document.getElementById('feedback-list').addEventListener('click', function (event) {
-      var vote = event.target.closest('[data-feedback-vote]');
-      if (vote) {
-        var id = vote.getAttribute('data-feedback-vote');
-        api('/api/feedback/' + encodeURIComponent(id) + '/vote', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: '{}'
-        }).then(function () { loadFeedback(); })
-          .catch(function (error) { toast(error.message); });
-        return;
-      }
-      var remover = event.target.closest('[data-feedback-delete]');
-      if (remover) {
-        if (!confirm('删除这条意见？')) return;
-        fetch('/api/feedback/' + encodeURIComponent(remover.getAttribute('data-feedback-delete')), { method: 'DELETE' })
-          .then(function (response) { return response.json().catch(function () { return {}; }); })
-          .then(function (data) {
-            if (data.error) throw new Error(data.error);
-            loadFeedback();
-          })
-          .catch(function (error) { toast(error.message); });
-        return;
-      }
-      var setter = event.target.closest('[data-feedback-set]');
-      if (setter) {
-        api('/api/feedback/' + encodeURIComponent(setter.getAttribute('data-feedback-set')) + '/status', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ status: setter.getAttribute('data-feedback-status') })
-        }).then(function () { loadFeedback(); })
-          .catch(function (error) { toast(error.message); });
-      }
-    });
+    var sort = document.getElementById('feedback-sort');
+    if (sort && sort.getAttribute('data-bound') !== '1') {
+      sort.setAttribute('data-bound', '1');
+      sort.addEventListener('change', function () {
+        feedbackState.sort = sort.value;
+        loadFeedback(false);
+      });
+    }
+    var more = document.getElementById('feedback-more');
+    if (more && more.getAttribute('data-bound') !== '1') {
+      more.setAttribute('data-bound', '1');
+      more.addEventListener('click', function () { loadFeedback(true); });
+    }
+
+    var list = document.getElementById('feedback-list');
+    if (list && list.getAttribute('data-bound') !== '1') {
+      list.setAttribute('data-bound', '1');
+      list.addEventListener('click', function (event) {
+        var vote = event.target.closest('[data-feedback-vote]');
+        if (vote) {
+          var id = vote.getAttribute('data-feedback-vote');
+          api('/api/feedback/' + encodeURIComponent(id) + '/vote', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: '{}'
+          }).then(function () { loadFeedback(false); })
+            .catch(function (error) { toast(error.message); });
+          return;
+        }
+        var remover = event.target.closest('[data-feedback-delete]');
+        if (remover) {
+          if (!confirm('删除这条意见？')) return;
+          fetch('/api/feedback/' + encodeURIComponent(remover.getAttribute('data-feedback-delete')), { method: 'DELETE' })
+            .then(function (response) { return response.json().catch(function () { return {}; }); })
+            .then(function (data) {
+              if (data.error) throw new Error(data.error);
+              loadFeedback(false);
+            })
+            .catch(function (error) { toast(error.message); });
+          return;
+        }
+        var replier = event.target.closest('[data-feedback-reply]');
+        if (replier) {
+          var text = prompt('回复内容（会显示在这条意见下面）：');
+          if (text === null) return;
+          api('/api/feedback/' + encodeURIComponent(replier.getAttribute('data-feedback-reply')) + '/status', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              status: replier.getAttribute('data-feedback-cur') || 'open',
+              reply: text
+            })
+          }).then(function () { loadFeedback(false); })
+            .catch(function (error) { toast(error.message); });
+          return;
+        }
+        var setter = event.target.closest('[data-feedback-set]');
+        if (setter) {
+          api('/api/feedback/' + encodeURIComponent(setter.getAttribute('data-feedback-set')) + '/status', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ status: setter.getAttribute('data-feedback-status') })
+          }).then(function () { loadFeedback(false); })
+            .catch(function (error) { toast(error.message); });
+        }
+      });
+    }
   }
-
-  bindFeedback();
 
   function loadShared() {
     var host = document.getElementById('library-list');
     if (!host) return;
+    bindSharedFilters();
     if (!host.innerHTML.trim()) host.innerHTML = '<div class="empty loading">正在加载公共库…</div>';
     api('/api/shared').then(function (result) {
-      var packs = (result && result.packs) || [];
-      if (!packs.length) {
+      state.sharedPacks = (result && result.packs) || [];
+      renderSharedLevels();
+      if (!state.sharedPacks.length) {
         host.innerHTML = '<div class="empty"><strong>公共库还是空的</strong>' +
           '读完之后可以在「文章」里点「公开」，把这个学习包分享给其他人。' +
           '<button class="btn btn-primary" data-go-tab="packs" style="margin-top:14px">去我的文章</button></div>';
+        var count = document.getElementById('library-count');
+        if (count) count.textContent = '0 篇';
         return;
       }
-      host.innerHTML = packs.map(function (pack) {
-        return '<div class="pack-row">' +
-          '<div><a href="' + escapeHtml(pack.url) + '">' + escapeHtml(pack.title) + '</a>' +
-          '<div class="due">' + pack.itemCount + ' 项 · ' + escapeHtml((pack.createdAt || '').slice(0, 10)) + ' · 打开后复制到你的空间</div></div>' +
-          '<div class="pack-actions">' +
-            '<a class="btn btn-primary" href="' + escapeHtml(pack.url) + '">精读</a>' +
-          '</div>' +
-        '</div>';
-      }).join('');
+      renderSharedList();
     }).catch(function (error) {
       host.innerHTML = '<div class="empty">加载失败：' + escapeHtml(error.message) + '</div>';
     });
@@ -3738,10 +3892,10 @@ ${pwaHead()}
               ? '第 ' + pack.chapter.index + ' / ' + pack.chapter.total + ' 篇'
               : '文章';
           var rebuild = pack.articleIndex === null || pack.articleIndex === undefined
-            ? '<button class="btn" data-build="' + escapeHtml(pack.resourceId) + '">重新生成</button>'
+            ? '<button class="btn" data-build="' + escapeHtml(pack.resourceId) + '"' + buildGuardAttrs() + '>重新生成</button>'
             : '<button class="btn" data-rebuild-resource="' +
               escapeHtml(pack.parentResourceId || pack.resourceId) +
-              '" data-rebuild-article="' + pack.articleIndex + '">重新生成</button>';
+              '" data-rebuild-article="' + pack.articleIndex + '"' + buildGuardAttrs() + '>重新生成</button>';
           return '<div class="pack-row">' +
             '<div><a href="' + escapeHtml(pack.url) + '">' + escapeHtml(pack.title) + '</a>' +
             '<div class="due">' + label + ' · ' + pack.itemCount + ' 项 · ' + escapeHtml((pack.createdAt || '').slice(0, 10)) + '</div></div>' +
@@ -3942,9 +4096,9 @@ ${pwaHead()}
       }
     } else if (packs.length) {
       actions = '<a class="btn btn-primary" href="' + escapeHtml(packs[0].url) + '">打开学习包</a>' +
-        '<button class="btn" data-build="' + escapeHtml(resource.id) + '">重新生成</button>';
+        '<button class="btn" data-build="' + escapeHtml(resource.id) + '"' + buildGuardAttrs() + '>重新生成</button>';
     } else {
-      actions = '<button class="btn btn-primary" data-build="' + escapeHtml(resource.id) + '">生成学习包</button>';
+      actions = '<button class="btn btn-primary" data-build="' + escapeHtml(resource.id) + '"' + buildGuardAttrs() + '>生成学习包</button>';
     }
     if (resource.canResplit) {
       actions += '<button class="btn" data-resplit="' + escapeHtml(resource.id) + '">重新解析文章</button>';
@@ -3978,7 +4132,7 @@ ${pwaHead()}
     var pack = byIndex[article.index];
     var action = pack
       ? '<a class="btn" href="' + escapeHtml(pack.url) + '">打开</a>'
-      : '<button class="btn" data-build-article="' + article.index + '" data-build-resource="' + escapeHtml(resourceId) + '">生成</button>';
+      : '<button class="btn" data-build-article="' + article.index + '" data-build-resource="' + escapeHtml(resourceId) + '"' + buildGuardAttrs() + '>生成</button>';
     var section = article.section
       ? '<span class="article-section">' + escapeHtml(article.section) + '</span>'
       : '';
@@ -4213,12 +4367,33 @@ ${pwaHead()}
   }
 
   function loadLlmSettings() {
+    api('/api/settings').then(function (data) {
+      applyAudioAvailability(data && data.tts);
+    }).catch(function () {});
     return api('/api/llm').then(function (result) {
+      var first = state.llmConfigured === undefined;
       setLlmStatus(result.status);
       renderImportMode(result.status.configured, result.status.model, result.status.label);
+      if (first) {
+        if (state.tab === 'packs') loadPacks();
+        else if (state.tab === 'import') loadRecentImports();
+      }
     }).catch(function (error) {
       if (els.llmState) els.llmState.textContent = error.message;
     });
+  }
+
+  // Audio needs a voice provider. Local speech is not available in a container,
+  // so the checkbox only appears when something can actually speak.
+  function applyAudioAvailability(tts) {
+    var row = document.getElementById('build-audio-row');
+    var label = document.getElementById('build-audio-label');
+    if (!row) return;
+    var ready = Boolean(tts && tts.configured);
+    state.ttsConfigured = ready;
+    row.hidden = !ready;
+    if (label && ready) label.textContent = '生成音频（' + (tts.providerLabel || tts.provider || '语音') + '）';
+    if (!ready && els.buildAudio) els.buildAudio.checked = false;
   }
 
   function saveLlmSettings() {
@@ -4269,6 +4444,15 @@ ${pwaHead()}
     });
   }
 
+  // A build needs a model key; without one the button is disabled with a reason.
+  function buildNeedsKey() {
+    return state.llmConfigured === false;
+  }
+
+  function buildGuardAttrs() {
+    return buildNeedsKey() ? ' disabled title="需要先配置模型 Key"' : '';
+  }
+
   function loadRecentImports() {
     loadStyles();
     if (els.recentImports && !els.recentImports.innerHTML.trim()) {
@@ -4292,7 +4476,7 @@ ${pwaHead()}
         } else if (packs.length) {
           action = '<a class="btn" href="' + escapeHtml(packs[0].url) + '">打开</a>';
         } else {
-          action = '<button class="btn" data-build="' + escapeHtml(resource.id) + '">生成</button>';
+          action = '<button class="btn" data-build="' + escapeHtml(resource.id) + '"' + buildGuardAttrs() + '>生成</button>';
         }
         action += '<button class="btn danger" data-delete-resource="' + escapeHtml(resource.id) + '">删除</button>';
         return '<div class="resource-row">' +
@@ -5483,9 +5667,12 @@ ${pwaHead()}
     return '';
   }
 
+  var tabScroll = {};
+
   function switchTab(tab, fromHistory) {
     tab = normalizeTab(tab);
     if (!TAB_VIEW[tab]) tab = 'read';
+    if (state.tab && state.tab !== tab) tabScroll[state.tab] = window.scrollY || 0;
     state.tab = tab;
     var navTab = navTabFor(tab);
     document.querySelectorAll('[data-tab]').forEach(function (button) {
@@ -5507,7 +5694,7 @@ ${pwaHead()}
     if (eyebrow) eyebrow.textContent = meta[0];
     document.title = meta[1] + ' · CloseRead';
     document.body.setAttribute('data-tab', tab);
-    window.scrollTo({ top: 0, behavior: 'instant' });
+    window.scrollTo({ top: fromHistory ? window.scrollY : (tabScroll[tab] || 0), behavior: 'instant' });
     updateUrl(!fromHistory);
     Object.keys(TAB_VIEW).forEach(function (key) {
       var view = document.getElementById(TAB_VIEW[key]);

@@ -445,6 +445,17 @@ function pruneJobs(): void {
   }
 }
 
+const sharedCefrCache = new Map<string, string>()
+async function sharedCefr(pack: PackRecord): Promise<string> {
+  const cached = sharedCefrCache.get(pack.id)
+  if (cached !== undefined) return cached
+  const level = await loadPack(pack.dir)
+    .then((contents) => contents.difficulty?.cefr ?? '')
+    .catch(() => '')
+  sharedCefrCache.set(pack.id, level)
+  return level
+}
+
 const feedbackBoard = new FeedbackBoard(path.join(rootDataDir, 'community', 'feedback.json'))
 
 const COMPILE_WINDOW_MS = 60_000
@@ -592,6 +603,25 @@ async function adoptSharedPack(shared: Store, store: Store, packId: string): Pro
   }
 }
 
+
+/** Turn network noise into something a reader can act on. */
+function friendlyImportError(message: string, url?: string): string {
+  const text = message.toLowerCase()
+  if (text.includes('fetch failed') || text.includes('econnrefused') || text.includes('enotfound')) {
+    return `打不开${url ? ` ${url}` : '这个链接'}：服务器连不上这个网站。可能被墙、需要登录，或者站点直接拒绝了抓取。可以复制正文粘贴进来。`
+  }
+  if (/\b(401|403)\b/.test(message)) {
+    return '这个页面拒绝抓取（需要登录或被反爬拦截）。可以复制正文粘贴进来。'
+  }
+  if (/\b404\b/.test(message)) {
+    return '链接返回 404，页面可能已经删除了。'
+  }
+  if (text.includes('timed out') || text.includes('timeout')) {
+    return '抓取超时了，稍后重试，或者复制正文粘贴进来。'
+  }
+  return message
+}
+
 function startBuild(store: Store, resource: Resource, options: Partial<BuildRequestOptions> = {}): BuildJob {
   const buildKey = `${resource.id}:${options.articleIndex ?? 'all'}`
   const activeId = activeBuilds.get(buildKey)
@@ -709,6 +739,7 @@ function startBuild(store: Store, resource: Resource, options: Partial<BuildRequ
         ...result.record,
         resourceId: target.id,
         title: result.pack.title,
+        cefr: result.pack.difficulty.cefr,
         ...(article ? { parentResourceId: resource.id, articleIndex: article.index } : {}),
       }
       await store.addPack(record)
@@ -1859,17 +1890,71 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
   }
 
   if (method === 'GET' && url.pathname === '/api/feedback') {
-    const list = await feedbackBoard.list(visitorId)
+    const sort = url.searchParams.get('sort') === 'new' ? 'new' : 'votes'
+    const limit = Number(url.searchParams.get('limit') ?? 20)
+    const offset = Number(url.searchParams.get('offset') ?? 0)
+    const list = await feedbackBoard.list(visitorId, {
+      sort,
+      limit: Number.isFinite(limit) ? limit : 20,
+      offset: Number.isFinite(offset) ? offset : 0,
+    })
     sendJson(response, 200, { ...list, owner: isOwnerVisitor(visitorId) })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/feedback/image') {
+    try {
+      const body = await readBody(request, 3 * 1024 * 1024)
+      if (body.length === 0) {
+        sendJson(response, 400, { error: '图片是空的。' })
+        return
+      }
+      const type = String(request.headers['content-type'] || '')
+      const ext = type.includes('png') ? '.png' : type.includes('webp') ? '.webp' : '.jpg'
+      if (!/^image\/(png|jpe?g|webp)/i.test(type)) {
+        sendJson(response, 400, { error: '只支持 PNG / JPG / WebP 图片。' })
+        return
+      }
+      const dir = path.join(rootDataDir, 'community', 'feedback-images')
+      await fs.mkdir(dir, { recursive: true })
+      const name = `${randomUUID().slice(0, 12)}${ext}`
+      await fs.writeFile(path.join(dir, name), body)
+      sendJson(response, 200, { ok: true, image: name })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
+  const feedbackImageMatch = /^\/api\/feedback\/image\/([A-Za-z0-9._-]+)$/.exec(url.pathname)
+  if (method === 'GET' && feedbackImageMatch) {
+    const name = feedbackImageMatch[1]!
+    try {
+      const file = path.join(rootDataDir, 'community', 'feedback-images', name)
+      const data = await fs.readFile(file)
+      const ext = path.extname(name).toLowerCase()
+      const type = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+      response.writeHead(200, {
+        'content-type': type,
+        'cache-control': 'public, max-age=31536000, immutable',
+      })
+      response.end(data)
+    } catch {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Image not found')
+    }
     return
   }
 
   if (method === 'POST' && url.pathname === '/api/feedback') {
     try {
       const body = await readJson(request, 20_000)
+      const imageName = typeof body.image === 'string' ? body.image : ''
+      const safeImage = /^[A-Za-z0-9._-]{6,40}$/.test(imageName) ? imageName : ''
       const result = await feedbackBoard.add(visitorId, {
         kind: body.kind === 'bug' ? 'bug' : 'idea',
         body: typeof body.body === 'string' ? body.body : '',
+        ...(safeImage ? { image: safeImage } : {}),
       })
       if (!result.ok) {
         sendJson(response, 400, { error: result.error })
@@ -1895,7 +1980,11 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       sendJson(response, 403, { error: '只有站点作者能删除意见。' })
       return
     }
+    const target = await feedbackBoard.find(decodeURIComponent(deleteMatch[1]!))
     const removed = await feedbackBoard.remove(decodeURIComponent(deleteMatch[1]!))
+    if (removed && target?.image) {
+      await fs.rm(path.join(rootDataDir, 'community', 'feedback-images', target.image), { force: true }).catch(() => {})
+    }
     sendJson(response, removed ? 200 : 404, removed ? { ok: true } : { error: '这条意见不在了。' })
     return
   }
@@ -1936,20 +2025,20 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     // Packs published by the CLI land on disk; pick them up without a restart.
     await shared.reload().catch(() => {})
     const mine = new Set(store.packs().map((pack) => pack.id))
-    sendJson(response, 200, {
-      packs: shared
-        .packs()
-        .filter((pack) => !mine.has(pack.id))
-        .map((pack) => ({
-          id: pack.id,
-          title: pack.title ?? pack.id,
-          itemCount: pack.itemCount,
-          createdAt: pack.createdAt,
-          issueId: pack.parentResourceId ?? pack.resourceId,
-          shared: true,
-          url: `/read/${encodeURIComponent(pack.id)}`,
-        })),
-    })
+    const packs = await Promise.all(
+      shared.packs().map(async (pack) => ({
+        id: pack.id,
+        title: pack.title ?? pack.id,
+        itemCount: pack.itemCount,
+        createdAt: pack.createdAt,
+        issueId: pack.parentResourceId ?? pack.resourceId,
+        shared: true,
+        owned: mine.has(pack.id),
+        cefr: pack.cefr ?? (await sharedCefr(pack)),
+        url: `/read/${encodeURIComponent(pack.id)}`,
+      })),
+    )
+    sendJson(response, 200, { packs, total: packs.length })
     return
   }
 
@@ -3707,7 +3796,9 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         return
       }
       const aiClean = body.aiClean !== false && hasLlm()
-      const resource = await ingestSource(raw, { title: title || undefined, aiClean })
+      const resource = await ingestSource(raw, { title: title || undefined, aiClean }).catch((error) => {
+        throw new Error(friendlyImportError(error instanceof Error ? error.message : String(error), raw))
+      })
       const duplicate = duplicateOf(store, resource)
       if (duplicate) {
         await discardNewResource(resource)

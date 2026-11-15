@@ -16,6 +16,8 @@ export interface FeedbackItem {
   voters: Record<string, true>
   /** Public author label, e.g. 匿名访客 #a3f. */
   author: string
+  /** Stored file name of an attached screenshot. */
+  image?: string
   reply?: string
 }
 
@@ -27,6 +29,7 @@ export interface PublicFeedback {
   status: FeedbackStatus
   votes: number
   author: string
+  image?: string
   reply?: string
   voted: boolean
 }
@@ -113,13 +116,21 @@ export class FeedbackBoard {
     return true
   }
 
-  async list(visitorId: string): Promise<{ items: PublicFeedback[]; counts: Record<FeedbackStatus, number> }> {
+  async list(
+    visitorId: string,
+    options: { sort?: 'new' | 'votes'; limit?: number; offset?: number } = {},
+  ): Promise<{ items: PublicFeedback[]; total: number; counts: Record<FeedbackStatus, number> }> {
     await this.load()
     const counts: Record<FeedbackStatus, number> = { open: 0, planned: 0, fixed: 0, declined: 0 }
     for (const item of this.items) counts[item.status] += 1
     const order: Record<FeedbackStatus, number> = { planned: 0, open: 1, fixed: 2, declined: 3 }
-    const items = [...this.items]
-      .sort((a, b) => order[a.status] - order[b.status] || b.votes - a.votes || b.createdAt.localeCompare(a.createdAt))
+    const sorted = [...this.items].sort((a, b) => {
+      if (options.sort === 'new') return b.createdAt.localeCompare(a.createdAt)
+      return order[a.status] - order[b.status] || b.votes - a.votes || b.createdAt.localeCompare(a.createdAt)
+    })
+    const limit = Math.min(Math.max(options.limit ?? 20, 1), 50)
+    const offset = Math.max(options.offset ?? 0, 0)
+    const items = sorted.slice(offset, offset + limit)
       .map((item) => ({
         id: item.id,
         kind: item.kind,
@@ -128,15 +139,16 @@ export class FeedbackBoard {
         status: item.status,
         votes: item.votes,
         author: item.author,
+        ...(item.image ? { image: item.image } : {}),
         ...(item.reply ? { reply: item.reply } : {}),
         voted: Boolean(item.voters[visitorId]),
       }))
-    return { items, counts }
+    return { items, total: sorted.length, counts }
   }
 
   async add(
     visitorId: string,
-    input: { kind: FeedbackKind; body: string },
+    input: { kind: FeedbackKind; body: string; image?: string },
   ): Promise<{ ok: true; item: PublicFeedback } | { ok: false; error: string }> {
     await this.load()
     const body = input.body.trim()
@@ -154,6 +166,7 @@ export class FeedbackBoard {
       votes: 1,
       voters: { [visitorId]: true },
       author: `访客 ${visitorId.slice(0, 4)}`,
+      ...(input.image ? { image: input.image } : {}),
     }
     this.items.unshift(item)
     await this.write()

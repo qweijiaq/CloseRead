@@ -335,6 +335,8 @@ export interface PackRecord {
   title?: string
   parentResourceId?: string
   articleIndex?: number
+  /** CEFR level copied from the pack so listings can filter without reading it. */
+  cefr?: string
   /** Anonymous visitor id that published this pack to the shared library. */
   publishedBy?: string
   publishedAt?: string
