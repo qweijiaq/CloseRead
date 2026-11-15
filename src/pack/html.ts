@@ -1598,7 +1598,7 @@ ${exportMode ? '' : themeBootScript()}
     .topbar-right { gap: 5px; }
     .topbar-right > .topbar-action { display: none; }
     .topbar-action { min-height: 38px; padding: 6px 10px; border-radius: 8px; touch-action: manipulation; }
-    @media (max-width: 400px) {
+    @media (max-width: 380px) {
       .topbar-left .brand { display: none; }
       /* Back link keeps the context; the pack title is right below anyway. */
       .topbar-left { flex: 0 0 auto; }
