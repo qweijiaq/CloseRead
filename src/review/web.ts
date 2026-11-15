@@ -1479,6 +1479,7 @@ ${pwaHead()}
     </header>
     <main class="content" id="main-content" tabindex="-1">
       <div class="store-warning" id="store-warning" hidden></div>
+      <div class="store-warning" id="local-sync-warning" hidden><strong>本地数据还没恢复</strong><div>刚才没能把浏览器里的内容推回服务器（可能是服务正在重启）。先别导入或改设置，刷新页面重试。</div></div>
       <div class="phone-mode-banner" id="phone-mode-banner" hidden>手机模式：可继续精读、看释义和记批注；导入、删除和设置请回到电脑。</div>
 
   <section class="view active" id="view-home">
@@ -1989,6 +1990,10 @@ ${pwaHead()}
   }
 
   function api(path, options) {
+    var method = (options && options.method) || 'GET';
+    if (method !== 'GET' && method !== 'HEAD' && localSync.failed && !localSync.done) {
+      return Promise.reject(new Error('本地数据还没恢复，先刷新页面再操作，避免覆盖你自己的内容。'));
+    }
     return fetch(path, options).then(function (response) {
       return response.json().catch(function () { return {}; }).then(function (data) {
         if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
@@ -2012,6 +2017,10 @@ ${pwaHead()}
 
   var checkpointTimer = null;
   var checkpointRunning = false;
+  // If restoring the browser copy fails (server restarting, network blip) the
+  // page is looking at a fresh demo workspace. Writing then would checkpoint
+  // demo content over the real copy, so writes are blocked until it succeeds.
+  var localSync = { done: false, failed: false };
 
   function scheduleCheckpoint() {
     if (checkpointTimer) clearTimeout(checkpointTimer);
@@ -2036,19 +2045,38 @@ ${pwaHead()}
   function syncFromBrowser() {
     return localDb().then(function (db) {
       return db.loadAll().then(function (files) {
-        if (!files || Object.keys(files).length === 0) return false;
+        if (!files || Object.keys(files).length === 0) {
+          localSync.done = true;
+          return false;
+        }
         return api('/api/session').then(function (session) {
           if (session && session.personal) {
-            return checkpointNow().then(function () { return false; });
+            return checkpointNow().then(function () {
+              localSync.done = true;
+              return false;
+            });
           }
           return api('/api/hydrate', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({ files: files })
-          }).then(function () { return true; });
+          }).then(function () {
+            localSync.done = true;
+            return true;
+          });
         });
       });
-    }).catch(function () { return false; });
+    }).catch(function () {
+      localSync.failed = true;
+      renderLocalSyncWarning();
+      return false;
+    });
+  }
+
+  function renderLocalSyncWarning() {
+    var box = document.getElementById('local-sync-warning');
+    if (!box) return;
+    box.hidden = !localSync.failed;
   }
 
   function loadCommunityStats() {

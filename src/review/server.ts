@@ -1390,6 +1390,13 @@ async function handle(
   }
 
 
+  // The read-only demo (used by bots and by visitors who have not written yet)
+  // must never accept writes: a script could otherwise pollute the shared library.
+  if (currentWorkspace().readOnly && method !== 'GET' && method !== 'HEAD') {
+    sendJson(response, 403, { error: '演示空间是只读的，请先创建自己的空间。' })
+    return
+  }
+
   // Opening a shared pack copies it into this visitor's workspace first.
   const packIdInPath =
     /^\/api\/pack\/([^/]+)/.exec(url.pathname)?.[1] ??
