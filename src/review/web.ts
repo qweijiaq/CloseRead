@@ -1372,6 +1372,16 @@ ${pwaHead()}
     border-radius: 10px; background: color-mix(in srgb, var(--rust) 6%, var(--surface));
     color: var(--ink); font-size: 12px; line-height: 1.7;
   }
+  .settings-storage { margin: 14px 0 0; }
+  .settings-storage h3 { margin: 0 0 6px; font-size: 12.5px; font-weight: 650; }
+  .settings-storage .settings-row { padding: 6px 0; }
+  .settings-details {
+    margin: 12px 0 0; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2);
+  }
+  .settings-details summary { cursor: pointer; color: var(--ink); font-size: 12px; }
+  .settings-details p { margin: 8px 0 6px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+  .settings-details ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.8; }
   .import-note { margin: -4px 0 14px; }
   @media (max-width: 760px) {
     .community-inline { display: flex; margin: 2px 2px 14px; }
@@ -2757,16 +2767,28 @@ ${pwaHead()}
       }
       backupHost.innerHTML = '<h2>设备迁移</h2>' +
         (state.publicMode
-          ? '<p class="muted">你的文章、学习项、阅读进度和批注这个浏览器里各存一份。换手机或换电脑时，先在这里导出，再在新设备上导入。</p>'
+          ? '<p class="muted">你的文章、学习项、阅读进度和批注都存在这个浏览器里。换手机或换电脑时，先在这里导出，再在新设备上导入。</p>'
           : '<p class="muted">换手机或换电脑时，在这里导出全部内容，再在新设备上导入。</p>') +
         '<div class="settings-actions"><button class="btn btn-primary" id="settings-backup" type="button">导出到本机</button></div>' +
         '<div class="settings-file"><input type="file" id="settings-restore-file" accept="application/json,.json">' +
         '<button class="btn" id="settings-restore-run" type="button">从文件导入</button>' +
         '<span id="settings-restore-status"></span></div>' +
         '<p class="small muted">导入会覆盖当前的文章、学习项和阅读进度，请先导出一份。模型 Key 不包含在文件里，需要在新设备上重新填写。</p>' +
+        '<div class="settings-storage" id="settings-storage" hidden></div>' +
+        '<details class="settings-details">' +
+          '<summary>数据到底存在哪里？</summary>' +
+          '<p>不在系统的文件夹里，所以「文稿」或「下载」里找不到。浏览器为这个站点单独划了一块空间（IndexedDB），只有本站能读，别人看不到。</p>' +
+          '<ul>' +
+            '<li>Chrome / Edge：设置 → 隐私和安全 → 网站设置 → 查看权限和网站数据，搜索本站可看到占用和清理入口。</li>' +
+            '<li>Safari：设置 → 隐私 → 管理网站数据。</li>' +
+            '<li>无痕窗口、换一个浏览器、换系统账户，都看不到这份内容。</li>' +
+            '<li>清理「Cookie 和网站数据」会把它一起删掉，导出的文件是唯一保险。</li>' +
+          '</ul>' +
+        '</details>' +
         (state.publicMode
           ? '<p class="settings-warning"><b>数据只在这个浏览器里。</b>清除浏览数据、换设备，或在 iPhone 上超过 7 天不打开，内容都可能丢失。导出是唯一的备份方式，建议每个月导一次。</p>'
           : '');
+      fillStoragePanel();
     }
     var usageHost = document.getElementById('settings-usage');
     if (usageHost) {
@@ -2872,6 +2894,55 @@ ${pwaHead()}
       var host = document.getElementById('settings-data');
       if (host) host.innerHTML = '<div class="muted">设置加载失败：' + escapeHtml(error.message) + '</div>';
     });
+  }
+
+  function formatBytes(bytes) {
+    var value = Number(bytes) || 0;
+    if (value < 1024) return value + ' B';
+    if (value < 1024 * 1024) return Math.round(value / 1024) + ' KB';
+    if (value < 1024 * 1024 * 1024) return (value / 1024 / 1024).toFixed(1) + ' MB';
+    return (value / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  function formatWhen(ms) {
+    if (!ms) return '从未导出';
+    var days = Math.floor((Date.now() - ms) / 86400000);
+    if (days <= 0) return '今天';
+    if (days === 1) return '昨天';
+    return days + ' 天前';
+  }
+
+  // Show the real numbers so "stored in your browser" is not a vague promise.
+  function fillStoragePanel() {
+    if (!state.publicMode) return;
+    var host = document.getElementById('settings-storage');
+    if (!host) return;
+    var persisted = Promise.resolve(false);
+    try {
+      if (navigator.storage && navigator.storage.persisted) persisted = navigator.storage.persisted();
+    } catch (error) {}
+    localDb().then(function (db) {
+      return Promise.all([db.summary(), db.storageInfo(), persisted]);
+    }).then(function (results) {
+      var info = results[0] || {};
+      var quota = results[1] || {};
+      var isPersisted = results[2] === true;
+      var used = Number(info.bytes || quota.usage || 0);
+      var capacity = Number(quota.quota || 0);
+      var percent = capacity ? Math.min(100, Math.round((used / capacity) * 100)) : 0;
+      var lastExport = 0;
+      try { lastExport = Number(localStorage.getItem(EXPORT_STAMP_KEY) || 0); } catch (error) {}
+      var rows =
+        settingsRow('占用', formatBytes(used) + ' · ' + (info.packs || 0) + ' 篇文章') +
+        settingsRow('浏览器配额', capacity ? formatBytes(capacity) + '（已用 ' + percent + '%）' : '浏览器未提供') +
+        settingsRow('上次导出', formatWhen(lastExport)) +
+        settingsRow('持久化', isPersisted ? '已开启，浏览器不会自动清理' : '未开启，空间紧张时可能被清理');
+      if (percent >= 75) {
+        rows += '<p class="settings-warning"><b>空间快满了。</b>建议先导出一份，再删掉一些读完的文章。</p>';
+      }
+      host.innerHTML = '<h3>本浏览器占用</h3>' + rows;
+      host.hidden = false;
+    }).catch(function () {});
   }
 
   function exportWorkspaceLocal(button) {
