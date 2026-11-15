@@ -1158,7 +1158,8 @@ ${pwaHead()}
       max-width: none;
       z-index: 60;
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(0, 1fr);
       gap: 2px;
       padding: 5px;
       border: 1px solid var(--line);
