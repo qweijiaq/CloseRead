@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import http from 'node:http'
+import os from 'node:os'
 import path from 'node:path'
 
 import { analyzeResource } from '../analyze/index.js'
@@ -35,8 +36,9 @@ import { petState } from '../lab/pet.js'
 import { enrollWordbook, getWordbook, listWordbooks, wordbookView } from '../wordbooks/index.js'
 import { generateAdventureFeedback, generateArgumentMap, generateDictationHint, generateDubbing, generateDungeonFlavor, generateLifeExamples, generateNewsShort, generatePetLine, generatePodcast, generateQuoteInsight, generateRegisterRemix, generateSubtitleHunter } from '../lab/generators.js'
 import { renderLabApp } from './lab.js'
-import { config, currentWorkspace, ensureDirs, hasLlm, llmProviderOptions, llmStatus, projectRoot, publicModeEnabled, rootWorkspaceRef, runInWorkspace, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
+import { config, createWorkspace, currentWorkspace, ensureDirs, hasLlm, llmProviderOptions, llmStatus, projectRoot, publicModeEnabled, rootWorkspaceRef, runInWorkspace, saveLlmSettings, saveTtsSettings, storePath, ttsProviderOptions, ttsStatus } from '../config.js'
 import { listProviderModels } from '../llm/models.js'
+import { normalizeLlmProvider, providerPreset } from '../llm/providers.js'
 import { buildWordGraph } from '../graph/build.js'
 import {
   articleSections,
@@ -432,6 +434,123 @@ function pruneJobs(): void {
   const cutoff = Date.now() - 30 * 60_000
   for (const [id, job] of buildJobs) {
     if (Date.parse(job.startedAt) < cutoff) buildJobs.delete(id)
+  }
+}
+
+const COMPILE_WINDOW_MS = 60_000
+const COMPILE_PER_WINDOW = 6
+const COMPILE_MAX_ACTIVE = 3
+const compileWindows = new Map<string, { count: number; resetAt: number }>()
+let compileActive = 0
+
+/** Public compile is CPU work for strangers; keep it bounded. */
+function compileAllowed(ip: string): { ok: boolean; error?: string } {
+  if (!publicModeEnabled()) return { ok: true }
+  if (compileActive >= COMPILE_MAX_ACTIVE) {
+    return { ok: false, error: '正在处理的任务太多了，请稍等几秒再试。' }
+  }
+  const now = Date.now()
+  const window = compileWindows.get(ip)
+  if (!window || now > window.resetAt) {
+    compileWindows.set(ip, { count: 1, resetAt: now + COMPILE_WINDOW_MS })
+    return { ok: true }
+  }
+  if (window.count >= COMPILE_PER_WINDOW) {
+    return { ok: false, error: '导入太频繁了，请一分钟后再试。' }
+  }
+  window.count += 1
+  return { ok: true }
+}
+
+export interface CompileInput {
+  kind: 'text' | 'url'
+  text?: string
+  url?: string
+  title?: string
+  level?: string
+  limit?: number | 'auto'
+  useLlm?: boolean
+  translate?: boolean
+  knownLemmas?: string[]
+  llm?: { provider?: string; apiKey?: string; baseUrl?: string; model?: string }
+}
+
+export interface CompileResult {
+  resource: Resource
+  record: PackRecord
+  pack: LearningPack
+  html: string
+  anki: string
+  markdown: string
+  mode: 'heuristic' | 'llm'
+  warnings: string[]
+}
+
+/**
+ * Stateless compile: everything is built inside a throwaway workspace and the
+ * caller keeps the result. Nothing about the visitor's article survives here,
+ * which is what lets the server stay replaceable and maintenance-free.
+ */
+export async function compileToPack(input: CompileInput): Promise<CompileResult> {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'closeread-compile-'))
+  const workspace = createWorkspace({
+    id: 'compile',
+    dataDir: path.join(tempRoot, 'data'),
+    packsDir: path.join(tempRoot, 'packs'),
+    level: input.level,
+  })
+  const llmInput = input.llm ?? {}
+  const provider = normalizeLlmProvider(llmInput.provider ?? '')
+  if (provider) {
+    const preset = providerPreset(provider)
+    const apiKey = llmInput.apiKey?.trim() ?? ''
+    workspace.llm = {
+      provider,
+      apiKey,
+      baseUrl: (llmInput.baseUrl?.trim() || preset.baseUrl).replace(/\/+$/, ''),
+      model: llmInput.model?.trim() || preset.model,
+      keySource: apiKey ? 'stored' : 'none',
+    }
+  }
+  const useLlm = input.useLlm !== false && workspace.llm.apiKey.trim().length > 0
+
+  try {
+    return await runInWorkspace(workspace, async () => {
+      ensureDirs()
+      const aiClean = useLlm
+      const resource =
+        input.kind === 'url'
+          ? await ingestSource(String(input.url ?? ''), { title: input.title, aiClean })
+          : await ingestText(String(input.text ?? ''), { title: input.title, aiClean })
+      const style = await resolveDefaultStyle()
+      const outcome = await analyzeResource(resource, {
+        limit: input.limit,
+        knownRatio: 0,
+        knownLemmas: Array.isArray(input.knownLemmas) ? input.knownLemmas : [],
+        existingLemmas: [],
+        avoidLemmas: [],
+        selectionBias: 0,
+        useLlm,
+        translate: input.translate !== false,
+        style,
+      })
+      const result = await writePack(resource, outcome, { includeSource: true, audio: false })
+      const html = await fs.readFile(path.join(result.dir, 'index.html'), 'utf8')
+      const anki = await fs.readFile(path.join(result.dir, 'anki.csv'), 'utf8').catch(() => '')
+      const markdown = await fs.readFile(path.join(result.dir, 'pack.md'), 'utf8').catch(() => '')
+      return {
+        resource,
+        record: result.record,
+        pack: result.pack,
+        html,
+        anki,
+        markdown,
+        mode: outcome.mode,
+        warnings: [...(result.pack.build?.warnings ?? [])],
+      }
+    })
+  } finally {
+    await fs.rm(tempRoot, { recursive: true, force: true }).catch(() => {})
   }
 }
 
@@ -3207,6 +3326,56 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     }
   }
 
+  if (method === 'POST' && url.pathname === '/api/compile') {
+    const ip = request.socket.remoteAddress ?? 'unknown'
+    const allowed = compileAllowed(ip)
+    if (!allowed.ok) {
+      sendJson(response, 429, { error: allowed.error })
+      return
+    }
+    try {
+      const body = await readJson(request, 20_000_000)
+      const kind = body.kind === 'url' ? 'url' : 'text'
+      const text = typeof body.text === 'string' ? body.text : ''
+      const rawUrl = typeof body.url === 'string' ? body.url.trim() : ''
+      if (kind === 'url' ? !rawUrl : !text.trim()) {
+        sendJson(response, 400, { error: kind === 'url' ? '请填写网页链接。' : '请粘贴要导入的文本。' })
+        return
+      }
+      const llmInput =
+        typeof body.llm === 'object' && body.llm !== null ? (body.llm as Record<string, unknown>) : {}
+      const requestedLimit = body.limit === undefined || body.limit === 'auto' ? 'auto' : Number(body.limit)
+      compileActive += 1
+      try {
+        const result = await compileToPack({
+          kind,
+          text,
+          url: rawUrl,
+          ...(typeof body.title === 'string' && body.title.trim() ? { title: body.title.trim() } : {}),
+          ...(typeof body.level === 'string' && body.level.trim() ? { level: body.level.trim() } : {}),
+          limit: requestedLimit === 'auto' || !Number.isFinite(requestedLimit) ? 'auto' : requestedLimit,
+          useLlm: body.useLlm !== false,
+          translate: body.translate !== false,
+          knownLemmas: Array.isArray(body.knownLemmas)
+            ? body.knownLemmas.filter((value): value is string => typeof value === 'string')
+            : [],
+          llm: {
+            ...(typeof llmInput.provider === 'string' ? { provider: llmInput.provider } : {}),
+            ...(typeof llmInput.apiKey === 'string' ? { apiKey: llmInput.apiKey } : {}),
+            ...(typeof llmInput.baseUrl === 'string' ? { baseUrl: llmInput.baseUrl } : {}),
+            ...(typeof llmInput.model === 'string' ? { model: llmInput.model } : {}),
+          },
+        })
+        sendJson(response, 200, { ok: true, ...result })
+      } finally {
+        compileActive -= 1
+      }
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   if (method === 'POST' && url.pathname === '/api/import/text') {
     try {
       const body = await readJson(request)
@@ -4765,6 +4934,20 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
   })
   const address = server.address()
   const actualPort = typeof address === 'object' && address ? address.port : port
+
+  // The analysis pipeline pays a one-time initialisation cost (~10s in the
+  // container). Pay it during startup instead of making the first visitor wait.
+  if (process.env.NODE_ENV === 'production' && process.env.LEARN_NO_WARMUP !== '1') {
+    void compileToPack({
+      kind: 'text',
+      text: 'CloseRead warms its compiler once at startup. This article is discarded.',
+      title: 'Warm up',
+    })
+      .then((result) => console.log(`Compiler warm-up ready (${result.pack.items.length} items).`))
+      .catch(() => {
+        // A failed warm-up is not fatal; the first real compile retries it.
+      })
+  }
 
   return {
     server,
