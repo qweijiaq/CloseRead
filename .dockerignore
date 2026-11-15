@@ -1,0 +1,14 @@
+.git
+.github
+node_modules
+data
+packs
+docs
+desktop
+desktop-dist
+demo
+tests
+e2e
+assets/screenshots
+*.dmg
+*.log

@@ -1,0 +1,16 @@
+closeread.example.com {
+	encode zstd gzip
+	basic_auth {
+		# Generate with: caddy hash-password --plaintext 'your-password'
+		weijia REPLACE_WITH_BCRYPT_HASH
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+	reverse_proxy closeread-app:4317 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

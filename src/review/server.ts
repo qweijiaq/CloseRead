@@ -1161,7 +1161,10 @@ async function handle(
   const remoteLoopback = isLoopbackAddress(request.socket.remoteAddress)
 
   // The local server must not become reachable through DNS rebinding.
-  if (!requireToken && !isLocalHostName(request.headers.host)) {
+  const host = (request.headers.host ?? '').toLowerCase()
+  const publicHost = config.publicHost
+  const trustedHost = Boolean(publicHost) && (host === publicHost || host === `${publicHost}:443`)
+  if (!requireToken && !isLocalHostName(host) && !trustedHost) {
     sendJson(response, 403, { error: 'Unexpected Host header.' })
     return
   }
@@ -1193,7 +1196,8 @@ async function handle(
 
   if (method !== 'GET' && method !== 'HEAD') {
     const origin = request.headers.origin
-    if (origin && origin !== `http://${request.headers.host ?? ''}`) {
+    const scheme = request.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'
+    if (origin && origin !== `${scheme}://${request.headers.host ?? ''}`) {
       sendJson(response, 403, { error: 'Cross-origin request rejected.' })
       return
     }
@@ -1602,7 +1606,8 @@ async function handle(
   }
 
   if (method === 'GET' && url.pathname === '/bookmarklet') {
-    const origin = `http://${request.headers.host ?? '127.0.0.1:4317'}`
+    const scheme = request.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http'
+    const origin = `${scheme}://${request.headers.host ?? '127.0.0.1:4317'}`
     const bookmarklet =
       `javascript:(()=>{const u='${origin}/?import='+encodeURIComponent(location.href);window.open(u,'_blank','noopener')})()`
     const html = `<!doctype html>
@@ -4690,7 +4695,7 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
   const server = http.createServer(createHandler(false))
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
-    server.listen(port, '127.0.0.1', () => resolve())
+    server.listen(port, config.host, () => resolve())
   })
   const address = server.address()
   const actualPort = typeof address === 'object' && address ? address.port : port

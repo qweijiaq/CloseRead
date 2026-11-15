@@ -176,6 +176,10 @@ export const config = {
   dataDir,
   packsDir,
   level: (process.env.LEARN_LEVEL ?? 'B2').toUpperCase(),
+  /** Interface the review server binds to. Keep loopback by default. */
+  host: process.env.LEARN_HOST?.trim() || '127.0.0.1',
+  /** Optional public hostname when the app sits behind a trusted reverse proxy. */
+  publicHost: process.env.LEARN_PUBLIC_HOST?.trim().toLowerCase() || '',
   llm,
   tts,
   ttsVoice: process.env.LEARN_TTS_VOICE ?? '',
