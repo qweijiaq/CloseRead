@@ -445,15 +445,18 @@ function pruneJobs(): void {
   }
 }
 
-const sharedCefrCache = new Map<string, string>()
-async function sharedCefr(pack: PackRecord): Promise<string> {
-  const cached = sharedCefrCache.get(pack.id)
-  if (cached !== undefined) return cached
-  const level = await loadPack(pack.dir)
-    .then((contents) => contents.difficulty?.cefr ?? '')
-    .catch(() => '')
-  sharedCefrCache.set(pack.id, level)
-  return level
+const sharedMetaCache = new Map<string, { cefr: string; title: string }>()
+/** Fills in level and title for records written before those were stored. */
+async function sharedMeta(pack: PackRecord): Promise<{ cefr: string; title: string }> {
+  const cached = sharedMetaCache.get(pack.id)
+  if (cached) return cached
+  const contents = await loadPack(pack.dir).catch(() => undefined)
+  const meta = {
+    cefr: pack.cefr ?? contents?.difficulty?.cefr ?? '',
+    title: pack.title ?? contents?.title ?? pack.id,
+  }
+  sharedMetaCache.set(pack.id, meta)
+  return meta
 }
 
 const feedbackBoard = new FeedbackBoard(path.join(rootDataDir, 'community', 'feedback.json'))
@@ -594,7 +597,7 @@ async function adoptSharedPack(shared: Store, store: Store, packId: string): Pro
   try {
     await fs.cp(record.dir, target, { recursive: true, errorOnExist: false, force: false })
     const contents = await loadPack(target)
-    await store.addPack({ ...record, dir: target })
+    await store.addPack({ ...record, dir: target, title: record.title ?? contents.title })
     const items = (contents.items ?? []).map((item) => ({ ...item }))
     if (items.length) await store.upsertItems(items as never)
     return true
@@ -2026,17 +2029,20 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     await shared.reload().catch(() => {})
     const mine = new Set(store.packs().map((pack) => pack.id))
     const packs = await Promise.all(
-      shared.packs().map(async (pack) => ({
-        id: pack.id,
-        title: pack.title ?? pack.id,
-        itemCount: pack.itemCount,
-        createdAt: pack.createdAt,
-        issueId: pack.parentResourceId ?? pack.resourceId,
-        shared: true,
-        owned: mine.has(pack.id),
-        cefr: pack.cefr ?? (await sharedCefr(pack)),
-        url: `/read/${encodeURIComponent(pack.id)}`,
-      })),
+      shared.packs().map(async (pack) => {
+        const meta = await sharedMeta(pack)
+        return {
+          id: pack.id,
+          title: meta.title,
+          itemCount: pack.itemCount,
+          createdAt: pack.createdAt,
+          issueId: pack.parentResourceId ?? pack.resourceId,
+          shared: true,
+          owned: mine.has(pack.id),
+          cefr: meta.cefr,
+          url: `/read/${encodeURIComponent(pack.id)}`,
+        }
+      }),
     )
     sendJson(response, 200, { packs, total: packs.length })
     return
