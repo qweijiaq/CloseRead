@@ -20,4 +20,16 @@ describe('provider diagnostics', () => {
     assert.equal(normalizeBaseUrl('https://gateway.example/v1/completions'), 'https://gateway.example/v1')
     assert.equal(normalizeBaseUrl('https://gateway.example'), 'https://gateway.example')
   })
+
+  it('moves saved OpenCode endpoints to the current ones', () => {
+    assert.equal(normalizeBaseUrl('https://opencode.ai/zen/v1'), 'https://opencode.ai/inference/openai/v1')
+    assert.equal(
+      normalizeBaseUrl('https://opencode.ai/zen/go/v1/'),
+      'https://opencode.ai/inference/go/openai/v1',
+    )
+    assert.equal(
+      normalizeBaseUrl('https://opencode.ai/zen/go/v1/chat/completions'),
+      'https://opencode.ai/inference/go/openai/v1',
+    )
+  })
 })

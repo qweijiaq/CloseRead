@@ -181,11 +181,18 @@ function detectEnvTtsProvider(): TtsProviderId {
  * People paste the whole endpoint into Base URL. Strip the path we append
  * ourselves, otherwise every request 404s and the build silently degrades.
  */
+/** Endpoints that moved but are still saved in people's settings files. */
+const LEGACY_BASE_URLS: Record<string, string> = {
+  'https://opencode.ai/zen/v1': 'https://opencode.ai/inference/openai/v1',
+  'https://opencode.ai/zen/go/v1': 'https://opencode.ai/inference/go/openai/v1',
+}
+
 export function normalizeBaseUrl(value: string): string {
-  return value
+  const trimmed = value
     .trim()
     .replace(/\/+$/, '')
     .replace(/\/(chat\/completions|completions|messages)$/i, '')
+  return LEGACY_BASE_URLS[trimmed] ?? trimmed
 }
 
 function resolveLlm(dataDir: string): LlmRuntime {

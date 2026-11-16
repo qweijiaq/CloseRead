@@ -136,6 +136,21 @@ function chunkText(text: string, maxChars = 6000, maxChunks = 24): string[] {
   return chunks.slice(0, maxChunks)
 }
 
+/** Split one chunk in two so a large target can be asked for in smaller calls. */
+function splitChunkInTwo(chunk: string): [string, string] | undefined {
+  const paragraphs = chunk.split(/\n{2,}/).filter((part) => part.trim())
+  if (paragraphs.length >= 2) {
+    const middle = Math.ceil(paragraphs.length / 2)
+    return [paragraphs.slice(0, middle).join('\n\n'), paragraphs.slice(middle).join('\n\n')]
+  }
+  const sentences = chunk.match(/[^.!?]+[.!?]+/g) ?? []
+  if (sentences.length >= 4) {
+    const middle = Math.ceil(sentences.length / 2)
+    return [sentences.slice(0, middle).join(' ').trim(), sentences.slice(middle).join(' ').trim()]
+  }
+  return undefined
+}
+
 function candidateKey(item: { lemma: string; sense: string }): string {
   return `${item.lemma.toLowerCase().trim()}|${item.sense.toLowerCase().replace(/\s+/g, ' ').slice(0, 80)}`
 }
@@ -534,8 +549,20 @@ export async function analyzeWithLlm(
   existingLemmas?: string[],
 ): Promise<AnalysisResult> {
   checkAbort(signal)
-  const chunks = chunkText(resource.text)
   const candidateTarget = Math.min(90, Math.max(limit + 6, Math.ceil(limit * 1.5)))
+  // About 20 candidates per call: more than that and reasoning models run into
+  // their output limit halfway through the JSON.
+  const CANDIDATES_PER_CALL = 20
+  const chunks = chunkText(resource.text, limit > 20 ? 4000 : 6000)
+  const callsNeeded = Math.ceil(candidateTarget / CANDIDATES_PER_CALL)
+  let guard = 0
+  while (chunks.length < callsNeeded && guard < 12) {
+    const longest = chunks.reduce((best, piece, index, all) => (piece.length > all[best]!.length ? index : best), 0)
+    const split = splitChunkInTwo(chunks[longest]!)
+    if (!split) break
+    chunks.splice(longest, 1, split[0], split[1])
+    guard += 1
+  }
   const perChunk = Math.max(3, Math.ceil(candidateTarget / Math.max(1, chunks.length)))
   const known = promptKnownLemmas(knownLemmas ?? [])
   const avoid = promptKnownLemmas(avoidLemmas ?? [])
@@ -560,17 +587,40 @@ export async function analyzeWithLlm(
 
   let completedChunks = 0
   const noted: string[] = []
+
+  /** Ask for fewer candidates when the model runs out of output tokens. */
+  const select = async (text: string, ask: number): Promise<SelectionItem[]> => {
+    const result = await chatJson(
+      selectionSchema,
+      SELECTION_SYSTEM(style),
+      `Text chunk:\n"""\n${text}\n"""\n\nSelect at most ${ask} candidates.${avoidBlock}${existingBlock} Return JSON only.`,
+      // One candidate is roughly 120 tokens of JSON.
+      { signal, maxTokens: Math.min(8000, 600 + ask * 160) },
+    )
+    return result.items ?? []
+  }
+
+  const selectChunk = async (text: string, ask: number): Promise<SelectionItem[]> => {
+    try {
+      return await select(text, ask)
+    } catch (error) {
+      if (signal?.aborted) throw new Error('Build cancelled')
+      const message = error instanceof Error ? error.message : String(error)
+      if (/cut off|output limit/i.test(message) && !signal?.aborted) {
+        if (ask > 4) return selectChunk(text, Math.max(4, Math.floor(ask / 2)))
+        const halves = splitChunkInTwo(text)
+        if (halves) {
+          const [left, right] = await Promise.all([selectChunk(halves[0], 3), selectChunk(halves[1], 3)])
+          return [...left, ...right]
+        }
+      }
+      throw error
+    }
+  }
+
   const extractions = await mapLimit(chunks, LLM_CONCURRENCY, async (chunk, index) => {
     try {
-      const result = await chatJson(
-        selectionSchema,
-        SELECTION_SYSTEM(style),
-        `Text chunk ${index + 1} of ${chunks.length}:\n"""\n${chunk}\n"""\n\nSelect at most ${perChunk} candidates.${avoidBlock}${existingBlock} Return JSON only.`,
-        // One candidate is roughly 120 tokens of JSON; without a raised limit a
-        // 45-item request is cut off and the whole chunk looks like a failure.
-        { signal, maxTokens: Math.min(8000, 800 + perChunk * 160) },
-      )
-      return result.items
+      return await selectChunk(chunk, perChunk)
     } catch (error) {
       if (signal?.aborted) throw new Error('Build cancelled')
       const detail = error instanceof Error ? error.message : String(error)
