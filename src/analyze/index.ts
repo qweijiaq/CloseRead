@@ -188,11 +188,15 @@ export async function analyzeResource(resource: Resource, options: AnalyzeOption
       if (options.signal?.aborted) throw new Error('Build cancelled')
       progress('LLM analysis failed; falling back to heuristic mode…')
       const analysis = await analyzeHeuristic(resource, limit)
-      // Keep the technical reason in the build log, not on the reading page.
-      progress(`LLM 模式失败：${error instanceof Error ? error.message : String(error)}`)
+      // The one-line note goes on the page; the raw reason is logged for the
+      // server and stashed in a collapsed "技术原因" block.
+      const detail = error instanceof Error ? error.message : String(error)
+      console.warn(`[llm] fallback to heuristic: ${detail}`)
+      progress(`LLM 模式失败：${detail}`)
       analysis.notes.push(
         '这篇学习包用启发式模式生成（模型调用失败），释义和搭配来自词典与原文。配置好模型后重新生成即可。',
       )
+      analysis.notes.push(`技术原因：${detail}`)
       outcome = { analysis, mode: 'heuristic', notes: analysis.notes, styleName: options.style?.name, selection }
     }
   } else {

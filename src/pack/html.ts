@@ -507,9 +507,14 @@ export function renderHtml(
     // a failed article head only costs the Chinese title and summary.
     .filter((note) => !/^补充了 \d+ 段缺失译文。?$/.test(note.trim()))
     .filter((note) => !/^Reading head failed/.test(note.trim()))
-  const buildProblems = buildNotes.filter((note) =>
-    /failed|error|fallback|empty|timeout|missing|truncated|first part|失败|错误|回退|降级|缺失|无法|超时|未生成|没有成功/i.test(note),
-  )
+  const buildDetails = buildNotes.filter((note) => note.startsWith('技术原因：'))
+  const buildProblems = buildNotes
+    .filter((note) => !note.startsWith('技术原因：'))
+    .filter((note) =>
+      /failed|error|fallback|empty|timeout|missing|truncated|first part|失败|错误|回退|降级|缺失|无法|超时|未生成|没有成功/i.test(
+        note,
+      ),
+    )
   const degradedMode =
     pack.mode === 'llm' &&
     buildProblems.some((note) => /reading failed|reading generation|empty response|回退|fallback|缺失译文|missing translation/i.test(note))
@@ -517,6 +522,13 @@ export function renderHtml(
     ? `<section class="build-warning" id="build-warning" role="status">
         <div class="build-warning-head"><strong>生成提醒</strong><span>这份学习包存在降级或缺失，建议补齐后再精读。</span></div>
         <ul>${buildProblems.map((note) => `<li>${escapeHtml(note)}</li>`).join('')}</ul>
+        ${
+          buildDetails.length
+            ? `<details class="build-detail"><summary>技术原因</summary><pre>${escapeHtml(
+                buildDetails.map((note) => note.replace(/^技术原因：/, '')).join('\n\n'),
+              )}</pre></details>`
+            : ''
+        }
         <p>可以点下方的“补齐导读与笔记”补回缺失内容，或 <a href="/?tab=packs">回到学习包列表</a> 重新生成。</p>
       </section>`
     : ''
@@ -786,6 +798,9 @@ ${exportMode ? '' : themeBootScript()}
   .build-warning a { color: var(--cinnabar); text-decoration: underline; text-underline-offset: 2px; }
   .build-warning li { margin: 2px 0; }
   .build-warning p { margin: 8px 0 0; color: var(--ink-45); font-size: 11.5px; }
+  .build-detail { margin: 10px 0 0; }
+  .build-detail summary { cursor: pointer; color: var(--ink-45); font-size: 11.5px; }
+  .build-detail pre { margin: 6px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--paper-2); color: var(--ink-70); font-family: var(--mono); font-size: 10.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
   .selection-note strong { color: var(--ink); }
   .tag.bonus { color: var(--cinnabar); border-color: rgba(176, 58, 46, .3); background: rgba(176, 58, 46, .06); }
   .tag.known { color: var(--indigo); border-color: rgba(63, 95, 127, .3); background: rgba(63, 95, 127, .06); }
