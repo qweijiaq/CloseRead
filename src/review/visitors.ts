@@ -180,30 +180,49 @@ export class VisitorRegistry {
     await this.loadPromise
   }
 
-  private async loadVisits(): Promise<void> {
-    await this.resetScratch()
+  private async readVisitFile(file: string): Promise<Map<string, VisitRecord>> {
+    const found = new Map<string, VisitRecord>()
     try {
-      const raw = await fs.readFile(this.visitsFile, 'utf8')
-      const parsed = JSON.parse(raw) as VisitFile
-      if (parsed && typeof parsed === 'object' && parsed.visitors && typeof parsed.visitors === 'object') {
-        for (const [id, record] of Object.entries(parsed.visitors)) {
-          if (!isSafeVisitorId(id)) continue
-          if (!record || typeof record !== 'object') continue
-          const first = Number(record.first) || Date.now()
-          const last = Number(record.last) || first
-          this.visits.set(id, {
-            first,
-            last,
-            ...(Number(record.active) ? { active: Number(record.active) } : {}),
-            claimed: record.claimed === true,
-          })
-        }
+      const parsed = JSON.parse(await fs.readFile(file, 'utf8')) as VisitFile
+      if (!parsed || typeof parsed !== 'object' || !parsed.visitors || typeof parsed.visitors !== 'object') {
+        return found
+      }
+      for (const [id, record] of Object.entries(parsed.visitors)) {
+        if (!isSafeVisitorId(id) || !record || typeof record !== 'object') continue
+        const first = Number(record.first) || Date.now()
+        const last = Number(record.last) || first
+        found.set(id, {
+          first,
+          last,
+          ...(Number(record.active) ? { active: Number(record.active) } : {}),
+          claimed: record.claimed === true,
+        })
       }
     } catch {
       // A missing or unreadable visit log only costs statistics, not isolation.
-      this.dirty = false
-      this.loaded = true
-      return
+    }
+    return found
+  }
+
+  private async loadVisits(): Promise<void> {
+    await this.resetScratch()
+    // The live log can be shorter than its backup after a crash or a bad write;
+    // take the union so a truncation never erases history.
+    for (const file of [this.visitsFile, `${this.visitsFile}.bak`]) {
+      const found = await this.readVisitFile(file)
+      for (const [id, record] of found) {
+        const existing = this.visits.get(id)
+        if (!existing) {
+          this.visits.set(id, record)
+          continue
+        }
+        this.visits.set(id, {
+          first: Math.min(existing.first, record.first),
+          last: Math.max(existing.last, record.last),
+          ...(record.active || existing.active ? { active: Math.max(record.active ?? 0, existing.active ?? 0) } : {}),
+          claimed: existing.claimed === true || record.claimed === true,
+        })
+      }
     }
     // Persist what we just loaded: an early flush used to write an empty map.
     this.dirty = this.visits.size > 0

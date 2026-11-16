@@ -44,6 +44,26 @@ describe('visitor statistics', () => {
     assert.equal(await readCount(), 2)
   })
 
+  it('recovers visitors from the backup when the live log was truncated', async () => {
+    const { VisitorRegistry } = await import('../src/review/visitors.js')
+    await writeVisits(['gggggggg7777'])
+    await fs.writeFile(
+      `${visitsFile}.bak`,
+      JSON.stringify({
+        version: 1,
+        visitors: {
+          aaaaaaaa1111: { first: 1, last: 2 },
+          bbbbbbbb2222: { first: 1, last: 3 },
+          gggggggg7777: { first: 1, last: 9 },
+        },
+      }),
+      'utf8',
+    )
+    const registry = new VisitorRegistry({} as never)
+    await (registry as unknown as { ensureLoaded: () => Promise<void> }).ensureLoaded()
+    assert.equal(registry.stats().totalUsers, 3)
+  })
+
   it('keeps a backup copy next to the live log', async () => {
     const { VisitorRegistry } = await import('../src/review/visitors.js')
     await writeVisits(['ffffffff6666'])
