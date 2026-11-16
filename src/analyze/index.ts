@@ -188,8 +188,10 @@ export async function analyzeResource(resource: Resource, options: AnalyzeOption
       if (options.signal?.aborted) throw new Error('Build cancelled')
       progress('LLM analysis failed; falling back to heuristic mode…')
       const analysis = await analyzeHeuristic(resource, limit)
+      // Keep the technical reason in the build log, not on the reading page.
+      progress(`LLM 模式失败：${error instanceof Error ? error.message : String(error)}`)
       analysis.notes.push(
-        `LLM 模式失败，已回退到启发式模式：${error instanceof Error ? error.message : String(error)}`,
+        '这篇学习包用启发式模式生成（模型调用失败），释义和搭配来自词典与原文。配置好模型后重新生成即可。',
       )
       outcome = { analysis, mode: 'heuristic', notes: analysis.notes, styleName: options.style?.name, selection }
     }

@@ -42,6 +42,10 @@ chmod 600 .env
 - `LEARN_SECRET` 用来加密访客填写的模型 Key，**必须设置**；换掉它会让已保存的 Key 失效，请和备份一起保存。
 - `LEARN_OWNER_KEY` 可选。用一个 `https://站点/?owner=<这个值>` 打开一次，你的浏览器就会被固定成一个稳定空间，而不是普通访客。
 - 一个部署可以服务多个域名，用逗号分隔：`LEARN_PUBLIC_HOST=a.example.com,b.example.com`。
+- 生成速度与稳定性相关的三个可选变量：
+  - `LEARN_LLM_CONCURRENCY`（默认 4，最大 12）：单篇内部同时发几个模型请求。
+  - `LEARN_BUILD_CONCURRENCY`（默认 3，最大 6）：服务端同时跑几篇。
+  - `LEARN_LLM_TIMEOUT_MS`（默认 180000）：单次模型请求的超时；超时会自动重试两次。
 
 启动：
 

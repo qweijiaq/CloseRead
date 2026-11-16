@@ -276,7 +276,8 @@ async function generateCards(
         ])
         return new Map([...left, ...right])
       }
-      notes.push(`Card generation failed for "${batch[0]?.lemma ?? '?'}": ${message}`)
+      progress(`Card generation failed for "${batch[0]?.lemma ?? '?'}": ${message}`)
+      notes.push(`「${batch[0]?.lemma ?? '?'}」的卡片没有生成完整，已保留释义和原文语境。`)
       return new Map([[candidateKey(batch[0]!), fallbackRaw(batch[0]!)]])
     }
   }
@@ -558,24 +559,31 @@ export async function analyzeWithLlm(
   progress(`Extracting from ${chunks.length} text chunk${chunks.length === 1 ? '' : 's'}…`)
 
   let completedChunks = 0
+  const noted: string[] = []
   const extractions = await mapLimit(chunks, LLM_CONCURRENCY, async (chunk, index) => {
     try {
       const result = await chatJson(
         selectionSchema,
         SELECTION_SYSTEM(style),
         `Text chunk ${index + 1} of ${chunks.length}:\n"""\n${chunk}\n"""\n\nSelect at most ${perChunk} candidates.${avoidBlock}${existingBlock} Return JSON only.`,
-        { signal },
+        // One candidate is roughly 120 tokens of JSON; without a raised limit a
+        // 45-item request is cut off and the whole chunk looks like a failure.
+        { signal, maxTokens: Math.min(8000, 800 + perChunk * 160) },
       )
       return result.items
     } catch (error) {
       if (signal?.aborted) throw new Error('Build cancelled')
-      notes.push(`Chunk ${index + 1} failed: ${error instanceof Error ? error.message : String(error)}`)
+      const detail = error instanceof Error ? error.message : String(error)
+      noted.push(detail)
+      notes.push(`第 ${index + 1}/${chunks.length} 段选取没有成功，这部分文章未进入学习包。`)
       return []
     } finally {
       completedChunks += 1
       progress(`Selected candidates from chunk ${completedChunks}/${chunks.length}.`)
     }
   })
+
+  if (noted.length) progress(`Selection errors: ${noted.join(' | ')}`)
 
   const extracted = extractions.flat().filter((item): item is SelectionItem => Boolean(item))
   const filteredKnown = extracted.filter(

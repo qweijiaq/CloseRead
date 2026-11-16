@@ -104,8 +104,11 @@ function canRetry(status: number, attempt: number): boolean {
   return attempt < 2 && RETRYABLE_STATUS.has(status)
 }
 
+/** Providers behind a gateway can stall well past two minutes on long inputs. */
+const LLM_TIMEOUT_MS = Math.max(30_000, Math.round(Number(process.env.LEARN_LLM_TIMEOUT_MS ?? 180_000) || 180_000))
+
 async function request(body: Record<string, unknown>, signal?: AbortSignal): Promise<Response> {
-  const timeout = AbortSignal.timeout(180_000)
+  const timeout = AbortSignal.timeout(LLM_TIMEOUT_MS)
   return fetch(`${config.llm.baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -128,7 +131,7 @@ async function requestAnthropic(
   messages: ChatMessage[],
   options: ChatOptions,
 ): Promise<Response> {
-  const timeout = AbortSignal.timeout(180_000)
+  const timeout = AbortSignal.timeout(LLM_TIMEOUT_MS)
   return fetch(`${config.llm.baseUrl}/messages`, {
     method: 'POST',
     headers: {
@@ -200,7 +203,15 @@ export async function chatJson<T>(
     for (let attempt = 0; attempt <= 2; attempt++) {
       if (attempt > 0) await sleep(retryDelay(attempt - 1))
       if (options.signal?.aborted) throw new Error('Request cancelled.')
-      const response = await requestAnthropic(system, messages, options)
+      let response: Response
+      try {
+        response = await requestAnthropic(system, messages, options)
+      } catch (error) {
+        if (options.signal?.aborted) throw new Error('Request cancelled.')
+        lastError = error
+        if (attempt === 2) throw new Error(`LLM 请求超时或中断：${error instanceof Error ? error.message : String(error)}`)
+        continue
+      }
       if (response.ok) {
         const data = (await response.json()) as {
           content?: unknown
@@ -254,16 +265,33 @@ export async function chatJson<T>(
   if (options.maxTokens) body.max_tokens = options.maxTokens
 
   let triedWithoutFormat = false
+  let triedLowerTokens = false
   let repairLeft = 1
   let lastError: unknown
   for (let attempt = 0; attempt <= 2; attempt++) {
     if (attempt > 0) await sleep(retryDelay(attempt - 1))
     if (options.signal?.aborted) throw new Error('Request cancelled.')
-    let response = await request(body, options.signal)
+    let response: Response
+    try {
+      response = await request(body, options.signal)
+    } catch (error) {
+      // A timeout or dropped connection is worth another attempt; a user
+      // cancellation is not.
+      if (options.signal?.aborted) throw new Error('Request cancelled.')
+      lastError = error
+      if (attempt === 2) throw new Error(`LLM 请求超时或中断：${error instanceof Error ? error.message : String(error)}`)
+      continue
+    }
     if (!response.ok && !triedWithoutFormat && (response.status === 400 || response.status === 422)) {
+      const detail = await response.text().catch(() => '')
       triedWithoutFormat = true
-      await response.text().catch(() => {})
-      delete body.response_format
+      // Some providers cap output tokens well below what we asked for.
+      if (!triedLowerTokens && body.max_tokens && /max_tokens|max_completion_tokens|too many tokens/i.test(detail)) {
+        triedLowerTokens = true
+        body.max_tokens = Math.max(1024, Math.floor(Number(body.max_tokens) / 2))
+      } else {
+        delete body.response_format
+      }
       response = await request(body, options.signal)
     }
     if (response.ok) {

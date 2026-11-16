@@ -11,7 +11,7 @@ const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-chat-'))
 process.env.LEARN_DATA_DIR = temp
 process.env.LEARN_PACKS_DIR = path.join(temp, 'packs')
 
-type Mode = 'retry-500' | 'empty-then-valid' | 'invalid-then-valid' | 'unauthorized'
+type Mode = 'retry-500' | 'empty-then-valid' | 'invalid-then-valid' | 'unauthorized' | 'drop-then-valid' | 'token-cap'
 
 let mode: Mode = 'retry-500'
 let requests = 0
@@ -29,6 +29,15 @@ before(async () => {
     request.resume()
     if (mode === 'unauthorized') {
       send(response, 401, { error: 'invalid key' })
+      return
+    }
+    if (mode === 'token-cap' && requests === 1) {
+      send(response, 400, { error: 'max_tokens is too large: 8000 > 4096' })
+      return
+    }
+    if (mode === 'drop-then-valid' && requests === 1) {
+      // A gateway that times out or closes the socket mid-request.
+      request.socket.destroy()
       return
     }
     if (mode === 'retry-500' && requests <= 2) {
@@ -108,6 +117,24 @@ describe('LLM retry', () => {
     mode = 'invalid-then-valid'
     requests = 0
     const result = await chatJson(schema, 'system', 'user')
+    assert.deepEqual(result, { ok: true })
+    assert.equal(requests, 2)
+  })
+
+  it('retries a dropped connection instead of losing the chunk', async () => {
+    const { chatJson } = await import('../src/analyze/chat.js')
+    mode = 'drop-then-valid'
+    requests = 0
+    const result = await chatJson(schema, 'system', 'user')
+    assert.deepEqual(result, { ok: true })
+    assert.equal(requests, 2)
+  })
+
+  it('lowers max_tokens when the provider caps it', async () => {
+    const { chatJson } = await import('../src/analyze/chat.js')
+    mode = 'token-cap'
+    requests = 0
+    const result = await chatJson(schema, 'system', 'user', { maxTokens: 8000 })
     assert.deepEqual(result, { ok: true })
     assert.equal(requests, 2)
   })
