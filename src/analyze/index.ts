@@ -44,6 +44,26 @@ export interface AnalyzeOutcome {
 
 const SELECTION_MAX_ITEMS = 60
 
+/** Turn a provider error into the one thing the reader can act on. */
+export function describeLlmFailure(message: string): string {
+  if (/401|403|unauthorized|invalid[_ -]?api[_ -]?key|authentication/i.test(message)) {
+    return '模型 Key 无效或没有权限，检查一下 Key'
+  }
+  if (/404|model[_ -]?not[_ -]?found|does not exist|not found/i.test(message)) {
+    return 'Base URL 或模型名不对，Base URL 一般以 /v1 结尾'
+  }
+  if (/429|rate[_ -]?limit|quota|insufficient/i.test(message)) {
+    return '模型限流或额度不足，稍后重试或降低并发'
+  }
+  if (/timeout|timed out|aborted|超时/i.test(message)) {
+    return '模型响应超时，可以换更快的模型'
+  }
+  if (/cut off|max_tokens|length/i.test(message)) {
+    return '模型输出被截断，可以换支持更长输出的模型'
+  }
+  return '模型调用失败'
+}
+
 export function suggestSelection(
   resource: Resource,
   options: Pick<AnalyzeOptions, 'limit' | 'knownRatio' | 'selectionBias'> = {},
@@ -194,7 +214,7 @@ export async function analyzeResource(resource: Resource, options: AnalyzeOption
       console.warn(`[llm] fallback to heuristic: ${detail}`)
       progress(`LLM 模式失败：${detail}`)
       analysis.notes.push(
-        '这篇学习包用启发式模式生成（模型调用失败），释义和搭配来自词典与原文。配置好模型后重新生成即可。',
+        `这篇学习包用启发式模式生成（${describeLlmFailure(detail)}），释义和搭配来自词典与原文。`,
       )
       analysis.notes.push(`技术原因：${detail}`)
       outcome = { analysis, mode: 'heuristic', notes: analysis.notes, styleName: options.style?.name, selection }

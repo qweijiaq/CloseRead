@@ -177,6 +177,17 @@ function detectEnvTtsProvider(): TtsProviderId {
   return process.env.OPENAI_TTS_API_KEY?.trim() ? 'openai' : DEFAULT_TTS_PROVIDER
 }
 
+/**
+ * People paste the whole endpoint into Base URL. Strip the path we append
+ * ourselves, otherwise every request 404s and the build silently degrades.
+ */
+export function normalizeBaseUrl(value: string): string {
+  return value
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/(chat\/completions|completions|messages)$/i, '')
+}
+
 function resolveLlm(dataDir: string): LlmRuntime {
   const stored = readJsonFile<StoredLlmSettings>(path.join(dataDir, 'llm.json'))
   const envProvider = detectEnvProvider()
@@ -188,12 +199,12 @@ function resolveLlm(dataDir: string): LlmRuntime {
   return {
     provider,
     apiKey,
-    baseUrl: (
+    baseUrl: normalizeBaseUrl(
       stored?.baseUrl?.trim() ||
-      process.env.LEARN_BASE_URL ||
-      process.env.OPENAI_BASE_URL ||
-      preset.baseUrl
-    ).replace(/\/+$/, ''),
+        process.env.LEARN_BASE_URL ||
+        process.env.OPENAI_BASE_URL ||
+        preset.baseUrl,
+    ),
     model: stored?.model?.trim() || process.env.LEARN_MODEL || process.env.OPENAI_MODEL || preset.model,
     keySource: storedKey ? 'stored' : apiKey ? 'env' : 'none',
   }
