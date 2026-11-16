@@ -745,8 +745,9 @@ ${pwaHead()}
   .spinner { width: 16px; height: 16px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
   /* The first paint happens before the browser hands its copy back, so hold the
      page still instead of flashing empty lists. */
-  .boot-veil { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; gap: 10px; background: color-mix(in srgb, var(--surface) 96%, transparent); color: var(--muted); font-size: 12.5px; }
-  body.app-ready .boot-veil { display: none; }
+  .boot-veil { position: fixed; inset: 0; z-index: 70; display: none; align-items: center; justify-content: center; gap: 10px; background: color-mix(in srgb, var(--surface) 96%, transparent); color: var(--muted); font-size: 12.5px; }
+  /* Only show it when the restore is actually slow, so a fast load never blinks. */
+  body.booting .boot-veil { display: flex; }
   .upload-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .upload-track { height: 4px; border-radius: 999px; background: var(--accent-soft); overflow: hidden; }
   .upload-track i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
@@ -6494,11 +6495,13 @@ ${pwaHead()}
   function bootApp(hydrated) {
     if (state.booted) return;
     state.booted = true;
+    document.body.classList.remove('booting');
     document.body.classList.add('app-ready');
     switchTab(state.tab || 'read', true);
     if (hydrated || state.tab === 'settings') loadSettings();
   }
 
+  setTimeout(function () { if (!state.booted) document.body.classList.add('booting'); }, 150);
   var hydration = syncFromBrowser().catch(function () { return false; });
   var boot = Promise.all([hydration, Promise.resolve(llmReady).catch(function () {})]);
   // IndexedDB can hang (private windows, locked profiles). Paint anyway, then
