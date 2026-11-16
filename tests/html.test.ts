@@ -153,6 +153,21 @@ describe('pack html', () => {
     assert.ok(!html.includes('部分降级'))
   })
 
+  it('treats a completed translation repair as informational', () => {
+    const pack = makePack()
+    pack.build = {
+      inputHash: 'hash',
+      mode: 'heuristic',
+      provider: 'heuristic',
+      model: 'dictionary',
+      promptVersion: '2026-11-01',
+      generatedAt: new Date().toISOString(),
+      warnings: ['补充了 9 段缺失译文。'],
+    }
+    const html = renderHtml(pack, { items: {} })
+    assert.ok(!html.includes('id="build-warning"'))
+  })
+
   it('shows the adaptive selection rationale and reader link', () => {
     const pack = makePack()
     pack.selection = {

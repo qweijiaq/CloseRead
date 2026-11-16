@@ -501,9 +501,10 @@ export function renderHtml(
   const inApp = options.inApp === true
   const readingGuide = readingGuideMarkdown(pack)
   const editorialLeadHtml = readingGuide ? (marked.parse(readingGuide, { async: false }) as string) : ''
-  const buildNotes = (pack.build?.warnings ?? []).filter(
-    (note): note is string => typeof note === 'string' && note.trim().length > 0,
-  )
+  const buildNotes = (pack.build?.warnings ?? [])
+    .filter((note): note is string => typeof note === 'string' && note.trim().length > 0)
+    // "补充了 9 段缺失译文" is the repair step succeeding, not a missing piece.
+    .filter((note) => !/^补充了 \d+ 段缺失译文。?$/.test(note.trim()))
   const buildProblems = buildNotes.filter((note) =>
     /failed|error|fallback|empty|timeout|missing|truncated|first part|失败|错误|回退|降级|缺失|无法|超时|未生成/i.test(note),
   )
