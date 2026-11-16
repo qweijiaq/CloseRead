@@ -168,9 +168,19 @@ export class VisitorRegistry {
     await fs.mkdir(this.usersRoot, { recursive: true }).catch(() => {})
   }
 
+  private loadPromise: Promise<void> | undefined
+
+  /**
+   * One shared load: a second request must wait for the first, not read an
+   * empty map and flush it back over the real visitor log.
+   */
   private async ensureLoaded(): Promise<void> {
     if (this.loaded) return
-    this.loaded = true
+    this.loadPromise ??= this.loadVisits()
+    await this.loadPromise
+  }
+
+  private async loadVisits(): Promise<void> {
     await this.resetScratch()
     try {
       const raw = await fs.readFile(this.visitsFile, 'utf8')
@@ -191,7 +201,13 @@ export class VisitorRegistry {
       }
     } catch {
       // A missing or unreadable visit log only costs statistics, not isolation.
+      this.dirty = false
+      this.loaded = true
+      return
     }
+    // Persist what we just loaded: an early flush used to write an empty map.
+    this.dirty = this.visits.size > 0
+    this.loaded = true
   }
 
   private markDirty(): void {
@@ -203,6 +219,8 @@ export class VisitorRegistry {
   /** Persist statistics. Bounded loss on a crash is acceptable; isolation never depends on it. */
   flush(): Promise<void> {
     if (!this.dirty) return this.flushChain
+    // A flush before the log finished loading would wipe the visitor history.
+    if (this.visits.size === 0) return this.flushChain
     const snapshot: VisitFile = { version: 1, visitors: {} }
     for (const [id, record] of this.visits) {
       snapshot.visitors[id] = { ...record }
@@ -215,6 +233,7 @@ export class VisitorRegistry {
         await fs.mkdir(path.dirname(this.visitsFile), { recursive: true })
         const temp = `${this.visitsFile}.${process.pid}.tmp`
         await fs.writeFile(temp, payload)
+        await fs.copyFile(this.visitsFile, `${this.visitsFile}.bak`).catch(() => {})
         await fs.rename(temp, this.visitsFile)
       })
       .catch(() => {

@@ -596,7 +596,10 @@ export async function analyzeWithLlm(
     .sort((a, b) => (b.valueScore ?? 0) - (a.valueScore ?? 0))
     .slice(0, limit)
   if (candidates.length === 0) {
-    throw new Error(`LLM selection returned no new items. ${notes.join(' | ')}`)
+    // Lead with the provider error: "no items" alone hides a 404 or a timeout.
+    throw new Error(
+      `LLM 选词失败${noted.length ? `：${noted.join('；')}` : '：模型没有返回可用候选'}`,
+    )
   }
 
   const cachedByKey = new Map<string, RawItem>()
