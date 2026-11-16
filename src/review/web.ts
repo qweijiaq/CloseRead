@@ -6501,7 +6501,7 @@ ${pwaHead()}
     if (hydrated || state.tab === 'settings') loadSettings();
   }
 
-  setTimeout(function () { if (!state.booted) document.body.classList.add('booting'); }, 150);
+  setTimeout(function () { if (!state.booted) document.body.classList.add('booting'); }, 600);
   var hydration = syncFromBrowser().catch(function () { return false; });
   var boot = Promise.all([hydration, Promise.resolve(llmReady).catch(function () {})]);
   // IndexedDB can hang (private windows, locked profiles). Paint anyway, then
