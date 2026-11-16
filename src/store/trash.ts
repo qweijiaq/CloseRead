@@ -33,8 +33,22 @@ export interface TrashView {
   hasResource: boolean
 }
 
-function root(): string {
-  return path.join(config.dataDir, 'trash')
+/**
+ * Where a trashed item lives. Visitor workspaces default to the current one, but
+ * a shared-library pack must go to the server's own data root: the visitor's
+ * scratch directory is wiped on restart.
+ */
+export interface TrashScope {
+  dataDir?: string
+  packsDir?: string
+}
+
+function root(scope?: TrashScope): string {
+  return path.join(scope?.dataDir ?? config.dataDir, 'trash')
+}
+
+function packsRoot(scope?: TrashScope): string {
+  return scope?.packsDir ?? config.packsDir
 }
 
 function stamp(): string {
@@ -78,9 +92,9 @@ function itemsForPack(
 }
 
 /** Move one pack folder and its library snapshots into the local trash. */
-export async function trashPack(store: Store, record: PackRecord): Promise<TrashEntry> {
+export async function trashPack(store: Store, record: PackRecord, scope?: TrashScope): Promise<TrashEntry> {
   const id = `${stamp()}-${randomUUID().slice(0, 8)}`
-  const dir = path.join(root(), id)
+  const dir = path.join(root(scope), id)
   let contents: { items: Array<{ id: string }> } | undefined
   try {
     contents = await loadPack(record.dir)
@@ -108,9 +122,9 @@ export async function trashPack(store: Store, record: PackRecord): Promise<Trash
 }
 
 /** Move all pack folders, the resource file and its upload into the local trash. */
-export async function trashResource(store: Store, resource: Resource): Promise<TrashEntry> {
+export async function trashResource(store: Store, resource: Resource, scope?: TrashScope): Promise<TrashEntry> {
   const id = `${stamp()}-${randomUUID().slice(0, 8)}`
-  const dir = path.join(root(), id)
+  const dir = path.join(root(scope), id)
   const related = store.packs().filter(
     (pack) =>
       pack.resourceId === resource.id ||
@@ -167,16 +181,16 @@ async function readEntry(dir: string): Promise<TrashEntry | undefined> {
 
 const TRASH_MAX_AGE_DAYS = 30
 
-async function pruneOldEntries(): Promise<void> {
+async function pruneOldEntries(scope?: TrashScope): Promise<void> {
   let names: string[] = []
   try {
-    names = await fs.readdir(root())
+    names = await fs.readdir(root(scope))
   } catch {
     return
   }
   const cutoff = Date.now() - TRASH_MAX_AGE_DAYS * 86_400_000
   for (const name of names) {
-    const dir = path.join(root(), name)
+    const dir = path.join(root(scope), name)
     const entry = await readEntry(dir)
     if (!entry) continue
     const deletedAt = Date.parse(entry.deletedAt)
@@ -186,17 +200,17 @@ async function pruneOldEntries(): Promise<void> {
   }
 }
 
-export async function listTrash(): Promise<TrashView[]> {
-  await pruneOldEntries()
+export async function listTrash(scope?: TrashScope): Promise<TrashView[]> {
+  await pruneOldEntries(scope)
   let names: string[] = []
   try {
-    names = await fs.readdir(root())
+    names = await fs.readdir(root(scope))
   } catch {
     return []
   }
   const entries: TrashView[] = []
   for (const name of names) {
-    const dir = path.join(root(), name)
+    const dir = path.join(root(scope), name)
     const entry = await readEntry(dir)
     if (!entry) continue
     entries.push({
@@ -215,15 +229,16 @@ export async function listTrash(): Promise<TrashView[]> {
 export async function restoreTrash(
   store: Store,
   id: string,
+  scope?: TrashScope,
 ): Promise<{ kind: 'pack' | 'resource'; title: string; packs: number; items: number }> {
-  const dir = path.join(root(), safeName(id))
+  const dir = path.join(root(scope), safeName(id))
   const entry = await readEntry(dir)
   if (!entry) throw new Error('回收站条目不存在。')
   if (entry.kind === 'pack') {
     const pack = entry.packs[0]
     if (!pack) throw new Error('回收站条目缺少学习包。')
     if (store.findPack(pack.record.id)) throw new Error('这个学习包已经存在，无法重复恢复。')
-    const target = path.join(config.packsDir, pack.dirName)
+    const target = path.join(packsRoot(scope), pack.dirName)
     try {
       await fs.access(target)
       throw new Error(`目标目录已存在：${target}`)
@@ -246,7 +261,7 @@ export async function restoreTrash(
   if (!entry.resource) throw new Error('回收站条目缺少导入材料。')
   if (store.getResource(entry.resource.id)) throw new Error('这份材料已经存在，无法重复恢复。')
   for (const [index, pack] of entry.packs.entries()) {
-    const target = path.join(config.packsDir, pack.dirName)
+    const target = path.join(packsRoot(scope), pack.dirName)
     if (store.findPack(pack.record.id)) continue
     try {
       await fs.access(target)
@@ -268,7 +283,7 @@ export async function restoreTrash(
     const source = path.join(dir, 'upload', path.basename(entry.uploadName))
     try {
       await fs.access(source)
-      const uploadTarget = path.join(config.dataDir, 'uploads', path.basename(entry.uploadName))
+      const uploadTarget = path.join(scope?.dataDir ?? config.dataDir, 'uploads', path.basename(entry.uploadName))
       await move(source, uploadTarget)
       entry.resource.metadata.uploadPath = uploadTarget
     } catch {
@@ -285,8 +300,8 @@ export async function restoreTrash(
   }
 }
 
-export async function purgeTrash(id: string): Promise<boolean> {
-  const dir = path.join(root(), safeName(id))
+export async function purgeTrash(id: string, scope?: TrashScope): Promise<boolean> {
+  const dir = path.join(root(scope), safeName(id))
   try {
     await fs.access(dir)
     await fs.rm(dir, { recursive: true, force: true })

@@ -279,8 +279,8 @@ const REVIEW_EN: Record<string, string> = {
   '核对释义': 'Check meanings',
   '先凭第一反应判断，暂不显示释义；点“核对释义”后再对照意思、修正判断。结果只保存在本机，用来校准文章难度和生词标注。':
     'Judge from first impressions first; meanings stay hidden. Tap “Check meanings” to compare and adjust. Results stay on this machine and calibrate difficulty and word highlights.',
-  '默认按文章长度建议 8–16 项（约 20–25 分钟），也可以按 5 个一档手动指定。':
-    'Suggests 8–16 items (about 20–25 min) based on article length; or pick in steps of 5.',
+  '默认按每 20 个词取 1 项（原文 600 词约 30 项），也可以按 5 个一档手动指定。':
+    'One item per 20 words (about 30 for a 600-word article); or pick in steps of 5.',
   '分享卡 ↗': 'Share card ↗',
   '未学词': 'Unseen words',
   '已掌握': 'Known',

@@ -2071,7 +2071,36 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         }
       }),
     )
-    sendJson(response, 200, { packs, total: packs.length })
+    // Ownership follows the cookie, not the workspace: a fresh owner link still
+    // resolves to the read-only demo view until it has claimed a workspace.
+    const viewerOwnsSite = !publicModeEnabled() || isOwnerVisitor(visitorId)
+    sendJson(response, 200, { packs, total: packs.length, owner: viewerOwnsSite })
+    return
+  }
+
+  if (method === 'POST' && url.pathname === '/api/shared/restore') {
+    if (publicModeEnabled() && !isOwnerVisitor(visitorId)) {
+      sendJson(response, 403, { error: '只有站点作者能恢复公共库。' })
+      return
+    }
+    try {
+      await shared.reload().catch(() => {})
+      const scope = { dataDir: rootDataDir, packsDir: rootPacksDir }
+      const entries = (await listTrash(scope)).filter((entry) => entry.kind === 'pack')
+      const restored: string[] = []
+      for (const entry of entries) {
+        try {
+          const result = await restoreTrash(shared, entry.id, scope)
+          restored.push(result.title)
+        } catch {
+          // Already restored, or the entry was purged between listing and now.
+        }
+      }
+      await shared.reload().catch(() => {})
+      sendJson(response, 200, { ok: true, restored, total: shared.packs().length })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
     return
   }
 
@@ -3646,7 +3675,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         return
       }
       const me = currentWorkspace().id
-      if (record.publishedBy !== me && !isOwnerVisitor(me)) {
+      if (record.publishedBy !== me && !(!publicModeEnabled() || isOwnerVisitor(visitorId))) {
         sendJson(response, 403, {
           error: record.publishedBy
             ? '这个学习包是别人公开的，只有作者本人能取消。'
@@ -3656,7 +3685,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       }
       // Unpublishing used to delete the folder outright. For the built-in sample
       // that is the only copy, so send it to the trash and keep it restorable.
-      await trashPack(shared, record).catch(() => {})
+      await trashPack(shared, record, { dataDir: rootDataDir, packsDir: rootPacksDir }).catch(() => {})
       await shared.removePack(id)
       if (record.dir.startsWith(rootPacksDir)) {
         await fs.rm(record.dir, { recursive: true, force: true }).catch(() => {})

@@ -99,6 +99,13 @@ function unique(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))]
 }
 
+/**
+ * How many model calls may be in flight at once. The build is latency-bound, so
+ * parallelism is the main lever; raise it with LEARN_LLM_CONCURRENCY when the
+ * provider allows more.
+ */
+const LLM_CONCURRENCY = Math.max(1, Math.min(12, Math.round(Number(process.env.LEARN_LLM_CONCURRENCY ?? 4) || 4)))
+
 function checkAbort(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error('Build cancelled')
 }
@@ -216,13 +223,9 @@ async function generateCards(
 ): Promise<Map<string, RawItem>> {
   const result = new Map<string, RawItem>()
   if (candidates.length === 0) return result
-  const batches: SelectionItem[][] = []
-  for (let index = 0; index < candidates.length; index += 5) {
-    batches.push(candidates.slice(index, index + 5))
-  }
 
-  let completed = 0
-  await mapLimit(batches, 3, async (batch) => {
+  /** Ask for a batch; on failure split it so one bad word cannot sink the rest. */
+  const runBatch = async (batch: SelectionItem[]): Promise<Map<string, RawItem>> => {
     checkAbort(signal)
     const list = batch
       .map(
@@ -240,6 +243,7 @@ async function generateCards(
         { signal },
       )
       const byKey = new Map((generated.items ?? []).map((item) => [candidateKey(item), item]))
+      const out = new Map<string, RawItem>()
       for (const candidate of batch) {
         const generatedItem = byKey.get(candidateKey(candidate))
         const raw = generatedItem ?? fallbackRaw(candidate)
@@ -257,18 +261,42 @@ async function generateCards(
           antonyms: raw.antonyms ?? [],
           wordFormation: normalizeWordFormation(raw.wordFormation ?? undefined) ?? null,
         }
-        result.set(candidateKey(candidate), normalized)
+        out.set(candidateKey(candidate), normalized)
         if (generatedItem) await putCachedCard(cardFromRaw(normalized))
       }
+      return out
     } catch (error) {
       if (signal?.aborted) throw new Error('Build cancelled')
-      notes.push(`Card generation failed for a batch: ${error instanceof Error ? error.message : String(error)}`)
-      for (const candidate of batch) result.set(candidateKey(candidate), fallbackRaw(candidate))
+      const message = error instanceof Error ? error.message : String(error)
+      if (batch.length > 1) {
+        const middle = Math.ceil(batch.length / 2)
+        const [left, right] = await Promise.all([
+          runBatch(batch.slice(0, middle)),
+          runBatch(batch.slice(middle)),
+        ])
+        return new Map([...left, ...right])
+      }
+      notes.push(`Card generation failed for "${batch[0]?.lemma ?? '?'}": ${message}`)
+      return new Map([[candidateKey(batch[0]!), fallbackRaw(batch[0]!)]])
+    }
+  }
+
+  const batches: SelectionItem[][] = []
+  const CARD_BATCH_SIZE = 4
+  for (let index = 0; index < candidates.length; index += CARD_BATCH_SIZE) {
+    batches.push(candidates.slice(index, index + CARD_BATCH_SIZE))
+  }
+
+  let completed = 0
+  const maps = await mapLimit(batches, LLM_CONCURRENCY, async (batch) => {
+    try {
+      return await runBatch(batch)
     } finally {
       completed += 1
       progress(`Generated word cards ${completed}/${batches.length}.`)
     }
   })
+  for (const map of maps) for (const [key, value] of map) result.set(key, value)
   return result
 }
 
@@ -286,7 +314,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: nu
   return results
 }
 
-const READING_BATCH_SIZE = 4
+const READING_BATCH_SIZE = 3
 const READING_BATCH_CHARS = 5000
 
 function paragraphBatches(paragraphs: string[]): string[][] {
@@ -506,7 +534,7 @@ export async function analyzeWithLlm(
 ): Promise<AnalysisResult> {
   checkAbort(signal)
   const chunks = chunkText(resource.text)
-  const candidateTarget = Math.min(40, Math.max(limit, Math.ceil(limit * 1.6)))
+  const candidateTarget = Math.min(90, Math.max(limit + 6, Math.ceil(limit * 1.5)))
   const perChunk = Math.max(3, Math.ceil(candidateTarget / Math.max(1, chunks.length)))
   const known = promptKnownLemmas(knownLemmas ?? [])
   const avoid = promptKnownLemmas(avoidLemmas ?? [])
@@ -530,7 +558,7 @@ export async function analyzeWithLlm(
   progress(`Extracting from ${chunks.length} text chunk${chunks.length === 1 ? '' : 's'}…`)
 
   let completedChunks = 0
-  const extractions = await mapLimit(chunks, 2, async (chunk, index) => {
+  const extractions = await mapLimit(chunks, LLM_CONCURRENCY, async (chunk, index) => {
     try {
       const result = await chatJson(
         selectionSchema,
@@ -717,15 +745,27 @@ export async function analyzeWithLlm(
     }
     const standfirst = extractStandfirst(resource.text, resource.title)
     const headTask = (async () => {
+      const prompt = `Article title: ${resource.title}\n\nStandfirst: ${standfirst ?? '(none)'}\n\nOpening excerpt:\n"""\n${resource.text.slice(0, 2000)}\n"""\n\nReturn JSON only.`
       try {
-        return await chatJson(
-          frontMatterSchema,
-          READING_HEAD_SYSTEM,
-          `Article title: ${resource.title}\n\nStandfirst: ${standfirst ?? '(none)'}\n\nOpening excerpt:\n"""\n${resource.text.slice(0, 2000)}\n"""\n\nReturn JSON only.`,
-          { maxTokens: 1500, signal },
-        )
+        return await chatJson(frontMatterSchema, READING_HEAD_SYSTEM, prompt, { maxTokens: 3000, signal })
       } catch (error) {
-        notes.push(`Reading head failed: ${error instanceof Error ? error.message : String(error)}`)
+        const message = error instanceof Error ? error.message : String(error)
+        // A truncated reply used to leave the page head empty for the rest of the
+        // build. Ask once more with a tighter brief before giving up.
+        if (/cut off/i.test(message) && !signal?.aborted) {
+          try {
+            return await chatJson(
+              frontMatterSchema,
+              `${READING_HEAD_SYSTEM}\nKeep every field short: titleNote/leadNote under 40 Chinese characters, summaryZh at most 2 sentences.`,
+              prompt,
+              { maxTokens: 4000, signal },
+            )
+          } catch (retryError) {
+            notes.push(`Reading head failed: ${retryError instanceof Error ? retryError.message : String(retryError)}`)
+            return undefined
+          }
+        }
+        notes.push(`Reading head failed: ${message}`)
         return undefined
       }
     })()
@@ -745,7 +785,7 @@ export async function analyzeWithLlm(
     const generated =
       batchRanges.length > 0
         ? (
-            await mapLimit(batchRanges, 2, (range) =>
+            await mapLimit(batchRanges, LLM_CONCURRENCY, (range) =>
               requestReadingBatch(range.batch, range.offset, resource.title, itemList, signal, notes),
             )
           ).flat()

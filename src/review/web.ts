@@ -1830,7 +1830,7 @@ ${pwaHead()}
         ],
         'cselect-size',
       )}
-      <small>默认按文章长度建议 8–16 项（约 20–25 分钟），也可以按 5 个一档手动指定。</small>
+      <small>默认按每 20 个词取 1 项（原文 600 词约 30 项），也可以按 5 个一档手动指定。</small>
     </label>
     <label class="article-toggle audio-toggle" id="build-audio-row" hidden><input type="checkbox" id="build-audio"> <span id="build-audio-label">生成音频</span></label>
     <label class="article-toggle audio-toggle"><input type="checkbox" id="only-new"> 只选生词（已收录的词不进入本包）</label>
@@ -1937,7 +1937,7 @@ ${pwaHead()}
     graph: null, graphSelected: null, graphQuery: '', graphFocus: null,
     graphPositions: [], graphNodes: [], graphEdges: [],
     graphZoom: 1, graphPanX: 0, graphPanY: 0, graphHop: 1, graphPathStart: null, graphPath: [],
-    lan: null, nuanceCombo: 0, publicMode: false,
+    lan: null, nuanceCombo: 0, publicMode: false, libraryOwner: false,
     importResource: null, importArticle: null, importArticlesView: false,
     upload: null, lastUpload: null
   };
@@ -3972,6 +3972,21 @@ ${pwaHead()}
     }
   }
 
+  function restoreSharedLibrary(button) {
+    if (!confirm('从回收站把公共库的学习包恢复回来？')) return;
+    if (button) { button.disabled = true; button.textContent = '恢复中…'; }
+    api('/api/shared/restore', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      .then(function (result) {
+        var restored = (result && result.restored) || [];
+        toast(restored.length ? '已恢复 ' + restored.length + ' 个学习包' : '回收站里没有可恢复的公共库内容');
+        loadShared();
+      })
+      .catch(function (error) {
+        toast('恢复失败：' + error.message);
+        if (button) { button.disabled = false; button.textContent = '一键恢复公共库'; }
+      });
+  }
+
   function loadShared() {
     var host = document.getElementById('library-list');
     if (!host) return;
@@ -3979,11 +3994,16 @@ ${pwaHead()}
     if (!host.innerHTML.trim()) host.innerHTML = '<div class="empty loading">正在加载公共库…</div>';
     api('/api/shared').then(function (result) {
       state.sharedPacks = (result && result.packs) || [];
+      state.libraryOwner = Boolean(result && result.owner);
       renderSharedLevels();
       if (!state.sharedPacks.length) {
         host.innerHTML = '<div class="empty"><strong>公共库还是空的</strong>' +
           '读完之后可以在「文章」里点「公开」，把这个学习包分享给其他人。' +
-          '<button class="btn btn-primary" data-go-tab="packs" style="margin-top:14px">去我的文章</button></div>';
+          '<button class="btn btn-primary" data-go-tab="packs" style="margin-top:14px">去我的文章</button>' +
+          (state.libraryOwner
+            ? '<button class="btn" data-restore-library="1" style="margin-top:10px">一键恢复公共库</button>'
+            : '') +
+          '</div>';
         var count = document.getElementById('library-count');
         if (count) count.textContent = '0 篇';
         return;
@@ -4957,10 +4977,10 @@ ${pwaHead()}
         '<div class="prefetch-card" role="dialog" aria-modal="true" aria-label="生成选项">' +
           '<h3>生成选项</h3>' +
           '<p class="small muted">勾选的内容会在生成学习包之后一并预生成，没有配置 Key 的读者也能直接看到答案。</p>' +
-          '<label class="prefetch-row"><input type="checkbox" data-pf="answers" checked> 段落问题答案</label>' +
-          '<label class="prefetch-row"><input type="checkbox" data-pf="expand" checked> 单词展开 / 词源</label>' +
-          '<label class="prefetch-row"><input type="checkbox" data-pf="sentences" checked> 逐句翻译</label>' +
-          '<p class="small muted">三项全选会明显更慢，一篇文章大约 1–5 分钟；只想要正文最快的做法是全部取消。</p>' +
+          '<label class="prefetch-row"><input type="checkbox" data-pf="answers"> 段落问题答案</label>' +
+          '<label class="prefetch-row"><input type="checkbox" data-pf="expand"> 单词展开 / 词源</label>' +
+          '<label class="prefetch-row"><input type="checkbox" data-pf="sentences"> 逐句翻译</label>' +
+          '<p class="small muted">不勾选最快：正文和词卡先出来，答案、词源、句译在阅读时按需生成。要放进公共库给没有 Key 的人读，再勾选它们。</p>' +
           '<div class="prefetch-actions">' +
             '<button class="btn btn-primary" data-pf-ok type="button">开始生成</button>' +
             '<button class="link-button" data-pf-cancel type="button">取消</button>' +
@@ -5251,6 +5271,12 @@ ${pwaHead()}
         rebuildTarget.getAttribute('data-rebuild-resource'),
         Number(rebuildTarget.getAttribute('data-rebuild-article'))
       );
+      return;
+    }
+    var restoreLibrary = target.closest('[data-restore-library]');
+    if (restoreLibrary) {
+      event.preventDefault();
+      restoreSharedLibrary(restoreLibrary);
       return;
     }
     var tabTarget = target.closest('[data-go-tab]');

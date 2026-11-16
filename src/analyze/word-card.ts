@@ -5,7 +5,7 @@ import { getCachedCard, putCachedCard } from './card-cache.js'
 import { lookupWords } from './dictionary.js'
 import { hasLlm } from '../config.js'
 import { itemId } from './item-id.js'
-import { rawItemSchema, wordFormationSchema, normalizeWordFormation } from './item-schema.js'
+import { looseStringList, rawItemSchema, wordFormationSchema, normalizeWordFormation } from './item-schema.js'
 import type { CachedCard } from './card-cache.js'
 import type { LearningItem } from '../types.js'
 
@@ -14,10 +14,10 @@ const wordCardSchema = z.object({
 })
 
 const relationsSchema = z.object({
-  synonyms: z.array(z.string()).default([]),
-  antonyms: z.array(z.string()).default([]),
-  confusables: z.array(z.string()).default([]),
-  wordFamily: z.array(z.string()).default([]),
+  synonyms: looseStringList(),
+  antonyms: looseStringList(),
+  confusables: looseStringList(),
+  wordFamily: looseStringList(),
   wordFormation: z.preprocess(
     (value) => (typeof value === 'string' ? undefined : value),
     wordFormationSchema.nullable().optional(),

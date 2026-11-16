@@ -42,15 +42,17 @@ export interface AnalyzeOutcome {
   selection: SelectionMetadata
 }
 
+const SELECTION_MAX_ITEMS = 60
+
 export function suggestSelection(
   resource: Resource,
   options: Pick<AnalyzeOptions, 'limit' | 'knownRatio' | 'selectionBias'> = {},
 ): SelectionMetadata {
   const wordCount = resource.wordCount || resource.text.split(/\s+/).filter(Boolean).length
   const difficulty = estimateDifficulty(resource.text)
-  // One intensive-reading session is built around 8–16 expressions, not a fixed
-  // fraction of the article. Longer texts get more, but the session stays bounded.
-  const base = Math.max(8, Math.min(16, Math.round(wordCount / 80)))
+  // One learning item per 20 words of the article, rounded to a whole item:
+  // a 600-word article yields 30 items, a 1200-word one is capped at 60.
+  const base = Math.max(1, Math.min(SELECTION_MAX_ITEMS, Math.round(wordCount / 20)))
   const known = options.knownRatio ?? 0
   const bias = Math.max(-5, Math.min(5, Math.round(options.selectionBias ?? 0)))
   const biasAdjust = bias === 0 ? 0 : Math.max(-4, Math.min(5, bias))
@@ -70,7 +72,7 @@ export function suggestSelection(
     }
   }
 
-  const recommended = Math.max(6, Math.min(16, base + biasAdjust + knownAdjust))
+  const recommended = Math.max(1, Math.min(SELECTION_MAX_ITEMS, base + biasAdjust + knownAdjust))
   const knownNote =
     known > 0
       ? `，已知词约占 ${Math.round(known * 100)}%${knownAdjust === 0 ? '' : knownAdjust > 0 ? '，增加 1 项' : '，减少 1 项'}`
@@ -84,7 +86,7 @@ export function suggestSelection(
     bonus: 0,
     wordCount,
     cefr: difficulty.cefr,
-    reason: `原文 ${wordCount} 词，按精读节奏建议 ${recommended} 项（约 20–25 分钟）${knownNote}${biasNote}。`,
+    reason: `原文 ${wordCount} 词，按每 20 词 1 项建议 ${recommended} 项${knownNote}${biasNote}。`,
   }
 }
 
