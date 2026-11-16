@@ -122,6 +122,15 @@ describe('pack html', () => {
     assert.ok(!html.includes('.epub'))
   })
 
+  it('does not print a server path or a redundant source', () => {
+    const pack = makePack()
+    pack.generatedAt = '2026-11-16T07:17:23.624Z'
+    pack.source = '/app/samples/sample-article'
+    assert.ok(renderHtml(pack, { items: {} }).includes('来源：sample-article'))
+    pack.source = 'pasted'
+    assert.ok(!renderHtml(pack, { items: {} }).includes('来源：'))
+  })
+
   it('surfaces degraded build warnings on the pack page', () => {
     const pack = makePack()
     pack.mode = 'llm'

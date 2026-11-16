@@ -201,9 +201,12 @@ function footerDate(value: string): string {
 function footerSource(pack: LearningPack): string {
   const source = (pack.source ?? '').trim()
   if (!source || source === pack.title) return ''
-  const name = source.replace(/\.(pdf|epub|mobi|azw3?|docx|txt|md|markdown|html?|json)$/i, '')
-  if (!name.trim()) return ''
-  const label = name.length > 48 ? `${name.slice(0, 48)}…` : name
+  // "pasted" or a temp path says nothing to a reader.
+  if (/^(pasted|text|preview|upload|unknown|sample)$/i.test(source)) return ''
+  const withoutExtension = source.replace(/\.(pdf|epub|mobi|azw3?|docx|txt|md|markdown|html?|json)$/i, '')
+  const base = withoutExtension.split(/[\\/]/).filter(Boolean).pop() ?? ''
+  if (!base || base === pack.title) return ''
+  const label = base.length > 48 ? `${base.slice(0, 48)}…` : base
   return ` · 来源：${escapeHtml(label)}`
 }
 
