@@ -112,6 +112,16 @@ describe('pack html', () => {
     assert.ok(html.includes("'http://127.0.0.1:4317/'"))
   })
 
+  it('shows a readable date and source in the footer', () => {
+    const pack = makePack()
+    pack.generatedAt = '2026-11-16T07:17:23.624Z'
+    pack.source = 'TheEconomist.2026.10.24.epub'
+    const html = renderHtml(pack, { items: {} })
+    assert.ok(html.includes('由 CloseRead 生成 · 2026-11-16 · 来源：TheEconomist.2026.10.24'))
+    assert.ok(!html.includes('2026-11-16T07:17:23.624Z'))
+    assert.ok(!html.includes('.epub'))
+  })
+
   it('surfaces degraded build warnings on the pack page', () => {
     const pack = makePack()
     pack.mode = 'llm'

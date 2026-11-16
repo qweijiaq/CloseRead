@@ -191,6 +191,22 @@ function renderSentenceRewrites(rewrites: SentenceRewrite[]): string {
   </details>`
 }
 
+/** A reader-facing date, not the raw ISO stamp. */
+function footerDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? '')
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : value ?? ''
+}
+
+/** File imports carry a file name; show it as a source, without the extension. */
+function footerSource(pack: LearningPack): string {
+  const source = (pack.source ?? '').trim()
+  if (!source || source === pack.title) return ''
+  const name = source.replace(/\.(pdf|epub|mobi|azw3?|docx|txt|md|markdown|html?|json)$/i, '')
+  if (!name.trim()) return ''
+  const label = name.length > 48 ? `${name.slice(0, 48)}…` : name
+  return ` · 来源：${escapeHtml(label)}`
+}
+
 function renderCompactItem(item: LearningItem, audio: PackAudio): string {
   if (item.type === 'sentence' && item.sentence) return renderSentenceItem(item)
   const examples = item.examples.filter((example) => example.origin !== 'source').slice(0, 3)
@@ -1987,7 +2003,7 @@ ${exportMode ? '' : themeBootScript()}
       ${pack.parentResourceId ? '<a class="topbar-action" data-article-list href="#">返回文章列表</a>' : ''}
       <button class="topbar-action" id="jump-top" type="button">回到顶部</button>
     </div>
-    <div>由 CloseRead 生成 · ${escapeHtml(pack.generatedAt)} · ${escapeHtml(pack.source)}</div>
+    <div>由 CloseRead 生成 · ${escapeHtml(footerDate(pack.generatedAt))}${footerSource(pack)}</div>
   </footer>
 </main>
 <div class="focus-mode" id="focus-mode" hidden>

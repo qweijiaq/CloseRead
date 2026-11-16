@@ -8,7 +8,9 @@ const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-hygiene-'))
 process.env.LEARN_DATA_DIR = temp
 process.env.LEARN_PACKS_DIR = path.join(temp, 'packs')
 
-const { checkReadableEnglish, stripBoilerplate } = await import('../src/ingest/hygiene.js')
+const { checkReadableEnglish, stripBoilerplate, stripPackWatermarks, stripWatermarksStrict } = await import(
+  '../src/ingest/hygiene.js'
+)
 const { ingestText } = await import('../src/ingest/index.js')
 
 const article =
@@ -48,6 +50,31 @@ describe('import hygiene', () => {
     )
     assert.ok(!resource.text.includes('zlibrary'))
     assert.ok(resource.text.startsWith('Attention'))
+  })
+
+  it('empties a paragraph that was only a watermark', () => {
+    const watermark = '本文由 zlibrary 从 https://www.economist.com/leaders/example 下载'
+    assert.equal(stripWatermarksStrict(watermark), '')
+    assert.equal(stripWatermarksStrict('A real paragraph about attention.'), 'A real paragraph about attention.')
+  })
+
+  it('cleans a pack before it is published', () => {
+    const pack = {
+      sourceText: '本文由 zlibrary 下载\n\nAttention has quietly become scarce.',
+      reading: [
+        { index: 0, original: '本文由 zlibrary 下载', translation: '', itemIds: [] },
+        { index: 1, original: 'Attention has quietly become scarce.', translation: '注意力变得稀缺。', itemIds: [] },
+      ],
+    } as never
+    assert.equal(stripPackWatermarks(pack), true)
+    const cleaned = pack as unknown as {
+      sourceText: string
+      reading: Array<{ index: number; original: string }>
+    }
+    assert.ok(!cleaned.sourceText.includes('zlibrary'))
+    assert.equal(cleaned.reading.length, 1)
+    assert.equal(cleaned.reading[0]!.index, 0)
+    assert.match(cleaned.reading[0]!.original, /Attention/)
   })
 
   it('refuses a resource that is not English prose', async () => {

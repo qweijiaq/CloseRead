@@ -86,7 +86,7 @@ import type { DailyProgress } from '../store/store.js'
 import { restoreLibraryBackup, writeLibraryBackup } from '../store/backup.js'
 import { listTrash, purgeTrash, restoreTrash, trashPack, trashResource } from '../store/trash.js'
 import { checkPublishable } from '../community/moderation.js'
-import { checkReadableEnglish } from '../ingest/hygiene.js'
+import { checkReadableEnglish, stripPackWatermarks } from '../ingest/hygiene.js'
 import { listStyleProfiles, loadStyleProfile, resolveDefaultStyle } from '../style/profile.js'
 import type { LearningPack, PackRecord, Resource, ResourceArticle, StoredItem } from '../types.js'
 import { accessCookie, accessTokenMatches, isLocalHostName, isLoopbackAddress, issueAccessToken, phoneUrls, requestAccessToken, withoutAccessToken } from './lan.js'
@@ -3653,9 +3653,14 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         sendJson(response, 429, { error: '公共库已满（500 个），暂时不能再公开新的学习包。' })
         return
       }
-      // Screen the text itself: a pack built from a messy import must not reach
-      // the public library, even if the owner already deleted it elsewhere.
+      // Clean a pack built before the import filter existed, then screen it: a
+      // messy import must not reach the public library even if it still lives in
+      // someone's library.
       const contents = await loadPack(pack.dir).catch(() => undefined)
+      if (contents) {
+        const cleaned = stripPackWatermarks(contents)
+        if (cleaned) await savePackFiles(contents, pack.dir).catch(() => {})
+      }
       const body =
         contents?.sourceText ??
         (contents?.reading ?? []).map((paragraph) => paragraph.original).join('\n\n')

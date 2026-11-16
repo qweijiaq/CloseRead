@@ -1,3 +1,5 @@
+import type { LearningPack } from '../types.js'
+
 /**
  * Import hygiene: strip the watermark lines that come with downloaded PDFs and
  * refuse files that are not English prose at all. Both checks are deliberately
@@ -36,6 +38,15 @@ export function stripBoilerplate(text: string): string {
   return kept || text.trim()
 }
 
+/** Same filter, but a paragraph that was nothing else becomes empty. */
+export function stripWatermarksStrict(text: string): string {
+  return text
+    .split('\n')
+    .filter((line) => !isWatermark(line))
+    .join('\n')
+    .trim()
+}
+
 export interface ReadabilityCheck {
   ok: boolean
   reason?: string
@@ -64,3 +75,27 @@ export function checkReadableEnglish(text: string): ReadabilityCheck {
   }
   return { ok: true, englishRatio, letters }
 }
+
+/** Drop download watermarks from a pack before it can be published. */
+export function stripPackWatermarks(pack: LearningPack): boolean {
+  let changed = false
+  const source = pack.sourceText ?? ''
+  const cleanedSource = stripWatermarksStrict(source)
+  if (cleanedSource && cleanedSource !== source) {
+    pack.sourceText = cleanedSource
+    changed = true
+  }
+  const reading = pack.reading ?? []
+  const kept = reading.filter((paragraph) => stripWatermarksStrict(paragraph.original).length > 0)
+  if (kept.length !== reading.length) {
+    pack.reading = kept.map((paragraph, index) => ({ ...paragraph, index }))
+    changed = true
+  }
+  const lead = pack.frontMatter?.lead
+  if (lead && stripWatermarksStrict(lead) !== lead) {
+    pack.frontMatter = { ...pack.frontMatter!, lead: stripWatermarksStrict(lead) }
+    changed = true
+  }
+  return changed
+}
+
