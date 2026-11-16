@@ -99,7 +99,7 @@ describe('diagnosis and weekly API', () => {
           '--no-first-run',
           '--no-default-browser-check',
           `--user-data-dir=${path.join(temp, 'chrome-profile')}`,
-          '--virtual-time-budget=3000',
+          '--virtual-time-budget=8000',
           '--window-size=1200,900',
           '--dump-dom',
           `${server.url}/?tab=insights`,

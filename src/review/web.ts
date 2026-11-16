@@ -743,6 +743,10 @@ ${pwaHead()}
   .warnings { margin: 0; padding-left: 18px; color: var(--rust); font-size: 12.5px; }
   .warnings li { margin: 2px 0; }
   .spinner { width: 16px; height: 16px; border: 2px solid var(--accent-soft); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+  /* The first paint happens before the browser hands its copy back, so hold the
+     page still instead of flashing empty lists. */
+  .boot-veil { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; gap: 10px; background: color-mix(in srgb, var(--surface) 96%, transparent); color: var(--muted); font-size: 12.5px; }
+  body.app-ready .boot-veil { display: none; }
   .upload-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
   .upload-track { height: 4px; border-radius: 999px; background: var(--accent-soft); overflow: hidden; }
   .upload-track i { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--accent); transition: width .2s ease; }
@@ -1586,6 +1590,7 @@ ${pwaHead()}
       </div>
     </header>
     <main class="content" id="main-content" tabindex="-1">
+      <div class="boot-veil" id="boot-veil"><span class="spinner"></span><span>正在恢复你的空间…</span></div>
       <div class="store-warning" id="store-warning" hidden></div>
       <div class="store-warning" id="local-sync-warning" hidden><strong>本地数据还没恢复</strong><div>刚才没能把浏览器里的内容推回服务器（可能是服务正在重启）。先别导入或改设置，刷新页面重试。</div></div>
       <div class="phone-mode-banner" id="phone-mode-banner" hidden>手机模式：可继续精读、看释义和记批注；导入、删除和设置请回到电脑。</div>
@@ -1957,7 +1962,7 @@ ${pwaHead()}
     graph: null, graphSelected: null, graphQuery: '', graphFocus: null,
     graphPositions: [], graphNodes: [], graphEdges: [],
     graphZoom: 1, graphPanX: 0, graphPanY: 0, graphHop: 1, graphPathStart: null, graphPath: [],
-    lan: null, nuanceCombo: 0, publicMode: false, libraryOwner: false,
+    lan: null, nuanceCombo: 0, publicMode: false, libraryOwner: false, booted: false,
     importResource: null, importArticle: null, importArticlesView: false,
     upload: null, lastUpload: null
   };
@@ -6127,6 +6132,9 @@ ${pwaHead()}
       var view = document.getElementById(TAB_VIEW[key]);
       if (view) view.classList.toggle('active', key === tab);
     });
+    // Before the browser copy is back, every fetch would return an empty
+    // workspace and paint "nothing here" states.
+    if (!state.booted) return;
     if (tab === 'read') loadPlan();
     if (tab === 'packs') loadPacks();
     if (tab === 'shared') loadShared();
@@ -6447,7 +6455,7 @@ ${pwaHead()}
     if (event.key === 'Escape' && nuanceModal && !nuanceModal.hidden) closeNuance();
   });
   if (els.llmRefresh) els.llmRefresh.addEventListener('click', refreshModels);
-  loadLlmSettings();
+  var llmReady = loadLlmSettings();
   var themeButton = document.getElementById('theme-toggle');
   if (themeButton) themeButton.addEventListener('click', cycleReviewTheme);
   var settingsOpen = document.getElementById('settings-open');
@@ -6481,10 +6489,29 @@ ${pwaHead()}
   // workspace. After a restart the scratch copy is gone and this pushes the
   // browser's copy back up before the first real request.
   localDb().then(function (db) { return db.requestPersistence(); }).catch(function () {});
-  syncFromBrowser().then(function (hydrated) {
-    if (!hydrated) return;
+  // Boot: push the browser copy back, learn whether a model key exists, then
+  // paint. Rendering earlier showed empty lists and disabled build buttons.
+  function bootApp(hydrated) {
+    if (state.booted) return;
+    state.booted = true;
+    document.body.classList.add('app-ready');
     switchTab(state.tab || 'read', true);
-    loadSettings();
+    if (hydrated || state.tab === 'settings') loadSettings();
+  }
+
+  var hydration = syncFromBrowser().catch(function () { return false; });
+  var boot = Promise.all([hydration, Promise.resolve(llmReady).catch(function () {})]);
+  // IndexedDB can hang (private windows, locked profiles). Paint anyway, then
+  // repaint once the real copy arrives.
+  var bootDeadline = new Promise(function (resolve) { setTimeout(resolve, 3500); });
+  Promise.race([boot, bootDeadline]).then(function () {
+    bootApp(false);
+    boot.then(function (results) {
+      if (results && results[0]) {
+        switchTab(state.tab || 'read', true);
+        loadSettings();
+      }
+    });
   });
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden') checkpointNow();
