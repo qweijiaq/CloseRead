@@ -4176,7 +4176,7 @@ ${pwaHead()}
 
   // Several packs can build at once. Each one gets a row with its own status
   // and cancel button instead of a single shared progress card.
-  var MAX_PARALLEL_BUILDS = 2;
+  var MAX_PARALLEL_BUILDS = 3;
 
   function buildKeyOf(resourceId, articleIndex) {
     return resourceId + ':' + (articleIndex === undefined ? 'all' : articleIndex);
@@ -5027,7 +5027,7 @@ ${pwaHead()}
     var button = document.getElementById('build-selected');
     if (selected.length > 2 && button && button.getAttribute('data-confirm') !== '1') {
       button.setAttribute('data-confirm', '1');
-      button.textContent = '确认生成 ' + selected.length + ' 篇（同时生成 2 篇）';
+      button.textContent = '确认生成 ' + selected.length + ' 篇（同时生成 ' + Math.min(selected.length, MAX_PARALLEL_BUILDS) + ' 篇）';
       clearTimeout(state.queueConfirmTimer);
       state.queueConfirmTimer = setTimeout(function () {
         if (!button) return;
