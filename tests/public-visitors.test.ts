@@ -215,14 +215,14 @@ describe('public visitor workspaces', { concurrency: 1 }, () => {
     })
     assert.equal(unknown.status, 404)
 
-    // The demo visitor reads the root library directly, so every shared pack is
-    // already "owned" for it.
+    // A visitor that has not opened anything yet owns nothing, even though the
+    // demo view is pointed at the root library.
     const demo = cookieFrom(await fetch(`${base}/api/summary`))
     const shared = (await fetch(`${base}/api/shared`, { headers: { cookie: demo } }).then((r) =>
       r.json(),
     )) as { packs: Array<{ id: string; owned: boolean }> }
     assert.ok(shared.packs.length >= 1)
-    assert.equal(shared.packs.every((pack) => pack.owned), true)
+    assert.equal(shared.packs.every((pack) => pack.owned), false)
   })
 
   it('refuses to unpublish built-in or unknown packs', async () => {

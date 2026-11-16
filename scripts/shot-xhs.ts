@@ -90,8 +90,14 @@ async function scrollTo(selector: string, offset = 60) {
 async function readerUrl(): Promise<string> {
   await viewport(720, 960, 1.5)
   await open('/?tab=shared')
+  // Prefer the built-in sample: cover, import estimate and reader all quote the
+  // same 20-item article.
   const shared = await page.evaluate<string>(
-    `fetch('/api/shared').then(r => r.json()).then(d => (d.packs[0] || {}).url || '')`,
+    `fetch('/api/shared').then(r => r.json()).then(d => {
+      const packs = d.packs || []
+      const sample = packs.find((pack) => /quiet-cost/.test(pack.id)) || packs[0]
+      return (sample || {}).url || ''
+    })`,
   )
   if (shared) return shared
   const mine = await page.evaluate<string>(
@@ -105,14 +111,39 @@ try {
   await fs.mkdir(OUT, { recursive: true })
 
   const url = await readerUrl()
+  // Before any pack is opened: no "已在你的文章" tags on the list.
+  await open('/?tab=shared')
+  await page.evaluate(sleep(800))
+  await shot('09-library.png')
 
   /* ---- 03: paste an article, see the estimate ---- */
   await viewport(720, 960, 1.5)
+  // Paste about 400 words of the sample article, so the estimate (~20 items)
+  // matches the cover and the reader screenshot.
+  const sample = await fs.readFile(path.resolve('samples/sample-article.md'), 'utf8')
+  const blocks = sample
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter((block) => block && !/^#{1,6}\s/.test(block) && !/^[-*>]/.test(block))
+  const excerpt: string[] = []
+  let words = 0
+  for (const block of blocks) {
+    const count = block.split(/\s+/).filter(Boolean).length
+    if (words + count > 600 && excerpt.length > 0) {
+      // Trim the last block so the estimate lands on exactly 30 items.
+      const room = 600 - words
+      if (room > 20) excerpt.push(block.split(/\s+/).slice(0, room).join(' '))
+      break
+    }
+    excerpt.push(block)
+    words += count
+    if (words >= 600) break
+  }
   await open('/?tab=import')
   await page.evaluate(`(() => {
     const body = document.getElementById('import-text-body')
     if (!body) return false
-    body.value = 'Attention has quietly become the scarcest resource of the modern economy. It cannot be stored, borrowed, or bought in bulk, and every platform that captures it is really selling access to the people behind it.\\n\\nThe cost shows up in small places. A notification interrupts a sentence, a tab stays open for a week, and the work that needed an hour of silence never quite happens.\\n\\nDeliberate friction helps. Closing the laptop or writing the first sentence by hand turns an impulse into a decision.'
+    body.value = ${JSON.stringify(excerpt.join('\n\n'))}
     body.dispatchEvent(new Event('input', { bubbles: true }))
     return true
   })()`)
@@ -174,10 +205,6 @@ try {
   await page.evaluate(sleep(500))
   await shot('08-focus.png')
   await viewport(720, 960, 1.5)
-
-  /* ---- 09: the public library ---- */
-  await open('/?tab=shared')
-  await shot('09-library.png')
 
   /* ---- 10: command palette ---- */
   await open('/?tab=read')

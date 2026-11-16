@@ -2057,7 +2057,11 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
   if (method === 'GET' && url.pathname === '/api/shared') {
     // Packs published by the CLI land on disk; pick them up without a restart.
     await shared.reload().catch(() => {})
-    const mine = new Set(store.packs().map((pack) => pack.id))
+    // The demo view reads the shared store itself, so every pack would look
+    // "already yours". Anonymous visitors own nothing yet.
+    const mine = currentWorkspace().readOnly
+      ? new Set<string>()
+      : new Set(store.packs().map((pack) => pack.id))
     const packs = await Promise.all(
       shared.packs().map(async (pack) => {
         const meta = await sharedMeta(pack)
