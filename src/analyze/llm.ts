@@ -575,7 +575,7 @@ export async function analyzeWithLlm(
       if (signal?.aborted) throw new Error('Build cancelled')
       const detail = error instanceof Error ? error.message : String(error)
       noted.push(detail)
-      notes.push(`第 ${index + 1}/${chunks.length} 段选取没有成功，这部分文章未进入学习包。`)
+      notes.push(`第 ${index + 1}/${chunks.length} 段的选词没有成功，这篇可能漏掉一些表达，可以重新生成。`)
       return []
     } finally {
       completedChunks += 1
