@@ -668,6 +668,24 @@ ${pwaHead()}
   .audio-toggle { margin-bottom: 14px; }
   .queue-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--accent-soft); color: var(--accent); font-size: 12.5px; }
   .queue-banner .btn { padding: 6px 10px; font-size: 12px; }
+
+  /* Parallel builds: one row per pack, each with its own state and cancel. */
+  .build-host { margin: 0 0 16px; }
+  .build-list { display: grid; gap: 8px; margin: 0 0 4px; }
+  .build-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+  .build-row.working { border-color: var(--line-strong); }
+  .build-main { flex: 1 1 auto; min-width: 0; }
+  .build-main strong { display: block; font-size: 13px; line-height: 1.45; }
+  .build-main .result-meta { margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .build-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+  .build-note { display: flex; align-items: center; gap: 10px; margin-top: 10px; color: var(--muted); font-size: 12px; }
+  .build-spinner { width: 12px; height: 12px; border: 1.5px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; animation: buildSpin .8s linear infinite; }
+  @keyframes buildSpin { to { transform: rotate(360deg); } }
+  @media (max-width: 620px) {
+    .build-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+    .build-actions { align-self: stretch; justify-content: flex-end; }
+    .build-main .result-meta { white-space: normal; }
+  }
   .import-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .import-card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
   .import-card.wide { grid-column: 1 / -1; }
@@ -1873,6 +1891,7 @@ ${pwaHead()}
       </form>
     </div>
     <p class="bookmark-hint">从浏览器书签导入当前网页：<a href="/bookmarklet" target="_blank">安装书签</a></p>
+    <div class="build-host" id="build-list" hidden></div>
     <div class="import-result" id="import-result"></div>
     <div class="recent">
       <h2>最近导入</h2>
@@ -1931,7 +1950,7 @@ ${pwaHead()}
   var state = {
     tab: 'home', stats: {},
     today: null, passport: null, shareStamp: null,
-    resources: [], building: null, currentJobId: null, buildFromQueue: false,
+    resources: [], builds: [], buildFromQueue: false,
     buildQueue: [], selectedArticles: {}, queueStats: null, savedQueue: [],
     articleResource: null, articles: [], articlePacks: [], articleHidden: [],
     graph: null, graphSelected: null, graphQuery: '', graphFocus: null,
@@ -1973,6 +1992,7 @@ ${pwaHead()}
     buildStyle: document.getElementById('build-style'),
     buildAudio: document.getElementById('build-audio'),
     onlyNew: document.getElementById('only-new'),
+    buildList: document.getElementById('build-list'),
     queueBanner: document.getElementById('queue-banner'),
     queueBannerText: document.getElementById('queue-banner-text'),
     resumeQueue: document.getElementById('resume-queue'),
@@ -4154,17 +4174,70 @@ ${pwaHead()}
     return kindLabels[kind] || kind;
   }
 
-  function renderWorking(message, jobId) {
-    state.currentJobId = jobId === undefined ? null : jobId;
-    var cancel = state.currentJobId
-      ? '<div class="result-actions"><button class="btn" data-cancel-job="' + escapeHtml(state.currentJobId) + '">取消</button>' +
-        (state.buildFromQueue && state.buildQueue.length > 0 ? '<button class="btn" data-stop-queue="1">停止队列</button>' : '') +
-        '</div>'
-      : '';
-    els.importResult.innerHTML = '<div class="result-card working"><span class="spinner"></span><div><strong>处理中…</strong>' +
-      '<div class="result-meta">' + escapeHtml(message) + '</div></div>' + cancel + '</div>';
+  // Several packs can build at once. Each one gets a row with its own status
+  // and cancel button instead of a single shared progress card.
+  var MAX_PARALLEL_BUILDS = 2;
+
+  function buildKeyOf(resourceId, articleIndex) {
+    return resourceId + ':' + (articleIndex === undefined ? 'all' : articleIndex);
   }
 
+  function yieldActiveBuilds() {
+    return state.builds.filter(function (build) {
+      return build.status === 'running' || build.status === 'queued';
+    });
+  }
+
+  function isBuilding() {
+    return yieldActiveBuilds().length > 0;
+  }
+
+  function buildTitle(resourceId, articleIndex) {
+    var resource = (state.resources || []).filter(function (entry) { return entry.id === resourceId; })[0];
+    var title = resource ? resource.title : '学习包';
+    return articleIndex === undefined ? title : title + ' · 第 ' + (articleIndex + 1) + ' 篇';
+  }
+
+  function renderBuilds() {
+    var host = els.buildList;
+    if (!host) return;
+    if (!state.builds.length) {
+      host.hidden = true;
+      host.innerHTML = '';
+      return;
+    }
+    host.hidden = false;
+    var rows = state.builds.map(function (build) {
+      var statusText = build.status === 'done' ? '已完成'
+        : build.status === 'error' ? '失败'
+        : build.status === 'cancelled' ? '已取消'
+        : '';
+      var actions = '';
+      if (build.status === 'running' || build.status === 'queued') {
+        actions = (build.jobId ? '<button class="btn" data-cancel-job="' + escapeHtml(build.jobId) + '">取消</button>' : '') +
+          '<span class="build-spinner" aria-hidden="true"></span>';
+      } else if (build.status === 'done' && build.pack) {
+        actions = '<a class="btn btn-primary" href="' + escapeHtml(build.pack.url) + '">打开学习包</a>';
+      } else {
+        actions = '<button class="btn" data-retry-build="' + escapeHtml(build.key) + '">重试</button>';
+      }
+      var meta = (statusText ? statusText + ' · ' : '') + (build.message || '');
+      return '<div class="build-row' + (build.status === 'running' ? ' working' : '') + '">' +
+        '<div class="build-main"><strong>' + escapeHtml(build.title) + '</strong>' +
+        '<div class="result-meta">' + escapeHtml(meta) + '</div></div>' +
+        '<div class="build-actions">' + actions + '</div></div>';
+    });
+    var queued = state.buildQueue.length;
+    var note = queued > 0
+      ? '<div class="build-note">队列里还有 ' + queued + ' 篇<button class="link-button" type="button" data-stop-queue="1">停止队列</button></div>'
+      : '';
+    host.innerHTML = '<div class="build-list">' + rows.join('') + '</div>' + note;
+  }
+
+  function renderBusy(message) {
+    els.importResult.innerHTML = '<div class="result-card working"><span class="spinner"></span><div><strong>处理中…</strong>' +
+      '<div class="result-meta">' + escapeHtml(message) + '</div></div></div>';
+  }
 
   function renderUploadProgress(label, percent) {
     var value = Math.max(0, Math.min(100, percent))
@@ -4748,7 +4821,7 @@ ${pwaHead()}
   }
 
   function resumeQueue() {
-    if (state.building) {
+    if (isBuilding()) {
       toast('正在生成，请稍候');
       return;
     }
@@ -4775,66 +4848,60 @@ ${pwaHead()}
   }
 
   function finishQueueStep() {
-    if (!state.buildFromQueue) return;
-    state.buildFromQueue = false;
-    if (state.buildQueue.length > 0) {
-      saveQueue();
-      setTimeout(processBuildQueue, 700);
+    if (yieldActiveBuilds().length > 0) {
+      // Slots free up as builds finish; the next one starts from here.
+      if (state.buildQueue.length > 0) setTimeout(processBuildQueue, 200);
       return;
     }
+    if (state.buildQueue.length > 0) {
+      setTimeout(processBuildQueue, 200);
+      return;
+    }
+    state.buildFromQueue = false;
     clearSavedQueue();
     var stats = state.queueStats;
     state.queueStats = null;
-    if (stats) {
+    if (stats && stats.ok + stats.failed > 0) {
       toast('队列完成：' + stats.ok + ' 成功' + (stats.failed > 0 ? '，' + stats.failed + ' 失败' : ''));
     }
   }
 
-  function pollJob(jobId) {
-    api('/api/jobs/' + encodeURIComponent(jobId)).then(function (result) {
+  function pollJob(build) {
+    if (!build.jobId) return;
+    api('/api/jobs/' + encodeURIComponent(build.jobId)).then(function (result) {
       var job = result.job;
       if (job.status === 'running') {
-        var queueNote = state.buildFromQueue && state.buildQueue.length > 0
-          ? ' · 剩余 ' + state.buildQueue.length + ' 篇'
-          : '';
-        renderWorking((job.message || '生成中…') + queueNote, jobId);
-        setTimeout(function () { pollJob(jobId); }, 800);
+        build.message = job.message || '生成中…';
+        renderBuilds();
+        setTimeout(function () { pollJob(build); }, 800);
         return;
       }
-      state.building = null;
-      state.currentJobId = null;
       if (job.status === 'done' && job.pack) {
+        build.status = 'done';
+        build.pack = job.pack;
+        build.message = job.pack.itemCount + ' 个学习项' +
+          (job.removedItems ? ' · 移除 ' + job.removedItems + ' 个旧词' : '');
         if (state.queueStats) state.queueStats.ok += 1;
-        var continueButton = job.articleIndex === undefined
-          ? ''
-          : '<button class="btn" data-articles="' + escapeHtml(job.resourceId) + '">继续选文章</button>';
-        var removedNote = job.removedItems ? ' · 移除 ' + job.removedItems + ' 个旧词' : '';
-        els.importResult.innerHTML = '<div class="result-card"><div class="result-head"><div>' +
-          '<div class="result-title">学习包已生成</div>' +
-          '<div class="result-meta">' + job.pack.itemCount + ' 个学习项 · ' + escapeHtml(job.pack.title) + removedNote + '</div></div>' +
-          '<div class="result-actions"><a class="btn btn-primary" href="' + escapeHtml(job.pack.url) + '">打开学习包</a>' +
-          continueButton + '</div>' +
-        '</div></div>';
         toast('学习包已生成');
         loadRecentImports();
         loadPacks();
         refreshStats();
         loadPlan();
-        finishQueueStep();
-        return;
-      }
-      if (state.queueStats) state.queueStats.failed += 1;
-      if (job.status === 'cancelled') {
-        renderImportError('已取消，没有写入学习包。', job.resourceId, job.articleIndex);
+      } else if (job.status === 'cancelled') {
+        build.status = 'cancelled';
+        build.message = '已取消，没有写入学习包。';
       } else {
-        renderImportError(job.error || job.message || '生成失败', job.resourceId, job.articleIndex);
+        build.status = 'error';
+        build.message = job.error || job.message || '生成失败';
+        if (state.queueStats) state.queueStats.failed += 1;
       }
+      renderBuilds();
       finishQueueStep();
     }).catch(function (error) {
-      state.building = null;
-      state.currentJobId = null;
+      build.status = 'error';
+      build.message = error.message;
       if (state.queueStats) state.queueStats.failed += 1;
-      renderImportError(error.message);
+      renderBuilds();
       finishQueueStep();
     });
   }
@@ -4901,15 +4968,19 @@ ${pwaHead()}
   }
 
   function cancelBuild(jobId) {
-    state.buildQueue = [];
-    state.buildFromQueue = false;
-    state.queueStats = null;
-    clearSavedQueue();
+    // Only this row: other packs keep building.
     api('/api/jobs/' + encodeURIComponent(jobId) + '/cancel', { method: 'POST' }).then(function () {
       toast('正在取消…');
     }).catch(function (error) {
       toast('取消失败：' + error.message);
     });
+  }
+
+  function retryBuild(key) {
+    var build = state.builds.filter(function (entry) { return entry.key === key; })[0];
+    if (!build) return;
+    state.builds = state.builds.filter(function (entry) { return entry.key !== key; });
+    startBuild(build.resourceId, build.articleIndex, false, build.prefetch);
   }
 
   function selectedArticleEntries() {
@@ -4925,11 +4996,20 @@ ${pwaHead()}
   }
 
   function processBuildQueue() {
-    if (state.building) return;
-    var next = state.buildQueue.shift();
+    var slots = MAX_PARALLEL_BUILDS - yieldActiveBuilds().length;
+    while (slots > 0 && state.buildQueue.length > 0) {
+      var next = state.buildQueue.shift();
+      var key = buildKeyOf(next.resource, next.article);
+      var running = state.builds.some(function (build) {
+        return build.key === key && (build.status === 'running' || build.status === 'queued');
+      });
+      if (running) continue;
+      saveQueue();
+      startBuild(next.resource, next.article, true);
+      slots -= 1;
+    }
     saveQueue();
-    if (!next) return;
-    startBuild(next.resource, next.article, true);
+    if (state.builds.length) renderBuilds();
   }
 
   function buildSelected() {
@@ -4947,7 +5027,7 @@ ${pwaHead()}
     var button = document.getElementById('build-selected');
     if (selected.length > 2 && button && button.getAttribute('data-confirm') !== '1') {
       button.setAttribute('data-confirm', '1');
-      button.textContent = '确认生成 ' + selected.length + ' 篇（约 ' + selected.length + ' 分钟）';
+      button.textContent = '确认生成 ' + selected.length + ' 篇（同时生成 2 篇）';
       clearTimeout(state.queueConfirmTimer);
       state.queueConfirmTimer = setTimeout(function () {
         if (!button) return;
@@ -5011,17 +5091,32 @@ ${pwaHead()}
   }
 
   function startBuild(resourceId, articleIndex, fromQueue, prefetch) {
-    if (state.building) {
-      toast('正在生成，请稍候');
+    var key = buildKeyOf(resourceId, articleIndex);
+    if (state.builds.some(function (build) {
+      return build.key === key && (build.status === 'running' || build.status === 'queued');
+    })) {
+      toast('这篇正在生成');
       return;
     }
     if (state.llmConfigured === false &&
         !confirm('还没有配置模型 Key。这次的包不会有中文译文，选词也不准，读起来会很吃力。\\n\\n建议先去「模型设置」填写 Key。仍要现在生成吗？')) {
       return;
     }
-    state.building = resourceId + ':' + (articleIndex === undefined ? 'all' : articleIndex);
-    state.buildFromQueue = fromQueue === true;
-    renderWorking('正在启动生成任务…');
+    if (fromQueue === true) state.buildFromQueue = true;
+    var build = {
+      key: key,
+      resourceId: resourceId,
+      articleIndex: articleIndex,
+      title: buildTitle(resourceId, articleIndex),
+      status: 'queued',
+      message: '正在启动生成任务…',
+      jobId: '',
+      prefetch: prefetch
+    };
+    // A retry replaces the old row instead of stacking a duplicate.
+    state.builds = state.builds.filter(function (entry) { return entry.key !== key; });
+    state.builds.push(build);
+    renderBuilds();
     api('/api/resources/' + encodeURIComponent(resourceId) + '/build', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -5037,13 +5132,15 @@ ${pwaHead()}
         ...(els.buildStyle && els.buildStyle.value ? { style: els.buildStyle.value } : {})
       })
     }).then(function (result) {
-      toast('已开始生成学习包');
-      state.currentJobId = result.jobId;
-      pollJob(result.jobId);
+      build.jobId = result.jobId;
+      build.status = 'running';
+      renderBuilds();
+      pollJob(build);
     }).catch(function (error) {
-      state.building = null;
-      state.currentJobId = null;
-      renderImportError(error.message, resourceId, articleIndex);
+      build.status = 'error';
+      build.message = error.message;
+      renderBuilds();
+      if (state.queueStats) state.queueStats.failed += 1;
       finishQueueStep();
     });
   }
@@ -5079,10 +5176,10 @@ ${pwaHead()}
 
   els.textForm.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (state.building) { toast('正在生成学习包，请稍候'); return; }
+
     var text = els.textBody.value;
     if (!text.trim()) { toast('请先粘贴文本'); els.textBody.focus(); return; }
-    renderWorking('正在导入文本…');
+    renderBusy('正在导入文本…');
     api('/api/import/text', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -5098,10 +5195,9 @@ ${pwaHead()}
 
   els.urlForm.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (state.building) { toast('正在生成学习包，请稍候'); return; }
     var value = els.urlInput.value.trim();
     if (!value) { toast('请填写网页链接'); els.urlInput.focus(); return; }
-    renderWorking('正在抓取网页，最多等待 20 秒…');
+    renderBusy('正在抓取网页，最多等待 20 秒…');
     api('/api/import/url', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -5117,7 +5213,6 @@ ${pwaHead()}
 
   els.pdfForm.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (state.building) { toast('正在生成学习包，请稍候'); return; }
     var file = els.pdfInput.files && els.pdfInput.files[0];
     if (!file) { toast('请选择一个 PDF 文件'); return; }
     runUpload({
@@ -5132,7 +5227,6 @@ ${pwaHead()}
 
   els.ebookForm.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (state.building) { toast('正在生成学习包，请稍候'); return; }
     var file = els.ebookInput.files && els.ebookInput.files[0];
     if (!file) { toast('请选择一个 EPUB、MOBI 或 DOCX 文件'); return; }
     runUpload({
@@ -5227,6 +5321,12 @@ ${pwaHead()}
           outputFeedbackTarget.textContent = '让编辑看看';
           toast('生成失败：' + error.message);
         });
+      return;
+    }
+    var retryTarget = target.closest('[data-retry-build]');
+    if (retryTarget) {
+      event.preventDefault();
+      retryBuild(retryTarget.getAttribute('data-retry-build'));
       return;
     }
     var cancelTarget = target.closest('[data-cancel-job]');

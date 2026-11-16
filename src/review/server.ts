@@ -439,6 +439,7 @@ interface BuildRequestOptions {
 const buildJobs = new Map<string, BuildJob>()
 const jobControllers = new Map<string, AbortController>()
 const activeBuilds = new Map<string, string>()
+const BUILD_CONCURRENCY = Math.max(1, Math.min(6, Math.round(Number(process.env.LEARN_BUILD_CONCURRENCY ?? 3) || 3)))
 let cardsSeeded = false
 
 function pruneJobs(): void {
@@ -4187,6 +4188,15 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         sendJson(response, 400, { error: 'Article not found' })
         return
       }
+    }
+    // Parallel builds share one provider key; keep a ceiling so a queue cannot
+    // open a dozen streams at once.
+    const runningJobs = [...buildJobs.values()].filter((entry) => entry.status === 'running').length
+    const sameTarget = `${resource.id}:${requestedArticle ?? 'all'}`
+    const alreadyRunning = activeBuilds.has(sameTarget)
+    if (!alreadyRunning && runningJobs >= BUILD_CONCURRENCY) {
+      sendJson(response, 429, { error: `同时生成的任务太多了（上限 ${BUILD_CONCURRENCY} 个），等一篇完成再开始。` })
+      return
     }
     const job = startBuild(store, resource, {
       limit: requestedLimit === 'auto' || !Number.isFinite(requestedLimit) ? 'auto' : requestedLimit,
