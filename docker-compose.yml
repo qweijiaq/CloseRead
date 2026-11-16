@@ -10,6 +10,10 @@ services:
       LEARN_PUBLIC_HOST: ${LEARN_PUBLIC_HOST:?Set LEARN_PUBLIC_HOST in .env}
       LEARN_DATA_DIR: /app/data
       LEARN_PACKS_DIR: /app/packs
+      # Visitor workspaces live on the volume so a redeploy does not force every
+      # browser to upload its copy again. Stale ones are pruned after 7 days.
+      LEARN_RUN_DIR: /app/data/run
+      LEARN_RUN_KEEP_DAYS: ${LEARN_RUN_KEEP_DAYS:-7}
       # Encrypts visitor provider keys at rest. Changing it makes stored keys
       # unreadable, so keep the value backed up.
       LEARN_SECRET: ${LEARN_SECRET:?Set LEARN_SECRET in .env}

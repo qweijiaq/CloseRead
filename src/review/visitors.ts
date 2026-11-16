@@ -162,10 +162,23 @@ export class VisitorRegistry {
     return path.join(this.usersRoot, id)
   }
 
-  /** Drop every scratch workspace left over from a previous process. */
-  private async resetScratch(): Promise<void> {
-    await fs.rm(this.runRoot, { recursive: true, force: true }).catch(() => {})
+  /**
+   * Workspaces outlive a restart when LEARN_RUN_DIR points at a persistent
+   * volume. Wiping them on every deploy meant each visit had to re-upload the
+   * whole library before anything showed up. Only stale ones are removed.
+   */
+  private async prepareScratch(): Promise<void> {
     await fs.mkdir(this.usersRoot, { recursive: true }).catch(() => {})
+    const keepMs = Math.max(1, Number(process.env.LEARN_RUN_KEEP_DAYS ?? 7) || 7) * 24 * 60 * 60 * 1000
+    const cutoff = Date.now() - keepMs
+    const entries = await fs.readdir(this.usersRoot, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const dir = path.join(this.usersRoot, entry.name)
+      const stat = await fs.stat(dir).catch(() => undefined)
+      if (stat && stat.mtimeMs > cutoff) continue
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => {})
+    }
   }
 
   private loadPromise: Promise<void> | undefined
@@ -205,7 +218,7 @@ export class VisitorRegistry {
   }
 
   private async loadVisits(): Promise<void> {
-    await this.resetScratch()
+    await this.prepareScratch()
     // The live log can be shorter than its backup after a crash or a bad write;
     // take the union so a truncation never erases history.
     for (const file of [this.visitsFile, `${this.visitsFile}.bak`]) {
