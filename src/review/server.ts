@@ -3625,7 +3625,9 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         testSchema,
         'You are a connection test. Return exactly one JSON object.',
         'Return {"ok":true}.',
-        { maxTokens: 20, temperature: 0 },
+        // Reasoning models spend part of the budget before writing anything, so
+        // a 20-token test is cut off on every attempt.
+        { maxTokens: 512, temperature: 0 },
       )
       sendJson(response, 200, { ok: result.ok === true, model: config.llm.model, usage: usageSummary() })
     } catch (error) {

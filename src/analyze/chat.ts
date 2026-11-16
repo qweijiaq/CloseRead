@@ -307,18 +307,27 @@ export async function chatJson<T>(
         completion: data.usage?.completion_tokens,
         total: data.usage?.total_tokens,
       })
-      if (data.choices?.[0]?.finish_reason === 'length') {
-        const message = data.choices?.[0]?.message
+      const choice = data.choices?.[0]
+      const content = contentText(choice?.message?.content)
+      if (choice?.finish_reason === 'length') {
+        // Reasoning models count their thinking against the same budget, so a
+        // reply can be flagged as truncated while its JSON is already complete.
+        if (content.trim()) {
+          try {
+            return parseWithSchema(schema, content, 'LLM')
+          } catch {
+            // Fall through: a genuinely cut JSON is handled below.
+          }
+        }
         const spentOnReasoning =
-          contentText(message?.reasoning_content as never).trim() ||
-          contentText(message?.reasoning as never).trim()
+          contentText(choice?.message?.reasoning_content as never).trim() ||
+          contentText(choice?.message?.reasoning as never).trim()
         throw new Error(
           spentOnReasoning
             ? 'LLM reply was cut off by the output limit（模型把额度花在推理上，JSON 还没写完）.'
             : 'LLM reply was cut off by the output limit.',
         )
       }
-      const content = contentText(data.choices?.[0]?.message?.content)
       if (!content.trim()) {
         if (attempt === 2) throw new Error('LLM returned an empty response.')
         continue

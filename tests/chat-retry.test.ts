@@ -11,7 +11,7 @@ const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-chat-'))
 process.env.LEARN_DATA_DIR = temp
 process.env.LEARN_PACKS_DIR = path.join(temp, 'packs')
 
-type Mode = 'retry-500' | 'empty-then-valid' | 'invalid-then-valid' | 'unauthorized' | 'drop-then-valid' | 'token-cap'
+type Mode = 'retry-500' | 'empty-then-valid' | 'invalid-then-valid' | 'unauthorized' | 'drop-then-valid' | 'token-cap' | 'truncated-but-valid'
 
 let mode: Mode = 'retry-500'
 let requests = 0
@@ -29,6 +29,21 @@ before(async () => {
     request.resume()
     if (mode === 'unauthorized') {
       send(response, 401, { error: 'invalid key' })
+      return
+    }
+    if (mode === 'truncated-but-valid') {
+      // Reasoning models are flagged as truncated even when the JSON is complete.
+      response.writeHead(200, { 'content-type': 'application/json' })
+      response.end(
+        JSON.stringify({
+          choices: [
+            {
+              message: { content: '{"ok":true}', reasoning_content: 'thinking...' },
+              finish_reason: 'length',
+            },
+          ],
+        }),
+      )
       return
     }
     if (mode === 'token-cap' && requests === 1) {
@@ -128,6 +143,15 @@ describe('LLM retry', () => {
     const result = await chatJson(schema, 'system', 'user')
     assert.deepEqual(result, { ok: true })
     assert.equal(requests, 2)
+  })
+
+  it('accepts a complete JSON reply that was flagged as truncated', async () => {
+    const { chatJson } = await import('../src/analyze/chat.js')
+    mode = 'truncated-but-valid'
+    requests = 0
+    const result = await chatJson(schema, 'system', 'user')
+    assert.deepEqual(result, { ok: true })
+    assert.equal(requests, 1)
   })
 
   it('lowers max_tokens when the provider caps it', async () => {

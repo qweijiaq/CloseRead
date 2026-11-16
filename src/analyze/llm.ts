@@ -595,7 +595,9 @@ export async function analyzeWithLlm(
       SELECTION_SYSTEM(style),
       `Text chunk:\n"""\n${text}\n"""\n\nSelect at most ${ask} candidates.${avoidBlock}${existingBlock} Return JSON only.`,
       // One candidate is roughly 120 tokens of JSON.
-      { signal, maxTokens: Math.min(3000, 500 + ask * 180) },
+      // Reasoning models spend part of this before writing JSON; keep a floor
+      // so a smaller ask still leaves room to think.
+      { signal, maxTokens: Math.min(4000, Math.max(2500, 700 + ask * 280)) },
     )
     return result.items ?? []
   }
