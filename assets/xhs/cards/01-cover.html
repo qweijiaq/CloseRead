@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --paper: #faf9f6;
+    --card: #fdfcf9;
+    --ink: #1b1a17;
+    --ink70: #4d4a44;
+    --ink45: #87817a;
+    --line: rgba(27, 26, 23, .16);
+    --cinnabar: #8a3a2e;
+    --indigo: #3c4a55;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1080px; height: 1440px; overflow: hidden; position: relative;
+    background: var(--paper); color: var(--ink);
+    font-family: "PingFang SC", "Hiragino Sans GB", sans-serif;
+  }
+  .wrap { padding: 88px 84px 0; }
+  .eyebrow {
+    font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 23px; letter-spacing: .22em; text-transform: uppercase; color: var(--cinnabar);
+  }
+  h1 {
+    margin-top: 42px;
+    font-family: "Songti SC", "STSong", "Times New Roman", serif;
+    font-weight: 600; font-size: 112px; line-height: 1.16; letter-spacing: -.035em;
+  }
+  h1 em { font-style: normal; color: var(--cinnabar); }
+  .sub { margin-top: 34px; font-size: 42px; line-height: 1.5; color: var(--ink45); letter-spacing: .01em; }
+  .card {
+    position: absolute; left: 84px; right: 84px; bottom: 108px;
+    padding: 40px 46px 42px; border: 1px solid var(--line); border-radius: 22px;
+    background: var(--card); box-shadow: 0 30px 70px rgba(27, 26, 23, .1);
+  }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
+  .word { font-family: "Songti SC", serif; font-size: 54px; font-weight: 600; letter-spacing: -.01em; }
+  .ipa { font-size: 26px; color: var(--ink45); margin-left: 14px; }
+  .tag {
+    display: inline-block; margin-left: 14px; padding: 3px 10px; border: 1px solid var(--line);
+    border-radius: 3px; font-family: "SFMono-Regular", Menlo, monospace; font-size: 18px;
+    letter-spacing: .1em; color: var(--ink45); vertical-align: 8px;
+  }
+  .acts { font-size: 24px; color: var(--ink45); white-space: nowrap; letter-spacing: .04em; }
+  .zh { margin-top: 20px; font-size: 33px; color: var(--ink); }
+  .def { margin-top: 10px; font-size: 27px; color: var(--ink45); }
+  .chips { margin-top: 22px; display: flex; gap: 12px; }
+  .chip {
+    padding: 6px 14px; border-bottom: 1px solid var(--line); font-size: 25px; color: var(--indigo);
+  }
+  .ex { margin-top: 24px; padding-left: 30px; position: relative; font-size: 27px; color: var(--ink70); }
+  .ex + .ex { margin-top: 12px; }
+  .ex::before {
+    content: ""; position: absolute; left: 6px; top: 16px; width: 8px; height: 8px;
+    border-radius: 50%; background: var(--ink45);
+  }
+  .foot {
+    position: absolute; left: 84px; bottom: 46px;
+    font-family: "SFMono-Regular", Menlo, monospace; font-size: 21px; letter-spacing: .12em; color: var(--ink45);
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">CloseRead · 英语精读</div>
+    <h1>把英文长文<br>拆成 <em>20 张</em><br>词卡</h1>
+    <p class="sub">我只花了 3 分钟，<br>而且读完真的记住了。</p>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <div><span class="word">attention</span><span class="ipa">/əˈten.ʃən/</span><span class="tag">NOUN</span></div>
+      <div class="acts">造句　词源　发散　★　×</div>
+    </div>
+    <div class="zh">n. 注意；注意力；照料…</div>
+    <div class="def">Mental focus.</div>
+    <div class="chips"><span class="chip">pay attention</span><span class="chip">whose attention</span></div>
+    <div class="ex">Please direct your attention to the following words.</div>
+    <div class="ex">The company will now come to attention.</div>
+  </div>
+
+  <div class="foot">closeread.weijia.asia</div>
+</body>
+</html>

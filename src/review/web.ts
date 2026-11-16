@@ -4037,7 +4037,8 @@ ${pwaHead()}
               rebuild +
               (pack.shared
                 ? (pack.canUnpublish
-                    ? '<button class="btn" data-unpublish-pack="' + escapeHtml(pack.id) + '">取消公开</button>'
+                    ? '<button class="btn" data-unpublish-pack="' + escapeHtml(pack.id) + '" data-built-in="' +
+                    (pack.builtIn ? '1' : '0') + '">取消公开</button>'
                     : '<span class="pack-shared-tag">' + (pack.builtIn ? '公共库示例' : '已公开') + '</span>')
                 : '<button class="btn" data-publish-pack="' + escapeHtml(pack.id) + '">公开</button>') +
               '<button class="btn danger" data-delete-pack="' + escapeHtml(pack.id) + '">删除</button>' +
@@ -4070,7 +4071,10 @@ ${pwaHead()}
 
       els.packsList.querySelectorAll('[data-unpublish-pack]').forEach(function (button) {
         button.addEventListener('click', function () {
-          if (!confirm('取消公开后，其他访客就看不到这篇了。你自己的副本不受影响。')) return;
+          var builtIn = button.getAttribute('data-built-in') === '1';
+          if (!confirm(builtIn
+            ? '这是公共库的内置示例，移除后所有访客都看不到。它会进回收站，可以在「设置 · 回收站」里恢复。继续？'
+            : '取消公开后，其他访客就看不到这篇了。你自己的副本不受影响。')) return;
           setBusy(button, true, '处理中…');
           api('/api/packs/' + encodeURIComponent(button.getAttribute('data-unpublish-pack')) + '/unpublish', {
             method: 'POST',

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --paper: #faf9f6; --ink: #1b1a17; --ink70: #4d4a44; --ink45: #87817a; --line: rgba(27,26,23,.16); --cinnabar: #8a3a2e; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    width: 1080px; height: 1440px; overflow: hidden; position: relative;
+    background: var(--paper); color: var(--ink);
+    font-family: "PingFang SC", "Hiragino Sans GB", sans-serif;
+  }
+  .wrap { padding: 104px 84px 0; }
+  .eyebrow { font-family: "SFMono-Regular", Menlo, monospace; font-size: 23px; letter-spacing: .22em; text-transform: uppercase; color: var(--cinnabar); }
+  h1 { margin-top: 40px; font-family: "Songti SC", serif; font-weight: 600; font-size: 96px; line-height: 1.2; letter-spacing: -.035em; }
+  .url {
+    margin-top: 34px; font-family: "SFMono-Regular", Menlo, monospace;
+    font-size: 58px; letter-spacing: -.02em; color: var(--ink);
+  }
+  .sub { margin-top: 18px; font-size: 38px; color: var(--ink45); }
+  .rule { margin: 70px 0 0; height: 1px; background: var(--line); }
+  ul { margin-top: 46px; list-style: none; display: grid; gap: 30px; }
+  li { font-size: 34px; line-height: 1.5; color: var(--ink70); padding-left: 44px; position: relative; }
+  li b { color: var(--ink); font-weight: 600; }
+  li::before {
+    content: ""; position: absolute; left: 6px; top: 15px; width: 12px; height: 12px;
+    border: 1.5px solid var(--cinnabar); border-radius: 50%;
+  }
+  .note {
+    position: absolute; left: 84px; right: 84px; bottom: 96px;
+    font-size: 28px; line-height: 1.7; color: var(--ink45);
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">自己做的小工具 · 不是广告</div>
+    <h1>现在就能用</h1>
+    <div class="url">closeread.weijia.asia</div>
+    <div class="sub">打开就有自己的空间，不用注册。</div>
+    <div class="rule"></div>
+    <ul>
+      <li><b>公共库直接读</b>，没配模型 Key 也能看现成的精读包</li>
+      <li><b>手机上接着读</b>，关掉页面也不会丢进度</li>
+      <li><b>词卡能带走</b>，导出 Anki / Obsidian，不锁在这里</li>
+      <li><b>内容只在自己的浏览器里</b>，服务器不留正文</li>
+    </ul>
+  </div>
+
+  <p class="note">有卡住的地方就在「意见墙」里说一声，<br>我会一条条看。</p>
+</body>
+</html>

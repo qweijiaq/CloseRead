@@ -3654,6 +3654,9 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         })
         return
       }
+      // Unpublishing used to delete the folder outright. For the built-in sample
+      // that is the only copy, so send it to the trash and keep it restorable.
+      await trashPack(shared, record).catch(() => {})
       await shared.removePack(id)
       if (record.dir.startsWith(rootPacksDir)) {
         await fs.rm(record.dir, { recursive: true, force: true }).catch(() => {})
