@@ -10,7 +10,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { findChrome, launchChrome, type CdpPage } from '../e2e/cdp.js'
+import { findChrome, launchChrome } from '../e2e/cdp.js'
 
 const BASE = process.argv[2] ?? 'https://closeread.weijia.asia'
 const OUT = path.resolve('assets/xhs')
@@ -28,34 +28,38 @@ await page.send('Network.setUserAgentOverride', {
 
 const sleep = (ms: number) => `new Promise(r => setTimeout(r, ${ms}))`
 
-async function save(name: string, data: string | undefined) {
-  if (!data) throw new Error(`capture failed: ${name}`)
-  await fs.writeFile(path.join(OUT, name), Buffer.from(data, 'base64'))
-  console.log(name)
-}
-
-async function viewport(width: number, height: number, scale: number, mobile = false) {
+async function viewport(width: number, height: number, scale: number) {
   await page.send('Emulation.setDeviceMetricsOverride', {
     width,
     height,
     deviceScaleFactor: scale,
-    mobile,
+    mobile: false,
     screenWidth: width,
     screenHeight: height,
   })
 }
 
+const NO_SCROLLBAR =
+  '::-webkit-scrollbar{width:0!important;height:0!important}html{scrollbar-width:none}'
+
 async function open(url: string, wait = 1400) {
   await page.navigate(url.startsWith('http') ? url : `${BASE}${url}`)
   await page.waitFor('document.readyState === "complete"')
   await page.evaluate(sleep(wait))
+  // Scrollbars are noise in a 3:4 crop.
+  await page.evaluate(`(() => {
+    const style = document.createElement('style')
+    style.textContent = ${JSON.stringify(NO_SCROLLBAR)}
+    document.head.appendChild(style)
+    return true
+  })()`)
 }
 
-async function shot(name: string, clip?: { x: number; y: number; width: number; height: number }) {
-  const data = await page.send('Page.captureScreenshot', clip
-    ? { format: 'png', captureBeyondViewport: true, clip: { ...clip, scale: 1 } }
-    : { format: 'png' })
-  await save(name, data.data as string | undefined)
+async function shot(name: string) {
+  const data = await page.send('Page.captureScreenshot', { format: 'png' })
+  if (!data.data) throw new Error(`capture failed: ${name}`)
+  await fs.writeFile(path.join(OUT, name), Buffer.from(data.data as string, 'base64'))
+  console.log(name)
 }
 
 async function shotCard(file: string, name: string) {
@@ -68,38 +72,42 @@ async function shotCard(file: string, name: string) {
 
 /** Scrolls the first match so its top sits `offset` pixels below the viewport top. */
 async function scrollTo(selector: string, offset = 60) {
-  return page.evaluate<number>(`(() => {
+  const place = `(() => {
     const el = document.querySelector(${JSON.stringify(selector)})
-    if (!el) return -1
+    if (!el) return { found: false, delta: 0 }
     const top = Math.max(0, el.getBoundingClientRect().top + window.scrollY - ${offset})
     window.scrollTo(0, top)
-    return Math.round(top)
-  })()`)
+    return { found: true, delta: Math.round(el.getBoundingClientRect().top - ${offset}) }
+  })()`
+  let result = await page.evaluate<{ found: boolean; delta: number }>(place)
+  if (result.found && Math.abs(result.delta) > 40) {
+    await page.evaluate(sleep(400))
+    result = await page.evaluate<{ found: boolean; delta: number }>(place)
+  }
+  return result
 }
 
 async function readerUrl(): Promise<string> {
   await viewport(720, 960, 1.5)
   await open('/?tab=shared')
-  const fromShared = await page.evaluate<string>(
+  const shared = await page.evaluate<string>(
     `fetch('/api/shared').then(r => r.json()).then(d => (d.packs[0] || {}).url || '')`,
   )
-  if (fromShared) return fromShared
+  if (shared) return shared
   const mine = await page.evaluate<string>(
     `fetch('/api/packs').then(r => r.json()).then(d => (d.packs[0] || {}).url || '')`,
   )
-  if (mine) return mine
-  throw new Error('no pack available to screenshot')
+  if (!mine) throw new Error('no pack available to screenshot')
+  return mine
 }
-
-/** Table of contents for the post, printed at the end. */
-const order: string[] = []
 
 try {
   await fs.mkdir(OUT, { recursive: true })
 
-  /* ---- product shots: tablet-ish layout, 1080x1440 ---- */
-  await viewport(720, 960, 1.5)
+  const url = await readerUrl()
 
+  /* ---- 03: paste an article, see the estimate ---- */
+  await viewport(720, 960, 1.5)
   await open('/?tab=import')
   await page.evaluate(`(() => {
     const body = document.getElementById('import-text-body')
@@ -109,78 +117,88 @@ try {
     return true
   })()`)
   await page.evaluate(sleep(1600))
-  await page.evaluate(`(() => { const el = document.getElementById('import-preview'); if (el) el.scrollIntoView({ block: 'center' }); return true })()`)
+  await scrollTo('.import-card.wide', 150)
   await page.evaluate(sleep(300))
   await shot('03-import.png')
-  order.push('03-import.png')
 
-  const url = await readerUrl()
-  await viewport(720, 960, 1.5)
-  await open(url, 1800)
+  /* ---- 04: the reader opens on the title and what the pack contains ---- */
+  await open(url, 1700)
   await shot('04-reader-top.png')
-  order.push('04-reader-top.png')
 
+  /* ---- 05: paragraph + translation ---- */
   await scrollTo('.paragraph', 40)
   await page.evaluate(sleep(300))
   await shot('05-paragraph.png')
-  order.push('05-paragraph.png')
 
-  await page.evaluate(`document.querySelectorAll('details').forEach(d => { d.open = true }); true`)
-  await scrollTo('.item', 52)
-  await page.evaluate(sleep(400))
-  await shot('06-word-card.png')
-  order.push('06-word-card.png')
-
-  await scrollTo('.item', 52 - 0)
+  /* ---- 06: compact word cards under the paragraph ---- */
+  await page.evaluate(
+    `document.querySelectorAll('details.para-items-wrap, details.para-items').forEach(d => { d.open = true }); true`,
+  )
+  await page.evaluate(sleep(300))
   await page.evaluate(`(() => {
-    const item = document.querySelectorAll('.item')[1] || document.querySelector('.item')
-    if (!item) return false
-    const top = Math.max(0, item.getBoundingClientRect().top + window.scrollY - 52)
-    window.scrollTo(0, top)
+    const el = document.querySelectorAll('.para-items')[0]?.closest('details') ||
+      document.querySelectorAll('.para-items')[0]
+    if (!el) return false
+    window.scrollTo(0, Math.max(0, el.getBoundingClientRect().top + window.scrollY - 110))
     return true
   })()`)
   await page.evaluate(sleep(300))
-  await shot('07-word-card-detail.png')
-  order.push('07-word-card-detail.png')
+  await shot('06-word-cards.png')
 
-  await open('/?tab=shared')
-  await shot('08-library.png')
-  order.push('08-library.png')
-
-  await open(url, 1600)
-  await page.evaluate(`(() => { const b = document.getElementById('export-toggle'); if (b) b.click(); return true })()`)
+  /* ---- 07: the same cards with definitions, collocations, examples open ---- */
+  await page.evaluate(`document.querySelectorAll('details').forEach(d => { d.open = true }); true`)
+  await page.evaluate(`(() => {
+    const lists = document.querySelectorAll('.para-items')
+    const el = lists[1] || lists[0]
+    if (!el) return false
+    window.scrollTo(0, Math.max(0, el.getBoundingClientRect().top + window.scrollY - 40))
+    return true
+  })()`)
   await page.evaluate(sleep(400))
-  await shot('09-export.png')
-  order.push('09-export.png')
+  await shot('07-word-cards-detail.png')
 
+  /* ---- 08: sentence-by-sentence reading, on a phone ---- */
+  await viewport(390, 520, 1080 / 390)
+  await open(url, 1700)
+  await page.evaluate(`(() => {
+    const button = document.querySelector('.para-focus')
+    if (button) button.click()
+    return Boolean(button)
+  })()`)
+  await page.evaluate(sleep(700))
+  await page.evaluate(`(() => {
+    const toggle = document.getElementById('focus-translation')
+    if (toggle && toggle.textContent.includes('显示')) toggle.click()
+    return true
+  })()`)
+  await page.evaluate(sleep(500))
+  await shot('08-focus.png')
+  await viewport(720, 960, 1.5)
+
+  /* ---- 09: the public library ---- */
+  await open('/?tab=shared')
+  await shot('09-library.png')
+
+  /* ---- 10: command palette ---- */
   await open('/?tab=read')
-  await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true })); true`)
+  await page.evaluate(
+    `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true })); true`,
+  )
   await page.evaluate(sleep(350))
   await shot('10-palette.png')
-  order.push('10-palette.png')
 
-  await open('/?tab=settings')
-  await scrollTo('#settings-data', 120)
+  /* ---- 11: phone, mid-article ---- */
+  await viewport(390, 520, 1080 / 390)
+  await open(url, 1700)
+  await scrollTo('.paragraph', 70)
   await page.evaluate(sleep(300))
-  await shot('11-settings.png')
-  order.push('11-settings.png')
-
-  /* ---- phone shot: 390x520 CSS at 2.769 = 1080x1440 ---- */
-  await viewport(390, 520, 1080 / 390, false)
-  await open(url, 1800)
-  await page.evaluate('window.scrollTo(0, 0); true')
-  await page.evaluate(sleep(300))
-  await shot('12-mobile.png')
-  order.push('12-mobile.png')
+  await shot('11-mobile.png')
 
   /* ---- typographic cards ---- */
   await shotCard('01-cover.html', '01-cover.png')
   await shotCard('02-pain.html', '02-pain.png')
-  await shotCard('13-compare.html', '13-compare.png')
-  await shotCard('14-end.html', '14-end.png')
-
-  order.push('01-cover.png', '02-pain.png', '13-compare.png', '14-end.png')
-  console.log('\nfiles in assets/xhs:\n' + order.sort().join('\n'))
+  await shotCard('12-compare.html', '12-compare.png')
+  await shotCard('13-end.html', '13-end.png')
 } finally {
   await page.close()
   await fs.rm(temp, { recursive: true, force: true }).catch(() => {})

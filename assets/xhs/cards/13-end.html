@@ -16,14 +16,17 @@
   .url { margin-top: 34px; font-family: "SFMono-Regular", Menlo, monospace; font-size: 58px; letter-spacing: -.02em; color: var(--ink); }
   .sub { margin-top: 18px; font-size: 38px; color: var(--ink45); }
   .rule { margin: 64px 0 0; height: 1px; background: var(--line); }
-  ul { flex: 1; margin-top: 44px; list-style: none; display: grid; align-content: start; gap: 30px; }
+  ul { flex: 1; margin-top: 52px; list-style: none; display: grid; align-content: start; gap: 36px; }
   li { font-size: 34px; line-height: 1.5; color: var(--ink70); padding-left: 46px; position: relative; }
   li b { color: var(--ink); font-weight: 600; }
   li::before {
     content: ""; position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
     width: 13px; height: 13px; border: 1.5px solid var(--cinnabar); border-radius: 50%;
   }
-  .note { margin-top: auto; font-size: 28px; line-height: 1.7; color: var(--ink45); }
+  .note {
+    margin-top: auto; padding: 34px 38px; border-left: 3px solid var(--cinnabar);
+    background: #f3f1ec; font-size: 30px; line-height: 1.75; color: var(--ink70);
+  }
 </style>
 </head>
 <body>
