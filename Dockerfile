@@ -4,11 +4,15 @@ ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 RUN corepack enable && corepack prepare pnpm@11.9.0 --activate
 
-# PDF / PNG export shells out to headless Chromium. Without it those buttons
-# fail in production even though they work on a desktop with Chrome installed.
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends chromium fonts-noto-cjk ca-certificates \
-  && rm -rf /var/lib/apt/lists/*
+# PDF / PNG export shells out to headless Chromium. It is a ~600 MB download from
+# the Debian mirror, so it is opt-in: build with --build-arg WITH_CHROMIUM=1 when
+# export has to work in production.
+ARG WITH_CHROMIUM=0
+RUN if [ "$WITH_CHROMIUM" = "1" ]; then \
+      apt-get update && \
+      apt-get install -y --no-install-recommends chromium fonts-noto-cjk ca-certificates && \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 ENV CHROME_PATH=/usr/bin/chromium
 
 WORKDIR /app
