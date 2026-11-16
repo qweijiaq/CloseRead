@@ -91,6 +91,19 @@ export async function saveFiles(entries) {
   })
 }
 
+export async function deletePaths(paths) {
+  const list = (Array.isArray(paths) ? paths : []).filter((file) => typeof file === 'string' && file)
+  if (list.length === 0) return 0
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE, 'readwrite')
+    const store = transaction.objectStore(STORE)
+    for (const file of list) store.delete(file)
+    transaction.oncomplete = () => resolve(list.length)
+    transaction.onerror = () => reject(transaction.error || new Error('IndexedDB delete failed'))
+  })
+}
+
 export async function clearAll() {
   const db = await openDb()
   return new Promise((resolve, reject) => {
@@ -99,6 +112,28 @@ export async function clearAll() {
     transaction.oncomplete = () => resolve()
     transaction.onerror = () => reject(transaction.error || new Error('IndexedDB clear failed'))
   })
+}
+
+export async function listPaths() {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE, 'readonly')
+    const request = transaction.objectStore(STORE).getAllKeys()
+    request.onsuccess = () => resolve((request.result || []).map(String))
+    request.onerror = () => reject(request.error || new Error('IndexedDB read failed'))
+  })
+}
+
+/** Counts without loading file bodies; the boot path only needs the numbers. */
+export async function counts() {
+  const paths = await listPaths()
+  let packs = 0
+  let resources = 0
+  for (const file of paths) {
+    if (/(^|\/)packs\/[^/]+\/pack\.json$/.test(file)) packs += 1
+    if (/(^|\/)data\/resources\/[^/]+\.json$/.test(file)) resources += 1
+  }
+  return { files: paths.length, packs, resources }
 }
 
 export async function summary() {

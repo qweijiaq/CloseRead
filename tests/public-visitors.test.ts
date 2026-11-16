@@ -282,4 +282,113 @@ describe('public visitor workspaces', { concurrency: 1 }, () => {
     )
     assert.ok(!listed.includes('sk-plain-text-key'))
   })
+
+  it('issues a recovery code that restores the same workspace', async () => {
+    const cookie = cookieFrom(await fetch(`${base}/api/summary`))
+    await post({ weeklyArticleGoal: 4 }, cookie)
+    const original = (await settings(cookie)) as SettingsPayload & { recovery?: string }
+    assert.ok(original.recovery && original.recovery.includes('.'))
+
+    const recovered = await fetch(`${base}/api/recover`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: base },
+      body: JSON.stringify({ code: original.recovery }),
+    })
+    assert.equal(recovered.status, 200)
+    const nextCookie = cookieFrom(recovered)
+    assert.ok(nextCookie.startsWith('cr_visitor='))
+    const after = await settings(nextCookie)
+    assert.equal(after.workspace.id, original.workspace.id)
+  })
+
+  it('rejects a forged recovery code', async () => {
+    const response = await fetch(`${base}/api/recover`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: base },
+      body: JSON.stringify({ code: 'abcdefgh.0123456789abcdef' }),
+    })
+    assert.equal(response.status, 400)
+  })
+
+  it('hydrates a workspace in chunks without losing earlier ones', async () => {
+    const cookie = cookieFrom(await fetch(`${base}/api/summary`))
+    await post({ weeklyArticleGoal: 3 }, cookie)
+    const id = (await settings(cookie)).workspace.id
+    const dir = path.join(process.env.LEARN_RUN_DIR!, 'users', id)
+
+    const send = (files: Record<string, string>, append: boolean): Promise<Response> =>
+      fetch(`${base}/api/hydrate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: base, cookie },
+        body: JSON.stringify({ files, append }),
+      })
+
+    assert.equal((await send({ 'data/first.txt': 'a' }, false)).status, 200)
+    assert.equal((await send({ 'data/second.txt': 'b' }, true)).status, 200)
+    assert.equal(await fs.readFile(path.join(dir, 'data', 'first.txt'), 'utf8'), 'a')
+    assert.equal(await fs.readFile(path.join(dir, 'data', 'second.txt'), 'utf8'), 'b')
+
+    assert.equal((await send({ 'data/third.txt': 'c' }, false)).status, 200)
+    await assert.rejects(fs.readFile(path.join(dir, 'data', 'first.txt'), 'utf8'))
+    assert.equal(await fs.readFile(path.join(dir, 'data', 'third.txt'), 'utf8'), 'c')
+  })
+
+  it('reports deletions so a trashed article cannot come back', async () => {
+    const cookie = cookieFrom(await fetch(`${base}/api/summary`))
+    await post({ weeklyArticleGoal: 2 }, cookie)
+    const id = (await settings(cookie)).workspace.id
+    const dir = path.join(process.env.LEARN_RUN_DIR!, 'users', id)
+    const checkpoint = (): Promise<{ files: unknown[]; deleted: string[] }> =>
+      fetch(`${base}/api/checkpoint`, { headers: { cookie } }).then((r) => r.json())
+    const send = (files: Record<string, string>, append: boolean, final: boolean): Promise<Response> =>
+      fetch(`${base}/api/hydrate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: base, cookie },
+        body: JSON.stringify({ files, append, final }),
+      })
+
+    // A chunked push must not look like mass deletion while it is in flight.
+    assert.equal((await send({ 'packs/dead/pack.json': '{"id":"dead"}' }, false, false)).status, 200)
+    const midPush = await checkpoint()
+    assert.deepEqual(midPush.deleted, [])
+
+    assert.equal((await send({ 'packs/live/pack.json': '{"id":"live"}' }, true, true)).status, 200)
+    const settled = await checkpoint()
+    assert.deepEqual(settled.deleted, [], 'a fresh push leaves no tombstones')
+
+    // Moving a pack to the trash removes its directory from the workspace.
+    await fs.rm(path.join(dir, 'packs', 'dead'), { recursive: true, force: true })
+    const afterDelete = await checkpoint()
+    assert.ok(afterDelete.deleted.includes('packs/dead/pack.json'))
+  })
+
+  it('refuses a recovery code once the workspace is gone', async () => {
+    const cookie = cookieFrom(await fetch(`${base}/api/summary`))
+    await post({ weeklyArticleGoal: 1 }, cookie)
+    const payload = (await settings(cookie)) as SettingsPayload & { recovery?: string }
+    assert.ok(payload.recovery)
+    const id = payload.workspace.id
+    await fs.rm(path.join(process.env.LEARN_RUN_DIR!, 'users', id), { recursive: true, force: true })
+    const response = await fetch(`${base}/api/recover`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: base },
+      body: JSON.stringify({ code: payload.recovery }),
+    })
+    assert.equal(response.status, 404)
+  })
+
+  it('rate limits expensive import calls per IP', async () => {
+    const cookie = cookieFrom(await fetch(`${base}/api/summary`))
+    const ip = '203.0.113.77'
+    let lastStatus = 0
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const response = await fetch(`${base}/api/import/text`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: base, cookie, 'x-real-ip': ip },
+        body: JSON.stringify({ text: '' }),
+      })
+      lastStatus = response.status
+    }
+    assert.equal(lastStatus, 429)
+  })
 })

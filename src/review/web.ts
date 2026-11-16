@@ -1,5 +1,5 @@
 import { TTS_PROVIDERS } from '../audio/providers.js'
-import { i18nScript } from '../i18n.js'
+import { i18nScript, langBootScript } from '../i18n.js'
 import { LLM_PROVIDERS } from '../llm/providers.js'
 import { themeBootScript } from '../theme.js'
 import { pwaHead } from './pwa.js'
@@ -57,6 +57,7 @@ export function renderReviewApp(): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>精读 · CloseRead</title>
 ${themeBootScript()}
+${langBootScript()}
 ${pwaHead()}
 <style>
   :root {
@@ -137,6 +138,16 @@ ${pwaHead()}
   html[data-theme="dark"] .btn-primary:hover { background: var(--accent-strong); color: #101214; }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+  .pack-row, .resource-row, .home-recent-row { content-visibility: auto; contain-intrinsic-size: auto 84px; }
   body {
     margin: 0; background: var(--paper);
     color: var(--ink); font-family: var(--ui);
@@ -1560,8 +1571,8 @@ ${pwaHead()}
     <details class="side-more" data-more>
       <summary>更多</summary>
       <nav class="side-nav side-more-list" aria-label="更多">
-        <button data-tab="passport" type="button"><span>成长</span></button>
-        <button data-tab="insights" type="button"><span>复盘</span></button>
+        <button data-tab="passport" type="button" title="阅读日历、连续天数与徽章"><span>成长</span></button>
+        <button data-tab="insights" type="button" title="每周报告、错词与趋势"><span>复盘</span></button>
         <button data-tab="feedback" type="button"><span>意见墙</span></button>
       </nav>
     </details>
@@ -1593,7 +1604,8 @@ ${pwaHead()}
     <main class="content" id="main-content" tabindex="-1">
       <div class="boot-veil" id="boot-veil"><span class="spinner"></span><span>正在恢复你的空间…</span></div>
       <div class="store-warning" id="store-warning" hidden></div>
-      <div class="store-warning" id="local-sync-warning" hidden><strong>本地数据还没恢复</strong><div>刚才没能把浏览器里的内容推回服务器（可能是服务正在重启）。先别导入或改设置，刷新页面重试。</div></div>
+      <div class="store-warning" id="local-sync-warning" hidden><strong>本地数据还没恢复</strong><div>刚才没能把浏览器里的内容推回服务器（可能是服务正在重启，或内容超过了单次上传上限）。先别导入或改设置：刷新页面重试；如果一直不行，先导出一份再清理空间。</div><div class="settings-actions" style="margin-top:8px"><button class="btn small" id="local-sync-export" type="button">先导出备份</button></div></div>
+      <div class="store-warning" id="local-save-warning" hidden><strong>浏览器里没能保存最新进度</strong><div id="local-save-detail">写入本地存储时出错。先导出一份备份，再刷新页面重试。</div><div class="settings-actions" style="margin-top:8px"><button class="btn small" id="local-save-retry" type="button">再试一次</button><button class="btn small" id="local-save-export" type="button">导出备份</button></div></div>
       <div class="phone-mode-banner" id="phone-mode-banner" hidden>手机模式：可继续精读、看释义和记批注；导入、删除和设置请回到电脑。</div>
 
   <section class="view active" id="view-home">
@@ -1666,7 +1678,7 @@ ${pwaHead()}
       <a href="#settings-data">数据</a>
       <a href="#settings-llm">模型</a>
       <a href="#settings-tts">语音</a>
-      <a href="#settings-backup">迁移</a>
+      <a href="#settings-migrate">迁移</a>
       <a href="#settings-trash">回收站</a>
     </nav>
     <div class="settings-grid">
@@ -1675,7 +1687,7 @@ ${pwaHead()}
       <div class="home-card settings-card" id="settings-data">加载中…</div>
       <div class="home-card settings-card" id="settings-llm">加载中…</div>
       <div class="home-card settings-card" id="settings-tts">加载中…</div>
-      <div class="home-card settings-card" id="settings-backup">加载中…</div>
+      <div class="home-card settings-card" id="settings-migrate">加载中…</div>
       <div class="home-card settings-card" id="settings-trash">加载中…</div>
       <div class="home-card settings-card" id="settings-usage">加载中…</div>
       <div class="home-card settings-card settings-about" id="settings-about">
@@ -1922,8 +1934,8 @@ ${pwaHead()}
   <div class="mobile-more" id="mobile-more" hidden>
     <div class="mobile-more-panel" role="dialog" aria-modal="true" aria-label="更多">
       <div class="mobile-more-head"><strong>更多</strong><button class="link-button" data-mobile-more-close type="button">关闭</button></div>
-      <button data-tab="passport" type="button">成长</button>
-      <button data-tab="insights" type="button">复盘</button>
+      <button data-tab="passport" type="button" title="阅读日历、连续天数与徽章">成长</button>
+      <button data-tab="insights" type="button" title="每周报告、错词与趋势">复盘</button>
       <button data-tab="feedback" type="button">意见墙</button>
       <button data-tab="settings" type="button">设置</button>
       <a href="${GITHUB_REPO}" target="_blank" rel="noopener noreferrer">GitHub 开源仓库 <span aria-hidden="true">↗</span></a>
@@ -1950,7 +1962,7 @@ ${pwaHead()}
     </div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
 (function () {
@@ -2174,24 +2186,53 @@ ${pwaHead()}
     toast.timer = setTimeout(function () { els.toast.classList.remove('show'); }, button ? 6500 : 1600);
   }
 
+  var API_TIMEOUT_MS = 120000;
+
   function api(path, options) {
     var method = (options && options.method) || 'GET';
     if (method !== 'GET' && method !== 'HEAD' && localSync.failed && !localSync.done) {
       return Promise.reject(new Error('本地数据还没恢复，先刷新页面再操作，避免覆盖你自己的内容。'));
     }
-    return fetch(path, options).then(function (response) {
-      return response.json().catch(function () { return {}; }).then(function (data) {
-        if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
-        var method = (options && options.method) || 'GET';
-        if (method !== 'GET' && method !== 'HEAD') scheduleCheckpoint();
-        // Build jobs finish after their request returned, so pull the result
-        // as soon as the job reports done.
-        if (path.indexOf('/api/jobs/') === 0 && data && (data.status === 'done' || (data.job && data.job.status === 'done'))) {
-          scheduleCheckpoint();
+    var canRetry = method === 'GET' || method === 'HEAD';
+    var timeout = (options && options.timeout) || API_TIMEOUT_MS;
+
+    function attempt(retried) {
+      var controller = typeof AbortController === 'function' ? new AbortController() : null;
+      var timer = controller ? setTimeout(function () { controller.abort(); }, timeout) : null;
+      var init = {};
+      if (options) Object.keys(options).forEach(function (key) { init[key] = options[key]; });
+      if (controller) init.signal = controller.signal;
+      function done() { if (timer) clearTimeout(timer); }
+      return fetch(path, init).then(function (response) {
+        return response.json().catch(function () { return {}; }).then(function (data) {
+          done();
+          if (!response.ok) throw new Error(data.error || ('HTTP ' + response.status));
+          if (method !== 'GET' && method !== 'HEAD') scheduleCheckpoint();
+          // Build jobs finish after their request returned, so pull the result
+          // as soon as the job reports done.
+          if (path.indexOf('/api/jobs/') === 0 && data && (data.status === 'done' || (data.job && data.job.status === 'done'))) {
+            scheduleCheckpoint();
+          }
+          return data;
+        });
+      }, function (error) {
+        done();
+        if (error && error.name === 'AbortError') {
+          throw new Error('请求超时（' + Math.round(timeout / 1000) + ' 秒），网络可能中断了，稍后再试。');
         }
-        return data;
+        if (!navigator.onLine) {
+          throw new Error('当前没有网络连接。内容仍在本地，联网后再试。');
+        }
+        if (canRetry && !retried) {
+          return new Promise(function (resolve) { setTimeout(resolve, 600); }).then(function () {
+            return attempt(true);
+          });
+        }
+        throw error;
       });
-    });
+    }
+
+    return attempt(false);
   }
 
   var localDbPromise = null;
@@ -2206,6 +2247,53 @@ ${pwaHead()}
   // page is looking at a fresh demo workspace. Writing then would checkpoint
   // demo content over the real copy, so writes are blocked until it succeeds.
   var localSync = { done: false, failed: false };
+  // Writing the checkpoint back into IndexedDB can fail (quota, locked
+  // profile). That is a real loss of durability, so it must be visible.
+  var localSave = { failed: false, quota: false, message: '', usage: '', limit: '' };
+
+  function formatBytes(bytes) {
+    if (!bytes) return '';
+    var mb = Number(bytes) / (1024 * 1024);
+    if (mb >= 1024) return (mb / 1024).toFixed(1) + ' GB';
+    return Math.max(1, Math.round(mb)) + ' MB';
+  }
+
+  function renderLocalSaveWarning() {
+    var box = document.getElementById('local-save-warning');
+    if (!box) return;
+    if (!localSave.failed) { box.hidden = true; return; }
+    var detail = document.getElementById('local-save-detail');
+    if (detail) {
+      var usage = localSave.usage
+        ? '（本站已用 ' + localSave.usage + (localSave.limit ? '，上限约 ' + localSave.limit : '') + '）'
+        : '';
+      detail.textContent = localSave.quota
+        ? '浏览器的存储空间满了' + usage + '。先导出一份备份，再到「设置 → 回收站」清理不需要的文章。'
+        : '写入浏览器本地存储时出错：' + (localSave.message || '未知错误') + '。先导出一份备份，再刷新页面重试。';
+    }
+    box.hidden = false;
+  }
+
+  function noteLocalSaveFailure(error) {
+    localSave.failed = true;
+    localSave.message = error && error.message ? error.message : '';
+    localSave.quota = Boolean(error && (error.name === 'QuotaExceededError' || /quota/i.test(localSave.message)));
+    renderLocalSaveWarning();
+    if (!localSave.quota) return;
+    localDb().then(function (db) { return db.storageInfo(); }).then(function (info) {
+      localSave.usage = formatBytes(info && info.usage);
+      localSave.limit = formatBytes(info && info.quota);
+      renderLocalSaveWarning();
+    }).catch(function () {});
+  }
+
+  function clearLocalSaveFailure() {
+    if (!localSave.failed) return;
+    localSave.failed = false;
+    localSave.quota = false;
+    localSave.message = '';
+    renderLocalSaveWarning();
+  }
 
   function scheduleCheckpoint() {
     if (checkpointTimer) clearTimeout(checkpointTimer);
@@ -2217,42 +2305,59 @@ ${pwaHead()}
 
   // The server keeps a scratch copy; this pulls whatever it changed back into
   // IndexedDB, which is the copy that survives a restart.
-  function checkpointNow() {
+  function checkpointNow(options) {
     if (checkpointRunning) return Promise.resolve();
     checkpointRunning = true;
-    return api('/api/checkpoint').then(function (data) {
-      if (!data || !data.files || !data.files.length) return;
-      return localDb().then(function (db) { return db.saveFiles(data.files); });
-    }).catch(function () {}).finally(function () { checkpointRunning = false; });
+    var stage = 'pull';
+    return api('/api/checkpoint', options).then(function (data) {
+      var files = data && data.files && data.files.length ? data.files : null;
+      var deleted = data && data.deleted && data.deleted.length ? data.deleted : null;
+      if (!files && !deleted) return;
+      stage = 'save';
+      return localDb().then(function (db) {
+        return Promise.resolve(files ? db.saveFiles(files) : 0).then(function () {
+          // Deletes run after writes so a restore that re-adds a path wins.
+          return deleted ? db.deletePaths(deleted) : 0;
+        });
+      });
+    }).then(function () {
+      clearLocalSaveFailure();
+    }).catch(function (error) {
+      // A dropped request is transient; a rejected IndexedDB write means the
+      // durable copy is now behind, and the user has to know.
+      if (stage === 'save') noteLocalSaveFailure(error);
+    }).finally(function () { checkpointRunning = false; });
   }
 
   // After a restart the scratch copy is gone; push the browser's copy back up.
+  // Only counts are read up front: with years of articles, loading every file
+  // body just to compare two numbers makes the first paint crawl.
   function syncFromBrowser() {
     return localDb().then(function (db) {
-      return db.loadAll().then(function (files) {
-        if (!files || Object.keys(files).length === 0) {
+      return db.counts().then(function (summary) {
+        if (!summary || !summary.files) {
           localSync.done = true;
           return false;
         }
         return api('/api/session').then(function (session) {
+          var push = function () {
+            return db.loadAll().then(function (files) {
+              return pushLocalCopy(files);
+            }).then(function () {
+              localSync.done = true;
+              return true;
+            });
+          };
           if (session && session.personal) {
-            return serverLooksEmptier(files).then(function (localWins) {
-              if (localWins) {
-                return pushLocalCopy(files).then(function () {
-                  localSync.done = true;
-                  return true;
-                });
-              }
+            return serverLooksEmptier(summary).then(function (localWins) {
+              if (localWins) return push();
               return checkpointNow().then(function () {
                 localSync.done = true;
                 return false;
               });
             });
           }
-          return pushLocalCopy(files).then(function () {
-            localSync.done = true;
-            return true;
-          });
+          return push();
         });
       });
     }).catch(function () {
@@ -2262,36 +2367,54 @@ ${pwaHead()}
     });
   }
 
-  function localCounts(files) {
-    var packs = 0;
-    var resources = 0;
-    Object.keys(files || {}).forEach(function (file) {
-      if (file.indexOf('packs/') === 0 && file.slice(-10) === '/pack.json') packs += 1;
-      if (file.indexOf('data/resources/') === 0 && file.slice(-5) === '.json') resources += 1;
-    });
-    return { packs: packs, resources: resources };
-  }
-
   // A restart leaves the server with an empty seeded workspace. If the browser
   // copy has more content than the server, the server is the stale side.
-  function serverLooksEmptier(files) {
-    return Promise.all([
-      api('/api/summary').catch(function () { return {}; }),
-      api('/api/resources?limit=500').catch(function () { return {}; })
-    ]).then(function (results) {
-      var serverPacks = ((results[0] || {}).packs || []).length;
-      var serverResources = ((results[1] || {}).resources || []).length;
-      var local = localCounts(files);
-      return local.packs > serverPacks || local.resources > serverResources;
+  function serverLooksEmptier(summary) {
+    return api('/api/summary').catch(function () { return {}; }).then(function (data) {
+      var counts = data && data.counts;
+      var serverPacks = counts ? Number(counts.packs || 0) : ((data && data.packs) || []).length;
+      // The summary totals are exact; listing resources is capped, which used
+      // to make any library above the cap look "emptier" and force a push.
+      var serverResources = counts ? Number(counts.resources || 0) : 0;
+      return summary.packs > serverPacks || summary.resources > serverResources;
     });
   }
 
+  // A workspace can exceed the request-body cap, so files go up in chunks. The
+  // first chunk resets the scratch copy; later ones append to it.
   function pushLocalCopy(files) {
-    return api('/api/hydrate', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ files: files })
+    var entries = Object.keys(files || {}).map(function (file) {
+      return { path: file, content: files[file] };
     });
+    var chunks = [];
+    var current = [];
+    var bytes = 0;
+    entries.forEach(function (entry) {
+      var size = String(entry.content || '').length + entry.path.length + 64;
+      if (current.length && bytes + size > 6 * 1024 * 1024) {
+        chunks.push(current);
+        current = [];
+        bytes = 0;
+      }
+      current.push(entry);
+      bytes += size;
+    });
+    if (current.length) chunks.push(current);
+    if (!chunks.length) return Promise.resolve(0);
+    var chain = Promise.resolve();
+    chunks.forEach(function (chunk, index) {
+      chain = chain.then(function () {
+        var map = {};
+        chunk.forEach(function (entry) { map[entry.path] = entry.content; });
+        return api('/api/hydrate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          timeout: 180000,
+          body: JSON.stringify({ append: index > 0, final: index === chunks.length - 1, files: map })
+        });
+      });
+    });
+    return chain.then(function () { return entries.length; });
   }
 
   function renderLocalSyncWarning() {
@@ -2328,7 +2451,8 @@ ${pwaHead()}
 
   var EXPORT_STAMP_KEY = 'cr-last-export';
   var EXPORT_SNOOZE_KEY = 'cr-backup-snooze';
-  var EXPORT_INTERVAL_MS = 14 * 24 * 60 * 60 * 1000;
+  // iOS may reclaim an untouched site after ~7 days, so nudge on the same cadence.
+  var EXPORT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
   var EXPORT_SNOOZE_MS = 7 * 24 * 60 * 60 * 1000;
 
   function markExported() {
@@ -2349,7 +2473,7 @@ ${pwaHead()}
     } catch (error) {
       return;
     }
-    localDb().then(function (db) { return db.summary(); }).then(function (info) {
+    localDb().then(function (db) { return db.counts(); }).then(function (info) {
       if (!info || info.packs < 1) return;
       host.hidden = false;
       var exportBtn = document.getElementById('backup-reminder-export');
@@ -2742,6 +2866,19 @@ ${pwaHead()}
     }
   }
 
+  function copyText(value, message) {
+    if (!value) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value).then(function () {
+        toast(message || '已复制');
+      }, function () {
+        window.prompt('复制', value);
+      });
+      return;
+    }
+    window.prompt('复制', value);
+  }
+
   function copyLanUrl(url) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(url).then(function () {
@@ -3041,7 +3178,7 @@ ${pwaHead()}
         '<div class="settings-actions"><a class="btn" href="/?tab=read">去精读</a></div>';
       initTtsSettings(tts);
     }
-    var backupHost = document.getElementById('settings-backup');
+    var backupHost = document.getElementById('settings-migrate');
     if (backupHost) {
       state.publicMode = Boolean(data.workspace && data.workspace.mode === 'public');
       var aboutCopy = document.getElementById('settings-about-copy');
@@ -3050,15 +3187,31 @@ ${pwaHead()}
           ? '开源英语精读工具。没有 Key 也能读公共库；导入自己的文章才需要 Key。你的内容存在这个浏览器里，换设备用下面的「设备迁移」。'
           : '开源英语精读工具。内容存在本机的 data/ 和 packs/ 目录里，模型由你自己选择。';
       }
+      var recoveryBlock = '';
+      if (state.publicMode) {
+        recoveryBlock = '<div class="settings-recovery" id="settings-recovery"><h3>恢复码</h3>' +
+          (data.recovery
+            ? '<p class="small muted">清了 Cookie、或换了浏览器，但服务器还留着你的空间时，用这个码找回。它只证明「这个空间是你的」，不包含文章内容。</p>' +
+              '<div class="settings-actions"><code class="recovery-code" id="recovery-code">' + escapeHtml(data.recovery) + '</code>' +
+              '<button class="btn small" id="recovery-copy" type="button">复制恢复码</button></div>'
+            : '<p class="small muted">' + (data.workspace && data.workspace.readOnly
+                ? '你还在公共示例空间里。导入自己的第一篇文章后，这里会出现属于你的恢复码。'
+                : '服务器没有开启恢复码（需要设置 LEARN_SECRET）。请用下面的导出文件迁移。') + '</p>') +
+          '<div class="settings-file"><input type="text" id="recovery-input" placeholder="粘贴恢复码，例如 xxxx.yyyy" autocomplete="off">' +
+          '<button class="btn" id="recovery-apply" type="button">用恢复码找回</button>' +
+          '<span id="recovery-status"></span></div></div>';
+      }
       backupHost.innerHTML = '<h2>设备迁移</h2>' +
         (state.publicMode
           ? '<p class="muted">你的文章、学习项、阅读进度和批注都存在这个浏览器里。换手机或换电脑时，先在这里导出，再在新设备上导入。</p>'
           : '<p class="muted">换手机或换电脑时，在这里导出全部内容，再在新设备上导入。</p>') +
-        '<div class="settings-actions"><button class="btn btn-primary" id="settings-backup" type="button">导出到本机</button></div>' +
+        '<div class="settings-actions"><button class="btn btn-primary" id="settings-export" type="button">导出到本机</button></div>' +
         '<div class="settings-file"><input type="file" id="settings-restore-file" accept=".zip,application/zip,application/json,.json">' +
         '<button class="btn" id="settings-restore-run" type="button">从文件导入</button>' +
         '<span id="settings-restore-status"></span></div>' +
         '<p class="small muted">导入会覆盖当前的文章、学习项和阅读进度，请先导出一份。模型 Key 不包含在文件里，需要在新设备上重新填写。</p>' +
+        '<p class="small muted">迁移包里只有文字内容：朗读音频、生成图片和上传的 PDF 原件不会跟过去，换设备后按需重新生成。</p>' +
+        recoveryBlock +
         '<div class="settings-storage" id="settings-storage" hidden></div>' +
         '<details class="settings-details">' +
           '<summary>数据到底存在哪里？</summary>' +
@@ -3144,7 +3297,7 @@ ${pwaHead()}
         .catch(function (error) { if (result) result.textContent = '失败：' + error.message; })
         .finally(function () { setBusy(testButton, false); });
     });
-    var backupButton = document.getElementById('settings-backup');
+    var backupButton = document.getElementById('settings-export');
     if (backupButton) backupButton.addEventListener('click', function () {
       if (state.publicMode) exportWorkspaceLocal(backupButton);
       else downloadBackup(backupButton);
@@ -3166,6 +3319,29 @@ ${pwaHead()}
       }).catch(function (error) {
         if (status) status.textContent = '恢复失败：' + error.message;
       }).finally(function () { setBusy(restoreRun, false); });
+    });
+    var recoveryCopy = document.getElementById('recovery-copy');
+    if (recoveryCopy) recoveryCopy.addEventListener('click', function () {
+      var code = document.getElementById('recovery-code');
+      if (code) copyText(code.textContent || '', '恢复码已复制');
+    });
+    var recoveryApply = document.getElementById('recovery-apply');
+    if (recoveryApply) recoveryApply.addEventListener('click', function () {
+      var input = document.getElementById('recovery-input');
+      var status = document.getElementById('recovery-status');
+      var code = input ? input.value.trim() : '';
+      if (!code) { if (status) status.textContent = '先粘贴恢复码。'; return; }
+      if (status) status.textContent = '查找中…';
+      api('/api/recover', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code: code })
+      }).then(function () {
+        if (status) status.textContent = '已找回，正在刷新…';
+        setTimeout(function () { location.reload(); }, 500);
+      }).catch(function (error) {
+        if (status) status.textContent = error.message;
+      });
     });
     document.querySelectorAll('[data-trash-restore]').forEach(function (button) {
       button.addEventListener('click', function () {
@@ -3925,6 +4101,7 @@ ${pwaHead()}
   }
 
   var sharedFilter = { query: '', level: '', sort: 'new' };
+  var sharedPage = { size: 60 };
 
   function renderSharedList() {
     var host = document.getElementById('library-list');
@@ -3950,7 +4127,9 @@ ${pwaHead()}
       host.innerHTML = '<div class="empty">没有符合条件的文章。</div>';
       return;
     }
-    host.innerHTML = packs.map(function (pack) {
+    var total = packs.length;
+    var shown = packs.slice(0, sharedPage.size);
+    host.innerHTML = shown.map(function (pack) {
       return '<div class="pack-row">' +
         '<div><a href="' + escapeHtml(pack.url) + '">' + escapeHtml(pack.title) + '</a>' +
         '<div class="due">' +
@@ -3962,7 +4141,18 @@ ${pwaHead()}
           '<a class="btn btn-primary" href="' + escapeHtml(pack.url) + '">精读</a>' +
         '</div>' +
       '</div>';
-    }).join('');
+    }).join('') +
+      (total > shown.length
+        ? '<div class="settings-actions"><button class="btn" type="button" data-shared-more>再显示 ' +
+          Math.min(60, total - shown.length) + ' 篇（还有 ' + (total - shown.length) + ' 篇）</button></div>'
+        : '');
+    var more = host.querySelector('[data-shared-more]');
+    if (more) {
+      more.addEventListener('click', function () {
+        sharedPage.size += 60;
+        renderSharedList();
+      });
+    }
   }
 
   function renderSharedLevels() {
@@ -3988,6 +4178,7 @@ ${pwaHead()}
       query.setAttribute('data-bound', '1');
       query.addEventListener('input', function () {
         sharedFilter.query = query.value;
+        sharedPage.size = 60;
         renderSharedList();
       });
     }
@@ -3996,6 +4187,7 @@ ${pwaHead()}
       sort.setAttribute('data-bound', '1');
       sort.addEventListener('change', function () {
         sharedFilter.sort = sort.value;
+        sharedPage.size = 60;
         renderSharedList();
       });
     }
@@ -4006,6 +4198,7 @@ ${pwaHead()}
         var button = event.target.closest('[data-library-level]');
         if (!button) return;
         sharedFilter.level = button.getAttribute('data-library-level');
+        sharedPage.size = 60;
         renderSharedLevels();
         renderSharedList();
       });
@@ -6490,6 +6683,19 @@ ${pwaHead()}
   // workspace. After a restart the scratch copy is gone and this pushes the
   // browser's copy back up before the first real request.
   localDb().then(function (db) { return db.requestPersistence(); }).catch(function () {});
+  var localSyncExport = document.getElementById('local-sync-export');
+  if (localSyncExport) localSyncExport.addEventListener('click', function () { exportWorkspaceLocal(localSyncExport); });
+  var localSaveExport = document.getElementById('local-save-export');
+  if (localSaveExport) localSaveExport.addEventListener('click', function () { exportWorkspaceLocal(localSaveExport); });
+  var localSaveRetry = document.getElementById('local-save-retry');
+  if (localSaveRetry) localSaveRetry.addEventListener('click', function () {
+    setBusy(localSaveRetry, true, '重试中…');
+    checkpointNow().then(function () {
+      setBusy(localSaveRetry, false);
+      if (localSave.failed) toast('还是没能写入浏览器存储，先导出一份备份最稳妥。');
+      else toast('已经保存到本地。');
+    });
+  });
   // Boot: push the browser copy back, learn whether a model key exists, then
   // paint. Rendering earlier showed empty lists and disabled build buttons.
   function bootApp(hydrated) {
@@ -6520,6 +6726,8 @@ ${pwaHead()}
     if (document.visibilityState === 'hidden') checkpointNow();
     else loadCommunityStats();
   });
+  // Best effort on iOS/desktop: keep the pull alive while the page tears down.
+  window.addEventListener('pagehide', function () { checkpointNow({ keepalive: true }); });
   window.setInterval(function () {
     if (document.visibilityState === 'visible') checkpointNow();
   }, 60000);

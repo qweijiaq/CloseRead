@@ -244,3 +244,20 @@ body.type-face-sans .r-original, body.type-face-sans .r-note-key { font-family: 
 @media (max-width: 720px) {
   .reader-outline-panel, .reader-type-panel, .reader-help-panel { top: auto; right: 8px; bottom: calc(76px + env(safe-area-inset-bottom)); left: 8px; width: auto; max-height: min(70dvh, 520px); }
 }
+
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.reader-search-row { display: flex; gap: 6px; padding-top: 10px; }
+.reader-search-row input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2); color: var(--ink); padding: 7px 9px; font: inherit; font-size: 12.5px; }
+.reader-search-row button { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); width: 34px; font: inherit; cursor: pointer; }
+.reader-search-row button:hover { border-color: var(--line-strong); }
+.r-para.is-search-hit { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }

@@ -11,6 +11,17 @@ describe('review html', () => {
     for (const script of scripts) new Function(script)
   })
 
+  it('surfaces local save failures and flushes before the page unloads', () => {
+    const html = renderReviewApp()
+    assert.ok(html.includes('id="local-save-warning"'))
+    assert.ok(html.includes('id="local-save-retry"'))
+    assert.ok(html.includes('id="local-save-export"'))
+    assert.ok(html.includes('function noteLocalSaveFailure('))
+    assert.ok(html.includes("addEventListener('pagehide'"))
+    assert.ok(html.includes('id="backup-reminder"'))
+    assert.ok(html.includes('function maybeShowBackupReminder('))
+  })
+
   it('includes the reading passport and its share card canvas', () => {
     const html = renderReviewApp()
     assert.ok(html.includes('class="app-shell"'))

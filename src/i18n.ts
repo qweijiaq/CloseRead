@@ -28,6 +28,10 @@ const REVIEW_EN: Record<string, string> = {
   '学习包': 'Packs',
   '护照': 'Passport',
   '复盘': 'Insights',
+  '恢复码': 'Recovery code',
+  '先导出备份': 'Export a backup first',
+  '复制恢复码': 'Copy code',
+  '用恢复码找回': 'Recover with code',
   '词网': 'Word web',
   '导入': 'Import',
   '导入文章': 'Import article',
@@ -301,6 +305,173 @@ const REVIEW_EN: Record<string, string> = {
   'MIT License · 本地优先 · 开源仓库': 'MIT License · local-first · open source',
   'GitHub 开源仓库': 'GitHub repository',
   '在 GitHub 打开 CloseRead 仓库（新窗口）': 'Open the CloseRead repository on GitHub (new tab)',
+  '公共库': 'Public library',
+  '意见墙': 'Feedback',
+  '正在恢复你的空间…': 'Restoring your space…',
+  '本地数据还没恢复': 'Local copy not restored yet',
+  '浏览器里没能保存最新进度': 'Latest progress isn’t saved in this browser',
+  '写入本地存储时出错。先导出一份备份，再刷新页面重试。':
+    'Writing to this browser’s storage failed. Export a backup, then reload and try again.',
+  '再试一次': 'Try again',
+  '导出备份': 'Export backup',
+  '手机模式：可继续精读、看释义和记批注；导入、删除和设置请回到电脑。':
+    'Phone mode: keep reading, open meanings and add notes; import, delete and settings need a computer.',
+  '第一次来': 'First visit',
+  '三件事，三十秒看完': 'Three things in 30 seconds',
+  '内容存在这个浏览器里。': 'Your content lives in this browser.',
+  '换手机或换电脑打开是空的，要迁移请在「设置 → 设备迁移」导出再导入。':
+    'Another phone or computer opens empty. To move, export from Settings → Device migration, then import there.',
+  '先看公共库，不用 Key。': 'Start with the public library — no key needed.',
+  '别人公开的文章都能直接读，答案也提前生成好了。想导入自己的文章才需要模型 Key——没有 Key 生成不出中文译文。':
+    'Anyone’s published articles open right away with answers pre-generated. A model key is only needed to import your own text; without one there are no Chinese translations.',
+  '从一篇文章开始。': 'Start with one article.',
+  '粘贴文本、贴一个链接，或上传 PDF / EPUB / DOCX。':
+    'Paste text, share a link, or upload PDF / EPUB / DOCX.',
+  '务必定期导出。': 'Export regularly.',
+  '清浏览器数据、换设备，或在 iPhone 上超过 7 天不打开，本地内容都可能被清掉。导出文件存在你自己的电脑或网盘里，随时能导回来。':
+    'Clearing browser data, switching devices, or leaving the site unused on iPhone for 7 days can wipe the local copy. Keep the export file on your computer or cloud drive to restore it anytime.',
+  '导入第一篇': 'Import your first article',
+  '知道了，别再显示': 'Got it, don’t show again',
+  '你的文章只存在这个浏览器里': 'Your articles only live in this browser',
+  '清浏览器数据、换手机，或在 iPhone 上超过 7 天不打开，都可能丢失。建议现在导出一份，以后随时能导回来。':
+    'Clearing browser data, switching phones, or leaving the site unused on iPhone for 7 days can lose them. Export a copy now so you can restore it later.',
+  '立即导出': 'Export now',
+  '7 天后再提醒': 'Remind me in 7 days',
+  '导出全部内容': 'Export everything',
+  '数据': 'Data',
+  '迁移': 'Migrate',
+  '开源英语精读工具。内容存在你的浏览器里，服务器不保存你的文章；模型由你自己选择，也可以随时导出换设备。':
+    'An open-source close-reading tool. Your content lives in your browser; the server never keeps your articles. Choose your own model, and export anytime to switch devices.',
+  '想加的功能、用着别扭的地方、碰到的 bug，都可以写在这里。别人也能「加一」，作者会更新状态。':
+    'Request a feature, flag something awkward, or report a bug. Others can upvote it, and the author updates the status.',
+  '想法': 'Idea',
+  '添加截图': 'Add screenshot',
+  '提交': 'Submit',
+  '按加一和状态': 'By votes and status',
+  '最新优先': 'Newest first',
+  '最新发布': 'Newest',
+  '篇数少的先': 'Fewest words first',
+  '按标题': 'By title',
+  '加载更多': 'Load more',
+  '公共库由所有访客贡献。打开某个学习包时，服务器会把它复制进你的空间，之后的进度和批注只属于你。':
+    'The public library is built by visitors. Opening a pack copies it into your space; progress and notes after that are yours alone.',
+  '检查分析模式…': 'Checking analysis mode…',
+  '电子书 / 文件': 'E-book / file',
+  '检测中…': 'Detecting…',
+  'Key 只保存在这个浏览器里，调用模型时随请求发送，不会写入服务器磁盘。':
+    'Your key stays in this browser, is sent with model requests, and is never written to the server disk.',
+  '生成音频': 'Generate audio',
+  '还没有待读文章': 'Nothing waiting to be read',
+  '今日精读完成': 'Reading done for today',
+  '加载失败：': 'Failed to load: ',
+  '设置加载失败：': 'Could not load settings: ',
+  '正在加载…': 'Loading…',
+  '没有符合条件的文章。': 'No articles match.',
+  '没有匹配的命令': 'No matching commands',
+  '未开始': 'Not started',
+  '未生成': 'Not generated',
+  '未知错误': 'Unknown error',
+  '没有完成': 'Not finished',
+  '正在生成，请稍候': 'Generating, one moment',
+  '生成中…': 'Generating…',
+  '生成失败': 'Generation failed',
+  '测试中…': 'Testing…',
+  '查询中…': 'Checking…',
+  '查找中…': 'Searching…',
+  '正在保存…': 'Saving…',
+  '正在取消…': 'Cancelling…',
+  '正在请求模型…': 'Asking the model…',
+  '正在导入文本…': 'Importing text…',
+  '正在计算词网…': 'Building the word web…',
+  '正在启动生成任务…': 'Starting the job…',
+  '正在上传并解析 PDF…': 'Uploading and parsing the PDF…',
+  '正在上传并解析文档…': 'Uploading and parsing the document…',
+  '正在抓取网页，最多等待 20 秒…': 'Fetching the page, up to 20 seconds…',
+  '请先粘贴文本': 'Paste some text first',
+  '请填写网页链接': 'Enter a page link',
+  '请选择一个 PDF 文件': 'Choose a PDF file',
+  '请选择一个 EPUB、MOBI 或 DOCX 文件': 'Choose an EPUB, MOBI or DOCX file',
+  '网络中断，文件没有上传完成。': 'The connection dropped before the upload finished.',
+  '链接已复制': 'Link copied',
+  '模型设置已保存': 'Model settings saved',
+  '语音设置已保存': 'Voice settings saved',
+  '诊断已保存：': 'Diagnosis saved: ',
+  '本浏览器空间 · 其他访客看不到': 'This browser’s space · hidden from other visitors',
+  '队列里暂时没有更多词了。': 'No more words in the queue.',
+  '默认顺序': 'Default order',
+  '短到长': 'Short to long',
+  '长到短': 'Long to short',
+  '非文章': 'Not an article',
+  '设为文章': 'Mark as article',
+  '确认删除': 'Confirm delete',
+  '复制': 'Copy',
+  '公开': 'Publish',
+  '取消公开': 'Unpublish',
+  '取消': 'Cancel',
+  '删除材料': 'Delete material',
+  '加入学习包': 'Add to pack',
+  '打开': 'Open',
+  '打开来源学习包': 'Open source pack',
+  '去生成这篇': 'Generate this one',
+  '复习这组': 'Review this set',
+  '选文章': 'Choose article',
+  '重新解析文章': 'Reparse article',
+  '重试': 'Retry',
+  '补全关系': 'Complete relations',
+  '这篇正在生成': 'This one is generating',
+  '还没有可展示的词汇。': 'No vocabulary to show yet.',
+  '浏览器暂时无法导出这张卡': 'This browser can’t export the card right now',
+  '浏览器未提供': 'Not provided by this browser',
+  '浏览器没有批准，导出备份仍然有效': 'The browser declined; the export still works',
+  '这个浏览器里还没有可导出的内容': 'Nothing to export in this browser yet',
+  '读完之后可以在「文章」里点「公开」，把这个学习包分享给其他人。':
+    'After reading, tap “Publish” under Articles to share this pack.',
+  '待处理': 'Open',
+  '已采纳': 'Planned',
+  '已修复': 'Fixed',
+  '已驳回': 'Declined',
+  '整本': 'Whole book',
+  '文本': 'Text',
+  '网页': 'Web page',
+  '字幕': 'Transcript',
+  '材料': 'Material',
+  '默认': 'Default',
+  '持久化': 'Persistent storage',
+  '未开启，空间紧张时可能被清理': 'Off — the browser may evict it under storage pressure',
+  '撤销': 'Undo',
+  '重试中…': 'Retrying…',
+  '恢复中…': 'Restoring…',
+  '打包中…': 'Packing…',
+  '提交中…': 'Submitting…',
+  '申请中…': 'Applying…',
+  '昨天': 'Yesterday',
+  '跳过': 'Skip',
+  '生成选中': 'Generate selected',
+  '让编辑看看': 'Ask the editor',
+  '编辑正在看…': 'The editor is reading…',
+  '编辑回信已收到': 'The editor’s reply arrived',
+  '这一版的编辑回信已收到': 'The editor’s reply for this version arrived',
+  '我也遇到过 / 我也想要': 'Same here / I want this',
+  '手机 ✓': 'Phone ✓',
+  '手机访问已关闭': 'Phone access off',
+  '手机访问已开启': 'Phone access on',
+  '连接成功，可以开始生成。': 'Connected. Ready to generate.',
+  '返回异常，请检查模型设置。': 'Unexpected response. Check the model settings.',
+  '浏览器的存储空间满了': 'Browser storage is full',
+  '浏览器配额': 'Browser quota',
+  '恢复码已复制': 'Recovery code copied',
+  '申请失败，可以继续正常使用': 'Request failed; you can keep using the app.',
+  '这两个词之间还没有可用路径': 'No path between these words yet.',
+  '恢复会覆盖当前文章、学习项和阅读进度。确认继续？':
+    'Restore replaces the current articles, items and reading progress. Continue?',
+  '本地数据还没恢复，先刷新页面再操作，避免覆盖你自己的内容。':
+    'Your local copy is not restored yet. Reload before changing anything so you don’t overwrite it.',
+  '释义已隐藏。判断完自己的熟悉程度后，再点“核对释义”。':
+    'Meanings are hidden. Rate your familiarity first, then tap “Check meanings”.',
+  '重新诊断会覆盖上次结果，但阅读记录不受影响。':
+    'Re-diagnosing replaces the previous result; your reading log is untouched.',
+  '还是没能写入浏览器存储，先导出一份备份最稳妥。':
+    'Still can’t write to browser storage. Exporting a backup is the safest move.',
 }
 
 const PACK_EN: Record<string, string> = {
@@ -496,9 +667,87 @@ const PACK_EN: Record<string, string> = {
     'Select 1–8 words in the text below to add a card; select a whole sentence to make a back-translation card. Words not in the text go to “Extra vocabulary”.',
   'Key 只保存在本机 data/tts.json（0600），不会返回页面。神经语音会把文章文本发送到你填写的接口。':
     'The key is stored only in data/tts.json on this machine (0600) and never returned to the page. Neural speech sends article text to the endpoint you configure.',
+  '跳到正文': 'Skip to content',
+  '＋ 导入文章': '+ Import article',
+  '学习': 'Study',
+  '精读': 'Reading',
+  '文章': 'Articles',
+  '更多': 'More',
+  '成长': 'Growth',
+  '复盘': 'Insights',
+  '自动': 'Auto',
+  '开始精读': 'Start reading',
+  '▶ 逐句听': '▶ Play sentences',
+  '▶ 听全文': '▶ Play article',
+  '专注': 'Focus',
+  '目录': 'Outline',
+  '查找': 'Find',
+  '快捷键': 'Shortcuts',
+  '更多阅读工具': 'More reading tools',
+  '选中一个词或一句话，可以直接加入词卡或句子卡；点句子可以逐句听读。':
+    'Select a word or sentence to add a word card or sentence card; tap a sentence to listen.',
+  '✓ 已读': '✓ Read',
+  '显示翻译': 'Show translation',
+  '连接': 'Connectors',
+  '标记已读': 'Mark as read',
+  '本篇词汇': 'Words in this article',
+  '暂无词卡。': 'No cards yet.',
+  '我的批注': 'My notes',
+  '选中一句话后可以加批注。': 'Select a sentence to add a note.',
+  '阅读工具': 'Reading tools',
+  '导出精读笔记': 'Export reading notes',
+  '查看本周复盘': "View this week’s insights",
+  '快捷键：J / K 段落 · T 翻译': 'Shortcuts: J / K paragraphs · T translate',
+  '读法': 'How to read',
+  '先读原文，遇到生词先猜；读完一段再看翻译，最后用本篇词汇复述一遍。':
+    'Read the original first and guess unknown words; check the translation after each paragraph, then retell it with this article’s words.',
+  '接下来读': 'Read next',
+  '行宽': 'Width',
+  '字体': 'Typeface',
+  '衬线': 'Serif',
+  '无衬线': 'Sans',
+  '文内查找': 'Find in article',
+  '下一段': 'Next paragraph',
+  '上一段': 'Previous paragraph',
+  '翻译当前段落': 'Translate this paragraph',
+  '打开这个面板': 'Open this panel',
+  '关闭面板': 'Close panels',
+  '选中文字可以加词卡、句子卡或批注；点击句子可以逐句听读。':
+    'Select text to add a word card, sentence card or note; tap a sentence to listen.',
+  '设置': 'Settings',
+  '逐句朗读': 'Read sentence by sentence',
+  '暂停': 'Pause',
+  '看释义': 'Meaning',
+  '加入词卡': 'Add card',
+  '加批注': 'Add note',
+  '保存批注': 'Save note',
+  'CloseRead 首页': 'CloseRead home',
+  '点击听这一句': 'Tap to listen',
+  '回到文章列表': 'Back to articles',
+  '单词或句子…': 'Word or sentence…',
+  '上一个': 'Previous',
+  '下一个': 'Next',
+  '移动导航': 'Mobile navigation',
+  '退出逐句朗读': 'Exit sentence mode',
+  '写一句批注（可选）…': 'Write a note (optional)…',
 }
 
 const REVIEW_PATTERNS: Array<[string, string, string]> = [
+  ['^生成失败：(.*)$', 'Generation failed: $1', ''],
+  ['^恢复失败：(.*)$', 'Restore failed: $1', ''],
+  ['^提交失败：(.*)$', 'Submit failed: $1', ''],
+  ['^操作失败：(.*)$', 'Action failed: $1', ''],
+  ['^补全失败：(.*)$', 'Completion failed: $1', ''],
+  ['^重新解析失败：(.*)$', 'Reparse failed: $1', ''],
+  ['^队列完成：(.*)$', 'Queue done: $1', ''],
+  ['^无法加载导入信息：(.*)$', 'Could not load import info: $1', ''],
+  ['^无法加载词网：(.*)$', 'Could not load the word web: $1', ''],
+  ['^手机访问操作失败：(.*)$', 'Phone access failed: $1', ''],
+  ['^读完 · (.+)$', 'Finished · $1', ''],
+  ['^读完于 (.+)$', 'Finished $1', ''],
+  ['^读到 (\\d+)% · (.+)$', 'At $1% · $2', ''],
+  ['^连对 (\\d+)$', 'Streak $1', ''],
+  ['^词簇 (\\d+)$', 'Cluster $1', ''],
   ['^← 今日$', '← Today', ''],
   ['^(\\d+) 词$', '$1 words', ''],
   ['^(\\d+) 个学习项$', '$1 items', ''],
@@ -550,6 +799,8 @@ const REVIEW_PATTERNS: Array<[string, string, string]> = [
 ]
 
 const PACK_PATTERNS: Array<[string, string, string]> = [
+  ['^([A-C][12]) · (\\d+) 词$', '$1 · $2 words', ''],
+  ['^(\\d+) 段 · (\\d+) 分钟$', '$1 paragraphs · $2 min', ''],
   ['^← 今日$', '← Today', ''],
   ['^(\\d+) 词$', '$1 words', ''],
   ['^(\\d+) 个学习项$', '$1 items', ''],
@@ -563,6 +814,9 @@ const PACK_PATTERNS: Array<[string, string, string]> = [
   ['^(\\d+) 项$', '$1 items', ''],
   ['^(\\d+) 个$', '$1', ''],
   ['^标记第 (\\d+) 段已读$', 'Mark paragraph $1 read', ''],
+  ['^第 (\\d+) / (\\d+) 处$', 'Match $1 of $2', ''],
+  ['^没有找到「(.+)」。$', 'No matches for “$1”.', ''],
+  ['^输入后按回车跳到下一处。$', 'Press Enter to jump to the next match.', ''],
   ['^(.+) · 读前先看老师怎么拆$', '$1 · How a teacher reads it first', ''],
   ['^由 CloseRead 生成 · (.+)$', 'Generated by CloseRead · $1', ''],
   ['（(\\d+) 词）', ' ($1 words)', ''],
@@ -570,6 +824,14 @@ const PACK_PATTERNS: Array<[string, string, string]> = [
 
 function escapeJsonForScript(value: unknown): string {
   return JSON.stringify(value).replace(/</g, '\\u003c')
+}
+
+/**
+ * Set the document language before the body paints so English readers do not
+ * get Chinese hyphenation, font fallbacks, or a screen-reader misread.
+ */
+export function langBootScript(): string {
+  return `<script>(function(){try{var p=new URLSearchParams(location.search);var l=p.get('lang')==='en'?'en':p.get('lang')==='zh'?'zh':localStorage.getItem('closeread-lang');if(l==='en'){document.documentElement.lang='en';document.documentElement.setAttribute('data-lang','en')}}catch(e){}})()</script>`
 }
 
 /**
@@ -581,7 +843,7 @@ export function i18nScript(kind: 'review' | 'pack'): string {
   const skip =
     kind === 'review'
       ? '.original,.translation,.para-note,.item,.editorial,.output-text,.word-story,.sentence-rewrites,.library-list .row .def,.library-list .row .context,.result-meta,.graph-detail'
-      : '.original,.translation,.para-note,.item,.editorial,.word-story,.sentence-rewrites,.vocab-table,.focus-original,.focus-translation,.shadow-text,.shadow-translation,.output-feedback'
+      : '.original,.translation,.para-note,.r-note,.item,.editorial,.word-story,.sentence-rewrites,.vocab-table,.focus-original,.focus-translation,.shadow-text,.shadow-translation,.output-feedback'
   return `<script>
 (function () {
   var KEY = 'closeread-lang';
@@ -590,7 +852,8 @@ export function i18nScript(kind: 'review' | 'pack'): string {
   var dictionary = ${escapeJsonForScript(dictionary)};
   var patterns = ${escapeJsonForScript(kind === 'review' ? REVIEW_PATTERNS : PACK_PATTERNS)};
   var skip = '${skip}';
-  if (lang === 'en') document.documentElement.lang = 'en';
+  document.documentElement.lang = lang === 'en' ? 'en' : 'zh-CN';
+  if (lang === 'en') document.documentElement.setAttribute('data-lang', 'en');
   function allowed(node) {
     var element = node.nodeType === 1 ? node : node.parentElement;
     return element && !element.closest('script,style,textarea,[data-no-i18n],' + skip);
@@ -598,8 +861,11 @@ export function i18nScript(kind: 'review' | 'pack'): string {
   function translateText(value) {
     var trimmed = value.trim();
     if (!trimmed || trimmed.length > 300) return value;
-    var hasTranslation = Object.prototype.hasOwnProperty.call(dictionary, trimmed);
-    var result = hasTranslation ? value.replace(trimmed, dictionary[trimmed]) : value;
+    // Template literals can wrap one label across lines; the dictionary is
+    // keyed on the collapsed text.
+    var key = trimmed.replace(/\\s+/g, ' ');
+    var hasTranslation = Object.prototype.hasOwnProperty.call(dictionary, key);
+    var result = hasTranslation ? value.replace(trimmed, dictionary[key]) : value;
     for (var i = 0; i < patterns.length; i++) {
       result = result.replace(new RegExp(patterns[i][0], patterns[i][2]), patterns[i][1]);
     }

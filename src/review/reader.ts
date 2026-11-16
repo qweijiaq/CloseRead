@@ -171,6 +171,7 @@ ${pwaHead()}
           <button class="btn" id="reader-focus" type="button" aria-pressed="false">专注</button>
           <button class="btn" id="reader-outline" type="button" aria-expanded="false">目录</button>
           <button class="btn" id="reader-type" type="button" aria-expanded="false">Aa</button>
+          <button class="btn" id="reader-search" type="button" aria-expanded="false">查找</button>
           <button class="btn" id="reader-help" type="button" aria-expanded="false">快捷键</button>
         </div>
         <details class="reader-more-tools">
@@ -215,12 +216,22 @@ ${pwaHead()}
       <button type="button" data-type-face="serif" class="active">衬线</button><button type="button" data-type-face="sans">无衬线</button>
     </div></div>
   </div>
+  <div class="reader-help-panel" id="reader-search-panel" hidden>
+    <div class="reader-panel-head"><strong>文内查找</strong><button type="button" data-panel-close="search">关闭</button></div>
+    <div class="reader-search-row">
+      <input id="reader-search-input" type="search" placeholder="单词或句子…" autocomplete="off" spellcheck="false">
+      <button type="button" id="reader-search-prev" aria-label="上一个">↑</button>
+      <button type="button" id="reader-search-next" aria-label="下一个">↓</button>
+    </div>
+    <p class="reader-help-note" id="reader-search-count">输入后按回车跳到下一处。</p>
+  </div>
   <div class="reader-help-panel" id="reader-help-panel" hidden>
     <div class="reader-panel-head"><strong>快捷键</strong><button type="button" data-panel-close="help">关闭</button></div>
     <div class="reader-help-list">
       <div><kbd>J</kbd><span>下一段</span></div>
       <div><kbd>K</kbd><span>上一段</span></div>
       <div><kbd>T</kbd><span>翻译当前段落</span></div>
+      <div><kbd>⌘F</kbd><span>文内查找</span></div>
       <div><kbd>?</kbd><span>打开这个面板</span></div>
       <div><kbd>Esc</kbd><span>关闭面板</span></div>
     </div>

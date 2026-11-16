@@ -137,7 +137,7 @@
     if (!node || !node.scrollIntoView) return
     var rect = node.getBoundingClientRect()
     if (rect.top >= 80 && rect.bottom <= window.innerHeight - 90) return
-    node.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    node.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
   }
 
   function updateSentenceBar() {
@@ -582,7 +582,7 @@
     if (event.key === 'j' || event.key === 'J') index = Math.min(paragraphs.length - 1, index + 1)
     else index = Math.max(0, index - 1)
     var target = paragraphs[index]
-    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (target) target.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'start' })
   })
   document.querySelectorAll('[data-annotation-delete]').forEach(function (button) {
     button.addEventListener('click', async function () {
@@ -659,7 +659,11 @@
   })
 
 
-  var typeState = { size: 'md', width: 'md', face: 'serif' }
+  function prefersReducedMotion() {
+  return Boolean(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)
+}
+
+var typeState = { size: 'md', width: 'md', face: 'serif' }
   try {
     var savedType = JSON.parse(localStorage.getItem('closeread-reader-type') || '{}')
     if (savedType && typeof savedType === 'object') {
@@ -700,49 +704,147 @@
   var outlinePanel = document.getElementById('reader-outline-panel')
   var typePanel = document.getElementById('reader-type-panel')
   var helpPanel = document.getElementById('reader-help-panel')
+  var searchPanel = document.getElementById('reader-search-panel')
   var outlineButton = document.getElementById('reader-outline')
   var typeButton = document.getElementById('reader-type')
   var helpButton = document.getElementById('reader-help')
+  var searchButton = document.getElementById('reader-search')
   function setPanel(name, open) {
     if (name === 'outline' && outlinePanel) outlinePanel.hidden = !open
     if (name === 'type' && typePanel) typePanel.hidden = !open
     if (name === 'help' && helpPanel) helpPanel.hidden = !open
+    if (name === 'search' && searchPanel) searchPanel.hidden = !open
     if (outlineButton) outlineButton.setAttribute('aria-expanded', outlinePanel && !outlinePanel.hidden ? 'true' : 'false')
     if (typeButton) typeButton.setAttribute('aria-expanded', typePanel && !typePanel.hidden ? 'true' : 'false')
     if (helpButton) helpButton.setAttribute('aria-expanded', helpPanel && !helpPanel.hidden ? 'true' : 'false')
+    if (searchButton) searchButton.setAttribute('aria-expanded', searchPanel && !searchPanel.hidden ? 'true' : 'false')
   }
   if (outlineButton) outlineButton.addEventListener('click', function () {
     var open = outlinePanel && outlinePanel.hidden
     setPanel('type', false)
     setPanel('help', false)
+    setPanel('search', false)
     setPanel('outline', open)
   })
   if (typeButton) typeButton.addEventListener('click', function () {
     var open = typePanel && typePanel.hidden
     setPanel('outline', false)
     setPanel('help', false)
+    setPanel('search', false)
     setPanel('type', open)
   })
   if (helpButton) helpButton.addEventListener('click', function () {
     var open = helpPanel && helpPanel.hidden
     setPanel('outline', false)
     setPanel('type', false)
+    setPanel('search', false)
     setPanel('help', open)
-  })
-  document.querySelectorAll('[data-panel-close]').forEach(function (button) {
-    button.addEventListener('click', function () { setPanel(button.getAttribute('data-panel-close'), false) })
   })
   document.querySelectorAll('[data-outline-link]').forEach(function (link) {
     link.addEventListener('click', function () { setPanel('outline', false) })
   })
   document.addEventListener('click', function (event) {
-    if (event.target.closest && event.target.closest('.reader-outline-panel, .reader-type-panel, .reader-help-panel, #reader-outline, #reader-type, #reader-help')) return
+    if (event.target.closest && event.target.closest('.reader-outline-panel, .reader-type-panel, .reader-help-panel, #reader-outline, #reader-type, #reader-help, #reader-search')) return
     setPanel('outline', false)
     setPanel('type', false)
     setPanel('help', false)
+    setPanel('search', false)
   })
   document.addEventListener('keydown', function (event) {
-    if (event.key === 'Escape') { setPanel('outline', false); setPanel('type', false); setPanel('help', false) }
+    if (event.key === 'Escape') {
+      setPanel('outline', false)
+      setPanel('type', false)
+      setPanel('help', false)
+      setPanel('search', false)
+    }
+  })
+
+  var searchInput = document.getElementById('reader-search-input')
+  var searchCount = document.getElementById('reader-search-count')
+  var searchNext = document.getElementById('reader-search-next')
+  var searchPrev = document.getElementById('reader-search-prev')
+  var searchMatches = []
+  var searchIndex = -1
+
+  function clearSearchHit() {
+    document.querySelectorAll('.r-para.is-search-hit').forEach(function (node) {
+      node.classList.remove('is-search-hit')
+    })
+  }
+
+  function runSearch(query) {
+    clearSearchHit()
+    searchMatches = []
+    searchIndex = -1
+    var needle = String(query || '').trim().toLowerCase()
+    if (!needle) {
+      if (searchCount) searchCount.textContent = '输入后按回车跳到下一处。'
+      return
+    }
+    paragraphs.forEach(function (paragraph) {
+      if ((paragraph.textContent || '').toLowerCase().indexOf(needle) >= 0) searchMatches.push(paragraph)
+    })
+    if (!searchMatches.length) {
+      if (searchCount) searchCount.textContent = '没有找到「' + query + '」。'
+      return
+    }
+    jumpSearch(0)
+  }
+
+  function jumpSearch(step) {
+    if (!searchMatches.length) return
+    clearSearchHit()
+    searchIndex = (searchIndex + step + searchMatches.length) % searchMatches.length
+    var node = searchMatches[searchIndex]
+    node.classList.add('is-search-hit')
+    node.scrollIntoView({ behavior: prefersReducedMotion() ? 'auto' : 'smooth', block: 'center' })
+    if (searchCount) searchCount.textContent = '第 ' + (searchIndex + 1) + ' / ' + searchMatches.length + ' 处'
+  }
+
+  if (searchButton) searchButton.addEventListener('click', function () {
+    var open = searchPanel && searchPanel.hidden
+    setPanel('outline', false)
+    setPanel('type', false)
+    setPanel('help', false)
+    setPanel('search', open)
+    if (open && searchInput) setTimeout(function () { searchInput.focus(); }, 30)
+  })
+  var searchedQuery = ''
+  var searchTimer = null
+  if (searchInput) {
+    searchInput.addEventListener('input', function () {
+      clearTimeout(searchTimer)
+      searchTimer = setTimeout(function () {
+        searchedQuery = searchInput.value.trim().toLowerCase()
+        runSearch(searchInput.value)
+      }, 180)
+    })
+    searchInput.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return
+      event.preventDefault()
+      var query = searchInput.value.trim().toLowerCase()
+      if (query !== searchedQuery) {
+        searchedQuery = query
+        runSearch(searchInput.value)
+        return
+      }
+      if (searchMatches.length) jumpSearch(event.shiftKey ? -1 : 1)
+    })
+  }
+  if (searchNext) searchNext.addEventListener('click', function () { jumpSearch(1) })
+  if (searchPrev) searchPrev.addEventListener('click', function () { jumpSearch(-1) })
+  document.addEventListener('keydown', function (event) {
+    if ((event.metaKey || event.ctrlKey) && String(event.key).toLowerCase() === 'f') {
+      event.preventDefault()
+      setPanel('outline', false)
+      setPanel('type', false)
+      setPanel('help', false)
+      setPanel('search', true)
+      if (searchInput) { searchInput.focus(); searchInput.select(); }
+    }
+  })
+  document.querySelectorAll('[data-panel-close]').forEach(function (button) {
+    button.addEventListener('click', function () { setPanel(button.getAttribute('data-panel-close'), false) })
   })
 
   applyTheme(themeChoice())

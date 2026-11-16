@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import type { FileHandle } from 'node:fs/promises'
 
 import type { LearningItem, PackRecord, Resource, ReviewLogEntry, StoredItem } from '../types.js'
 import { isDue, isNew, newReviewState, rateReview } from '../review/scheduler.js'
@@ -633,6 +634,40 @@ export class Store {
     return next
   }
 
+  /**
+   * Two processes pointed at the same data directory (desktop app plus a CLI,
+   * or two containers) would otherwise rename whole-file snapshots over each
+   * other. An advisory lock keeps the last writer from silently dropping work.
+   */
+  private async withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+    const lock = `${this.file}.lock`
+    let handle: FileHandle | undefined
+    const deadline = Date.now() + 3000
+    for (;;) {
+      try {
+        handle = await fs.open(lock, 'wx')
+        break
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') break
+        const stat = await fs.stat(lock).catch(() => undefined)
+        if (stat && Date.now() - stat.mtimeMs > 60_000) {
+          await fs.rm(lock, { force: true }).catch(() => {})
+          continue
+        }
+        if (Date.now() > deadline) break
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+    }
+    try {
+      return await fn()
+    } finally {
+      if (handle) {
+        await handle.close().catch(() => {})
+        await fs.rm(lock, { force: true }).catch(() => {})
+      }
+    }
+  }
+
   private async writeStore(): Promise<void> {
     const payload = {
       version: 2,
@@ -643,22 +678,24 @@ export class Store {
       preferences: this.data.preferences,
     }
     await fs.mkdir(path.dirname(this.file), { recursive: true })
-    await this.backupBeforeWrite()
+    await this.withWriteLock(async () => {
+      await this.backupBeforeWrite()
 
-    const temp = `${this.file}.${process.pid}.${randomUUID()}.tmp`
-    try {
-      const handle = await fs.open(temp, 'w')
+      const temp = `${this.file}.${process.pid}.${randomUUID()}.tmp`
       try {
-        await handle.writeFile(JSON.stringify(payload, null, 2), 'utf8')
-        await handle.sync()
-      } finally {
-        await handle.close()
+        const handle = await fs.open(temp, 'w')
+        try {
+          await handle.writeFile(JSON.stringify(payload, null, 2), 'utf8')
+          await handle.sync()
+        } finally {
+          await handle.close()
+        }
+        await fs.rename(temp, this.file)
+      } catch (error) {
+        await fs.rm(temp, { force: true }).catch(() => {})
+        throw error
       }
-      await fs.rename(temp, this.file)
-    } catch (error) {
-      await fs.rm(temp, { force: true }).catch(() => {})
-      throw error
-    }
+    })
   }
 
   private async backupBeforeWrite(): Promise<void> {

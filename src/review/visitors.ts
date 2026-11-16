@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 import { createWorkspace, publicModeEnabled, rootDataDir, rootPacksDir, rootWorkspaceRef } from '../config.js'
@@ -26,6 +26,38 @@ export function ownerVisitorId(): string {
 export function isOwnerVisitor(id: string): boolean {
   const owner = ownerVisitorId()
   return Boolean(owner) && id === owner
+}
+
+function recoverySecret(): string {
+  return process.env.LEARN_SECRET?.trim() || process.env.LEARN_OWNER_KEY?.trim() || ''
+}
+
+/**
+ * A short, copyable code that proves ownership of a visitor id. It only works
+ * while the server still holds the matching scratch workspace, so it is a
+ * cookie-loss remedy, not a substitute for exporting a backup.
+ */
+export function recoveryCodeFor(id: string): string {
+  const secret = recoverySecret()
+  if (!secret || !isSafeVisitorId(id)) return ''
+  const signature = createHmac('sha256', secret).update(`recover:${id}`).digest('base64url').slice(0, 16)
+  return `${id}.${signature}`
+}
+
+export function visitorIdFromRecovery(code: string): string | undefined {
+  const secret = recoverySecret()
+  if (!secret) return undefined
+  const raw = String(code ?? '').trim().replace(/^cr[-_]/i, '')
+  const index = raw.lastIndexOf('.')
+  if (index <= 0) return undefined
+  const id = raw.slice(0, index)
+  const signature = raw.slice(index + 1)
+  if (!isSafeVisitorId(id) || !/^[A-Za-z0-9_-]{16}$/.test(signature)) return undefined
+  const expected = createHmac('sha256', secret).update(`recover:${id}`).digest('base64url').slice(0, 16)
+  const given = Buffer.from(signature)
+  const wanted = Buffer.from(expected)
+  if (given.length !== wanted.length) return undefined
+  return timingSafeEqual(given, wanted) ? id : undefined
 }
 const ONLINE_WINDOW_MS = 3 * 60 * 1000
 const FLUSH_INTERVAL_MS = 15 * 1000
@@ -132,6 +164,8 @@ export class VisitorRegistry {
   private storeUsage = new Map<string, number>()
   private syncState = new Map<string, Map<string, string>>()
   private pendingChanges = new Map<string, Map<string, string>>()
+  /** Paths that disappeared from the scratch copy and must vanish locally too. */
+  private pendingDeletes = new Map<string, Set<string>>()
   private demoWorkspace: Workspace | undefined
 
   constructor(
@@ -173,10 +207,15 @@ export class VisitorRegistry {
     const cutoff = Date.now() - keepMs
     const entries = await fs.readdir(this.usersRoot, { withFileTypes: true }).catch(() => [])
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue
+      if (!entry.isDirectory() || !isSafeVisitorId(entry.name)) continue
       const dir = path.join(this.usersRoot, entry.name)
       const stat = await fs.stat(dir).catch(() => undefined)
-      if (stat && stat.mtimeMs > cutoff) continue
+      // Directory mtime only changes when entries are added or removed, so a
+      // visitor who keeps editing the same files looks idle. Prefer the last
+      // visit recorded in visits.json.
+      const record = this.visits.get(entry.name)
+      const lastSeen = Math.max(record?.last ?? 0, record?.active ?? 0, stat?.mtimeMs ?? 0)
+      if (lastSeen > cutoff) continue
       await fs.rm(dir, { recursive: true, force: true }).catch(() => {})
     }
   }
@@ -218,7 +257,6 @@ export class VisitorRegistry {
   }
 
   private async loadVisits(): Promise<void> {
-    await this.prepareScratch()
     // The live log can be shorter than its backup after a crash or a bad write;
     // take the union so a truncation never erases history.
     for (const file of [this.visitsFile, `${this.visitsFile}.bak`]) {
@@ -240,6 +278,7 @@ export class VisitorRegistry {
     // Persist what we just loaded: an early flush used to write an empty map.
     this.dirty = this.visits.size > 0
     this.loaded = true
+    await this.prepareScratch()
   }
 
   private markDirty(): void {
@@ -355,6 +394,8 @@ export class VisitorRegistry {
       id,
       dataDir: path.join(base, 'data'),
       packsDir: path.join(base, 'packs'),
+      // Only the site owner may spend keys configured on the server.
+      allowEnvKeys: isOwnerVisitor(id),
     })
     this.workspaces.set(id, workspace)
     return workspace
@@ -535,7 +576,9 @@ export class VisitorRegistry {
       // the visitor, so claiming one would just create an empty directory.
       const statelessWrite =
         isWriteMethod(method) &&
-        ((request.url ?? '').startsWith('/api/feedback') || (request.url ?? '').startsWith('/api/preview'))
+        ((request.url ?? '').startsWith('/api/feedback') ||
+          (request.url ?? '').startsWith('/api/preview') ||
+          (request.url ?? '').startsWith('/api/recover'))
       if (!isWriteMethod(method) || statelessWrite) {
         return { workspace: this.demo(), store: this.demoStore, visitorId: id, personal: false }
       }
@@ -560,10 +603,19 @@ export class VisitorRegistry {
    * The browser is the source of truth. When it reconnects after a restart (or
    * after its scratch workspace expired) it uploads everything it kept.
    */
-  async hydrate(id: string, files: Record<string, string>): Promise<number> {
+  async hydrate(
+    id: string,
+    files: Record<string, string>,
+    options: { append?: boolean; final?: boolean } = {},
+  ): Promise<number> {
     const target = this.workspaceDir(id)
-    await fs.rm(target, { recursive: true, force: true }).catch(() => {})
-    await fs.mkdir(target, { recursive: true })
+    if (!options.append) {
+      await fs.rm(target, { recursive: true, force: true }).catch(() => {})
+    }
+    // `data/` is how a workspace is recognised; a push that only carries packs
+    // must not make the next request fall back to the read-only demo.
+    await fs.mkdir(path.join(target, 'data'), { recursive: true })
+    await fs.mkdir(path.join(target, 'packs'), { recursive: true })
     let written = 0
     for (const [relative, content] of Object.entries(files)) {
       if (!isSafeRelativePath(relative)) continue
@@ -576,13 +628,40 @@ export class VisitorRegistry {
     // Reopen from the hydrated files instead of any stale in-memory store.
     this.workspaces.delete(id)
     this.stores.delete(id)
+    // A chunked push looks like mass deletion to a mid-flight snapshot, so drop
+    // the baseline until the last chunk and then take a clean one.
+    if (options.final === false) {
+      this.syncState.delete(id)
+    } else {
+      const { stamps } = await collectWorkspaceFiles(target)
+      this.syncState.set(id, stamps)
+      this.pendingChanges.delete(id)
+      this.pendingDeletes.delete(id)
+    }
     return written
+  }
+
+  /** Whether this visitor still has a scratch workspace on this server. */
+  async exists(id: string): Promise<boolean> {
+    if (!isSafeVisitorId(id) || id === 'demo' || id === 'bot') return false
+    try {
+      await fs.access(path.join(this.workspaceDir(id), 'data'))
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Re-issue the visitor cookie, used by the recovery-code endpoint. */
+  bind(request: IncomingMessage, response: ServerResponse, id: string): void {
+    const secure = request.headers['x-forwarded-proto'] === 'https'
+    response.setHeader('set-cookie', visitorCookie(id, secure))
   }
 
   /** Snapshot the scratch workspace and return everything that changed. */
   async capture(id: string, hint?: string): Promise<void> {
     const root = this.workspaceDir(id)
-    const current = await collectWorkspaceFiles(root, hint)
+    const { stamps: current, complete } = await collectWorkspaceFiles(root, hint)
     const previous = this.syncState.get(id)
     const pending = this.pendingChanges.get(id) ?? new Map<string, string>()
     for (const [relative, stamp] of current) {
@@ -593,19 +672,37 @@ export class VisitorRegistry {
         // A file that vanished between listing and reading is simply skipped.
       }
     }
+    // Deletion is user data too: without it a deleted article comes back the
+    // next time the browser hydrates this workspace.
+    const deleted = this.pendingDeletes.get(id) ?? new Set<string>()
+    if (previous && complete) {
+      for (const relative of previous.keys()) {
+        if (!current.has(relative)) deleted.add(relative)
+      }
+    }
+    for (const relative of current.keys()) deleted.delete(relative)
     this.syncState.set(id, current)
     this.pendingChanges.set(id, pending)
+    if (deleted.size) this.pendingDeletes.set(id, deleted)
+    else this.pendingDeletes.delete(id)
   }
 
-  takeChanges(id: string): Array<{ path: string; content: string }> {
+  takeChanges(id: string): { files: Array<{ path: string; content: string }>; deleted: string[] } {
     const pending = this.pendingChanges.get(id)
-    if (!pending || pending.size === 0) return []
+    const deleted = this.pendingDeletes.get(id)
     this.pendingChanges.set(id, new Map())
-    return [...pending.entries()].map(([file, content]) => ({ path: file, content }))
+    this.pendingDeletes.delete(id)
+    return {
+      files: [...(pending ?? new Map<string, string>()).entries()].map(([file, content]) => ({
+        path: file,
+        content,
+      })),
+      deleted: [...(deleted ?? new Set<string>())],
+    }
   }
 
   hasChanges(id: string): boolean {
-    return (this.pendingChanges.get(id)?.size ?? 0) > 0
+    return (this.pendingChanges.get(id)?.size ?? 0) > 0 || (this.pendingDeletes.get(id)?.size ?? 0) > 0
   }
 
   /** Number of private workspaces on disk, used by the guests CLI. */
@@ -659,7 +756,10 @@ function isSafeRelativePath(value: string): boolean {
  * List the text files worth keeping in the browser. Audio and caches are
  * derived data, so they are regenerated instead of transferred.
  */
-async function collectWorkspaceFiles(root: string, hint?: string): Promise<Map<string, string>> {
+async function collectWorkspaceFiles(
+  root: string,
+  hint?: string,
+): Promise<{ stamps: Map<string, string>; complete: boolean }> {
   const out = new Map<string, string>()
   const walk = async (dir: string, prefix: string, depth: number): Promise<void> => {
     if (depth > 3) return
@@ -671,7 +771,8 @@ async function collectWorkspaceFiles(root: string, hint?: string): Promise<Map<s
         await walk(path.join(dir, entry.name), relative, depth + 1)
         continue
       }
-      if (!entry.isFile() || SKIP_EXT.test(entry.name)) continue
+      // Advisory lock and temp files are implementation details, never user data.
+      if (!entry.isFile() || SKIP_EXT.test(entry.name) || /\.(lock|tmp)$/i.test(entry.name)) continue
       const stat = await fs.stat(path.join(dir, entry.name)).catch(() => undefined)
       if (!stat) continue
       out.set(relative, `${stat.size}:${Math.round(stat.mtimeMs)}`)
@@ -683,9 +784,9 @@ async function collectWorkspaceFiles(root: string, hint?: string): Promise<Map<s
     for (const [relative, stamp] of out) {
       if (relative === 'store.json' || relative.includes(hint)) filtered.set(relative, stamp)
     }
-    return filtered
+    return { stamps: filtered, complete: false }
   }
-  return out
+  return { stamps: out, complete: true }
 }
 
 export const WORKSPACE_LIMIT_BYTES = 250 * 1024 * 1024

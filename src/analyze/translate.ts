@@ -25,7 +25,13 @@ interface YoudaoResponse {
 const memoryCache = new Map<string, string | null>()
 const chineseCache = new Map<string, string | null>()
 let lastRequestAt = 0
-let quotaExhausted = false
+/**
+ * MyMemory's anonymous quota is per IP and comes back. A process-wide latch
+ * used to disable Chinese glosses for every visitor until the next restart,
+ * which on a shared server meant one burst killed the feature for the day.
+ */
+let quotaExhaustedUntil = 0
+const QUOTA_COOLDOWN_MS = 60 * 60 * 1000
 
 function cacheKey(text: string): string {
   return crypto.createHash('sha1').update(text).digest('hex').slice(0, 16)
@@ -57,7 +63,7 @@ async function politeFetch(url: string, timeoutMs: number): Promise<Response> {
 export async function translateToChinese(text: string): Promise<string | null> {
   const trimmed = text.replace(/\s+/g, ' ').trim()
   if (!trimmed) return null
-  if (quotaExhausted) return null
+  if (Date.now() < quotaExhaustedUntil) return null
 
   const key = cacheKey(trimmed)
   if (memoryCache.has(key)) return memoryCache.get(key) ?? null
@@ -81,13 +87,17 @@ export async function translateToChinese(text: string): Promise<string | null> {
         10_000,
       )
       if (!response.ok) {
+        if (response.status === 429) {
+          quotaExhaustedUntil = Date.now() + QUOTA_COOLDOWN_MS
+          return null
+        }
         await sleep(500 * (attempt + 1))
         continue
       }
 
       const data = (await response.json()) as MyMemoryResponse
       if (data.quotaFinished) {
-        quotaExhausted = true
+        quotaExhaustedUntil = Date.now() + QUOTA_COOLDOWN_MS
         return null
       }
 

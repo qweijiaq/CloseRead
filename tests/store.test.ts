@@ -275,6 +275,25 @@ describe('store safety', () => {
     }
   })
 
+  it('serializes two store instances on one file and cleans up its lock', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-lock-'))
+    try {
+      const file = path.join(dir, 'store.json')
+      const first = await Store.open(file)
+      const second = await Store.open(file)
+      await Promise.all([first.setWeeklyGoals(4, 5), second.setWeeklyGoals(6, 3)])
+      const saved = JSON.parse(await fs.readFile(file, 'utf8')) as {
+        version: number
+        preferences: { weeklyArticleGoal: number }
+      }
+      assert.equal(saved.version, 2)
+      assert.ok([4, 6].includes(saved.preferences.weeklyArticleGoal), 'the last writer wins intact')
+      await assert.rejects(fs.stat(`${file}.lock`))
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
   it('quarantines an unreadable store instead of silently overwriting it', async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'learn-corrupt-'))
     try {

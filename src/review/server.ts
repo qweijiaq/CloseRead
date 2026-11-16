@@ -103,7 +103,13 @@ import { achievementPayload } from './achievements.js'
 import { DIAGNOSIS_WORDS, computeDiagnosisLevel, sampleDiagnosisWords } from './diagnosis.js'
 import { weeklyPayload } from './weekly.js'
 import { renderReviewApp } from './web.js'
-import { VisitorRegistry, assertWorkspaceCapacity, isOwnerVisitor } from './visitors.js'
+import {
+  VisitorRegistry,
+  assertWorkspaceCapacity,
+  isOwnerVisitor,
+  recoveryCodeFor,
+  visitorIdFromRecovery,
+} from './visitors.js'
 import { FeedbackBoard } from '../community/feedback.js'
 import type { FeedbackStatus } from '../community/feedback.js'
 import { rootDataDir } from '../config.js'
@@ -467,11 +473,87 @@ async function sharedMeta(pack: PackRecord): Promise<{ cefr: string; title: stri
 
 const feedbackBoard = new FeedbackBoard(path.join(rootDataDir, 'community', 'feedback.json'))
 
-const COMPILE_WINDOW_MS = 60_000
 const COMPILE_PER_WINDOW = 6
 const COMPILE_MAX_ACTIVE = 3
-const compileWindows = new Map<string, { count: number; resetAt: number }>()
 let compileActive = 0
+
+const RATE_WINDOW_MS = 60_000
+const rateWindows = new Map<string, { count: number; resetAt: number }>()
+let rateLastPrune = 0
+
+function isPrivateAddress(address: string): boolean {
+  const value = address.replace(/^::ffff:/, '')
+  if (value === '::1' || value.startsWith('127.')) return true
+  if (value.startsWith('10.') || value.startsWith('192.168.')) return true
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(value)) return true
+  if (/^f[cd][0-9a-f]{2}:/i.test(value)) return true
+  return false
+}
+
+/**
+ * Behind the bundled Caddy the socket address is private, so the forwarded
+ * header is trustworthy. A direct connection from the internet must not be
+ * able to pick its own rate-limit bucket.
+ */
+function clientIp(request: http.IncomingMessage): string {
+  const direct = request.socket.remoteAddress ?? 'unknown'
+  if (!isPrivateAddress(direct)) return direct
+  const real = request.headers['x-real-ip']
+  if (typeof real === 'string' && real.trim()) return real.trim()
+  const chain = request.headers['x-forwarded-for']
+  if (typeof chain === 'string' && chain.trim()) return chain.split(',')[0]!.trim()
+  return direct
+}
+
+/** Every public endpoint that costs CPU, a model call, or a TTS call. */
+const RATE_RULES: Array<{ pattern: RegExp; bucket: string; limit: number }> = [
+  { pattern: /^\/api\/import\//, bucket: 'import', limit: 10 },
+  { pattern: /^\/api\/build$/, bucket: 'build', limit: 20 },
+  { pattern: /^\/api\/resources\/[^/]+\/(build|resplit)$/, bucket: 'build', limit: 20 },
+  { pattern: /^\/api\/llm(\/|$)/, bucket: 'llm', limit: 20 },
+  { pattern: /^\/api\/lab\/generate$/, bucket: 'llm', limit: 20 },
+  { pattern: /^\/api\/tts$/, bucket: 'tts', limit: 30 },
+  { pattern: /^\/api\/lab\/tts$/, bucket: 'tts', limit: 30 },
+  { pattern: /^\/api\/pack\/[^/]+\/(audio|sentence-audio)$/, bucket: 'tts', limit: 30 },
+  { pattern: /^\/api\/pack\/[^/]+\/(analyze-selection|sentence|enrich-reading|translate-sentence|reading-guide\/regenerate|exercises\/translate|repair-head|repair-reading)$/, bucket: 'ai', limit: 60 },
+  { pattern: /^\/api\/items\/[^/]+\/(enrich|nuance|story|rewrites|practice|examples)$/, bucket: 'ai', limit: 60 },
+  { pattern: /^\/api\/pack\/[^/]+\/items\/[^/]+\/(story|rewrites|practice|expand|derivation)$/, bucket: 'ai', limit: 60 },
+  { pattern: /^\/api\/recover$/, bucket: 'recover', limit: 10 },
+  { pattern: /^\/api\/feedback$/, bucket: 'feedback', limit: 6 },
+  { pattern: /^\/api\/feedback\/image$/, bucket: 'feedback', limit: 6 },
+]
+
+function rateLimit(ip: string, bucket: string, limit: number): { ok: boolean; error?: string } {
+  if (!publicModeEnabled()) return { ok: true }
+  const now = Date.now()
+  if (now - rateLastPrune > RATE_WINDOW_MS) {
+    rateLastPrune = now
+    for (const [key, window] of rateWindows) {
+      if (now > window.resetAt + RATE_WINDOW_MS) rateWindows.delete(key)
+    }
+  }
+  const key = `${bucket}:${ip}`
+  const window = rateWindows.get(key)
+  if (!window || now > window.resetAt) {
+    rateWindows.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS })
+    return { ok: true }
+  }
+  if (window.count >= limit) return { ok: false, error: '操作太频繁了，请稍后再试。' }
+  window.count += 1
+  return { ok: true }
+}
+
+function rateLimited(request: http.IncomingMessage, method: string, pathname: string): string | undefined {
+  if (!publicModeEnabled()) return undefined
+  if (method !== 'POST' && method !== 'PUT' && method !== 'DELETE') return undefined
+  const ip = clientIp(request)
+  for (const rule of RATE_RULES) {
+    if (!rule.pattern.test(pathname)) continue
+    const verdict = rateLimit(ip, rule.bucket, rule.limit)
+    if (!verdict.ok) return verdict.error
+  }
+  return undefined
+}
 
 /** Public compile is CPU work for strangers; keep it bounded. */
 function compileAllowed(ip: string): { ok: boolean; error?: string } {
@@ -479,20 +561,12 @@ function compileAllowed(ip: string): { ok: boolean; error?: string } {
   if (compileActive >= COMPILE_MAX_ACTIVE) {
     return { ok: false, error: '正在处理的任务太多了，请稍等几秒再试。' }
   }
-  const now = Date.now()
-  const window = compileWindows.get(ip)
-  if (!window || now > window.resetAt) {
-    compileWindows.set(ip, { count: 1, resetAt: now + COMPILE_WINDOW_MS })
-    return { ok: true }
-  }
-  if (window.count >= COMPILE_PER_WINDOW) {
-    return { ok: false, error: '导入太频繁了，请一分钟后再试。' }
-  }
-  window.count += 1
-  return { ok: true }
+  return rateLimit(ip, 'compile', COMPILE_PER_WINDOW)
 }
 
 export interface CompileInput {
+  /** Public visitors must not fall back to the server's provider key. */
+  allowEnvKeys?: boolean
   kind: 'text' | 'url'
   text?: string
   url?: string
@@ -528,12 +602,14 @@ export async function compileToPack(input: CompileInput): Promise<CompileResult>
     dataDir: path.join(tempRoot, 'data'),
     packsDir: path.join(tempRoot, 'packs'),
     level: input.level,
+    allowEnvKeys: input.allowEnvKeys !== false,
   })
   const llmInput = input.llm ?? {}
-  const provider = normalizeLlmProvider(llmInput.provider ?? '')
+  const providedKey = llmInput.apiKey?.trim() ?? ''
+  const provider = normalizeLlmProvider(llmInput.provider ?? '') || (providedKey ? workspace.llm.provider : undefined)
   if (provider) {
     const preset = providerPreset(provider)
-    const apiKey = llmInput.apiKey?.trim() ?? ''
+    const apiKey = providedKey
     workspace.llm = {
       provider,
       apiKey,
@@ -1328,6 +1404,8 @@ function isPhoneAllowed(method: string, pathname: string): boolean {
       pathname === '/lab' ||
       pathname === '/lab/' ||
       pathname === '/bookmarklet' ||
+      pathname === '/app.js' ||
+      pathname === '/app.css' ||
       pathname === '/reader.js' ||
       pathname === '/reader.css' ||
       pathname === '/lab.js' ||
@@ -1440,6 +1518,7 @@ async function handle(
   // must never accept writes: a script could otherwise pollute the shared library.
   const statelessWrite =
     url.pathname === '/api/preview' ||
+    url.pathname === '/api/recover' ||
     url.pathname === '/api/feedback' ||
     url.pathname.startsWith('/api/feedback/')
   if (currentWorkspace().readOnly && method !== 'GET' && method !== 'HEAD' && !statelessWrite) {
@@ -1543,6 +1622,26 @@ async function handle(
       response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
       response.end(error instanceof Error ? error.message : String(error))
     }
+    return
+  }
+
+  if (method === 'GET' && url.pathname === '/app.css') {
+    const version = url.searchParams.get('v') ?? ''
+    let css = appStyleCache.get(version)
+    if (!css) {
+      externalizeAppStyles(renderReviewApp())
+      css = appStyleCache.get(version) ?? [...appStyleCache.values()].at(-1)
+    }
+    if (!css) {
+      response.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' })
+      response.end('Stylesheet not found')
+      return
+    }
+    response.writeHead(200, {
+      'content-type': 'text/css; charset=utf-8',
+      'cache-control': 'public, max-age=31536000, immutable',
+    })
+    response.end(css)
     return
   }
 
@@ -1889,7 +1988,8 @@ async function handle(
   }
 
   if (method === 'GET' && url.pathname === '/') {
-    const { html } = externalizeAppScript(renderReviewApp())
+    const shell = externalizeAppStyles(renderReviewApp())
+    const { html } = externalizeAppScript(shell.html)
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
     response.end(html)
     return
@@ -2111,6 +2211,32 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     return
   }
 
+  if (method === 'POST' && url.pathname === '/api/recover') {
+    if (!publicModeEnabled()) {
+      sendJson(response, 400, { error: '本地模式不需要恢复码。' })
+      return
+    }
+    try {
+      const body = await readJson(request, 5_000)
+      const id = visitorIdFromRecovery(String(body.code ?? ''))
+      if (!id) {
+        sendJson(response, 400, { error: '恢复码不正确。' })
+        return
+      }
+      if (!(await visitors.exists(id))) {
+        sendJson(response, 404, {
+          error: '这个恢复码对应的空间已经不在服务器上了。请先在旧设备导出迁移文件，再在新设备导入。',
+        })
+        return
+      }
+      visitors.bind(request, response, id)
+      sendJson(response, 200, { ok: true, id })
+    } catch (error) {
+      sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
+    }
+    return
+  }
+
   if (method === 'GET' && url.pathname === '/api/session') {
     const workspace = currentWorkspace()
     sendJson(response, 200, {
@@ -2134,7 +2260,10 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         sendJson(response, 400, { error: '缺少 files。' })
         return
       }
-      const written = await visitors.hydrate(workspace.id, files as Record<string, string>)
+      const written = await visitors.hydrate(workspace.id, files as Record<string, string>, {
+        append: body.append === true,
+        final: body.final !== false,
+      })
       sendJson(response, 200, { ok: true, files: written })
     } catch (error) {
       sendJson(response, 400, { error: error instanceof Error ? error.message : String(error) })
@@ -2150,12 +2279,18 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     }
     // Always rescan: background build jobs finish after their request returned.
     await visitors.capture(workspace.id)
-    sendJson(response, 200, { files: visitors.takeChanges(workspace.id) })
+    const changes = visitors.takeChanges(workspace.id)
+    sendJson(response, 200, { files: changes.files, deleted: changes.deleted })
     return
   }
 
   if (method === 'GET' && url.pathname === '/api/summary') {
-    sendJson(response, 200, { summary: store.stats(), packs: store.packs(), warnings: store.warnings() })
+    sendJson(response, 200, {
+      summary: store.stats(),
+      packs: store.packs(),
+      warnings: store.warnings(),
+      counts: { packs: store.packs().length, resources: store.listResources().length },
+    })
     return
   }
 
@@ -3556,7 +3691,13 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
     sendJson(response, 200, {
       dataDir: config.dataDir,
       packsDir: config.packsDir,
-      workspace: { id: workspace.id, readOnly: workspace.readOnly, mode: publicModeEnabled() ? 'public' : 'local' },
+      workspace: {
+        id: workspace.id,
+        readOnly: workspace.readOnly,
+        personal: !workspace.readOnly,
+        mode: publicModeEnabled() ? 'public' : 'local',
+      },
+      recovery: publicModeEnabled() && !workspace.readOnly ? recoveryCodeFor(workspace.id) : '',
       community: stats,
       counts: { ...store.stats(), packs: store.packs().length },
       preferences: {
@@ -3830,6 +3971,7 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
       compileActive += 1
       try {
         const result = await compileToPack({
+          allowEnvKeys: !publicModeEnabled() || isOwnerVisitor(visitorId),
           kind,
           text,
           url: rawUrl,
@@ -5403,6 +5545,35 @@ function closeHttpServer(instance: http.Server): Promise<void> {
  * lets the browser cache it, so a repeat visit only refetches the HTML.
  */
 const appScriptCache = new Map<string, string>()
+const appStyleCache = new Map<string, string>()
+
+/**
+ * The shell carries one large inline <style>. Serving it as a versioned file
+ * lets the browser cache it across navigations instead of re-sending ~115 KB
+ * with every HTML response.
+ */
+function externalizeAppStyles(html: string): { html: string; version: string } {
+  let best: { start: number; end: number; body: string } | undefined
+  const pattern = /<style>([\s\S]*?)<\/style>/g
+  let match: RegExpExecArray | null
+  while ((match = pattern.exec(html)) !== null) {
+    const body = match[1] ?? ''
+    if (!best || body.length > best.body.length) {
+      best = { start: match.index, end: match.index + match[0].length, body }
+    }
+  }
+  if (!best || best.body.length < 20_000) return { html, version: '' }
+  const version = createHash('sha1').update(best.body).digest('hex').slice(0, 12)
+  if (appStyleCache.size > 4) appStyleCache.clear()
+  appStyleCache.set(version, best.body)
+  return {
+    html:
+      html.slice(0, best.start) +
+      `<link rel="stylesheet" href="/app.css?v=${version}">` +
+      html.slice(best.end),
+    version,
+  }
+}
 
 function externalizeAppScript(html: string): { html: string; version: string } {
   let best: { start: number; end: number; body: string } | undefined
@@ -5462,6 +5633,13 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
         if (request.method === 'GET' && (request.url ?? '').startsWith('/api/health')) {
           response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
           response.end('{"ok":true}')
+          return
+        }
+        const methodIn = request.method ?? 'GET'
+        const pathIn = (request.url ?? '/').split('?')[0] ?? '/'
+        const limited = rateLimited(request, methodIn, pathIn)
+        if (limited) {
+          sendJson(response, 429, { error: limited })
           return
         }
         // Compiling is stateless: the caller keeps the result, so no workspace
@@ -5568,7 +5746,7 @@ export async function startReviewServer(options: { port?: number } = {}): Promis
       'The cost shows up in small places: a notification interrupts a sentence, a tab stays open for a week, and the work that needed an hour of silence never quite happens.',
       'Deliberate friction helps. Closing the laptop, writing the first sentence by hand, or leaving the phone in another room turns an impulse into a decision.',
     ].join('\n\n')
-    void compileToPack({ kind: 'text', text: warmupText, title: 'Warm up' })
+    void compileToPack({ kind: 'text', text: warmupText, title: 'Warm up', useLlm: false })
       .then((result) => console.log(`Compiler warm-up ready (${result.pack.items.length} items).`))
       .catch((error: unknown) => {
         console.warn(`Compiler warm-up skipped: ${error instanceof Error ? error.message : String(error)}`)

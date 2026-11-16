@@ -195,35 +195,37 @@ export function normalizeBaseUrl(value: string): string {
   return LEGACY_BASE_URLS[trimmed] ?? trimmed
 }
 
-function resolveLlm(dataDir: string): LlmRuntime {
+function resolveLlm(dataDir: string, allowEnvKeys = true): LlmRuntime {
   const stored = readJsonFile<StoredLlmSettings>(path.join(dataDir, 'llm.json'))
-  const envProvider = detectEnvProvider()
+  const envProvider = allowEnvKeys ? detectEnvProvider() : 'openai'
   const provider: LlmProviderId =
     stored?.provider && isLlmProvider(stored.provider) ? stored.provider : envProvider
   const preset = providerPreset(provider)
   const storedKey = decryptSecret(stored?.apiKey?.trim() ?? '')
-  const apiKey = storedKey || envKeyFor(provider)
+  const apiKey = storedKey || (allowEnvKeys ? envKeyFor(provider) : '')
   return {
     provider,
     apiKey,
     baseUrl: normalizeBaseUrl(
       stored?.baseUrl?.trim() ||
-        process.env.LEARN_BASE_URL ||
-        process.env.OPENAI_BASE_URL ||
+        (allowEnvKeys ? process.env.LEARN_BASE_URL || process.env.OPENAI_BASE_URL : '') ||
         preset.baseUrl,
     ),
-    model: stored?.model?.trim() || process.env.LEARN_MODEL || process.env.OPENAI_MODEL || preset.model,
+    model:
+      stored?.model?.trim() ||
+      (allowEnvKeys ? process.env.LEARN_MODEL || process.env.OPENAI_MODEL : '') ||
+      preset.model,
     keySource: storedKey ? 'stored' : apiKey ? 'env' : 'none',
   }
 }
 
-function resolveTts(dataDir: string): TtsRuntime {
+function resolveTts(dataDir: string, allowEnvKeys = true): TtsRuntime {
   const stored = readJsonFile<StoredTtsSettings>(path.join(dataDir, 'tts.json'))
-  const envTtsProvider = detectEnvTtsProvider()
+  const envTtsProvider = allowEnvKeys ? detectEnvTtsProvider() : DEFAULT_TTS_PROVIDER
   const provider: TtsProviderId = stored?.provider
     ? normalizeTtsProvider(stored.provider)
     : envTtsProvider
-  const envTtsKey = envTtsKeyFor(provider)
+  const envTtsKey = allowEnvKeys ? envTtsKeyFor(provider) : ''
   const preset = ttsProviderPreset(provider)
   const openAiTtsEnv = provider === 'openai' || provider === 'custom'
   const storedKey = decryptSecret(stored?.apiKey?.trim() ?? '')
@@ -232,18 +234,20 @@ function resolveTts(dataDir: string): TtsRuntime {
     apiKey: storedKey || envTtsKey,
     baseUrl: (
       stored?.baseUrl?.trim() ||
-      (openAiTtsEnv ? process.env.OPENAI_TTS_BASE_URL : '') ||
+      (openAiTtsEnv && allowEnvKeys ? process.env.OPENAI_TTS_BASE_URL : '') ||
       preset.baseUrl
     ).replace(/\/+$/, ''),
     model:
-      stored?.model?.trim() || (openAiTtsEnv ? process.env.OPENAI_TTS_MODEL : '') || preset.model,
+      stored?.model?.trim() ||
+      (openAiTtsEnv && allowEnvKeys ? process.env.OPENAI_TTS_MODEL : '') ||
+      preset.model,
     voice:
       stored?.voice?.trim() ||
-      (openAiTtsEnv ? process.env.OPENAI_TTS_VOICE : '') ||
+      (openAiTtsEnv && allowEnvKeys ? process.env.OPENAI_TTS_VOICE : '') ||
       preset.voice,
     instructions:
       stored?.instructions?.trim() ||
-      (openAiTtsEnv ? process.env.OPENAI_TTS_INSTRUCTIONS : '') ||
+      (openAiTtsEnv && allowEnvKeys ? process.env.OPENAI_TTS_INSTRUCTIONS : '') ||
       (preset.instructions ? defaultInstructions : ''),
     keySource: storedKey ? 'stored' : envTtsKey ? 'env' : 'none',
   }
@@ -255,15 +259,18 @@ export function createWorkspace(options: {
   packsDir: string
   readOnly?: boolean
   level?: string
+  /** Public visitors must not inherit the server's provider keys. */
+  allowEnvKeys?: boolean
 }): Workspace {
+  const allowEnvKeys = options.allowEnvKeys !== false
   return {
     id: options.id,
     dataDir: options.dataDir,
     packsDir: options.packsDir,
     readOnly: options.readOnly === true,
     level: (options.level ?? process.env.LEARN_LEVEL ?? 'B2').toUpperCase(),
-    llm: resolveLlm(options.dataDir),
-    tts: resolveTts(options.dataDir),
+    llm: resolveLlm(options.dataDir, allowEnvKeys),
+    tts: resolveTts(options.dataDir, allowEnvKeys),
   }
 }
 
