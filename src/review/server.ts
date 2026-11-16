@@ -3661,10 +3661,15 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         const cleaned = stripPackWatermarks(contents)
         if (cleaned) await savePackFiles(contents, pack.dir).catch(() => {})
       }
-      const body =
-        contents?.sourceText ??
-        (contents?.reading ?? []).map((paragraph) => paragraph.original).join('\n\n')
-      const check = checkPublishable({ title: pack.title ?? contents?.title, text: body ?? '' })
+      // Screen what a reader will actually see: the edited paragraphs, not the
+      // raw import. Someone who already deleted a stray line should be able to
+      // publish.
+      const visibleText = (contents?.reading ?? [])
+        .map((paragraph) => paragraph.original)
+        .filter((text) => text && text.trim())
+        .join('\n\n')
+      const body = visibleText || contents?.sourceText || ''
+      const check = checkPublishable({ title: pack.title ?? contents?.title, text: body })
       if (!check.ok) {
         sendJson(response, 400, { error: check.reason ?? '这篇内容不适合公开。' })
         return
