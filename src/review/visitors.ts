@@ -361,6 +361,9 @@ export class VisitorRegistry {
       const store = await Store.open(path.join(workspace.dataDir, 'store.json'))
       const diagnosis = store.preferences().diagnosis
       if (diagnosis?.level) workspace.level = diagnosis.level
+      // Older or partly-synced workspaces can carry pack folders that the index
+      // forgot; put them back before anything lists the library.
+      await repairWorkspaceFromFiles(store, workspace).catch(() => 0)
       return store
     })()
     this.stores.set(workspace.id, opening)
@@ -695,6 +698,68 @@ export interface PruneResult {
  * Delete visitor workspaces that have been idle for `days`. Deleting user data
  * is destructive, so the caller must opt in explicitly.
  */
+
+/**
+ * A workspace can end up with pack folders on disk but no records in
+ * store.json — a stale browser copy or an interrupted write does that. Rebuild
+ * the index from the files so nothing silently disappears from the library.
+ */
+export async function repairWorkspaceFromFiles(store: Store, workspace: Workspace): Promise<number> {
+  const packsDir = workspace.packsDir
+  const resourceDir = path.join(workspace.dataDir, 'resources')
+  const packEntries = await fs.readdir(packsDir, { withFileTypes: true }).catch(() => [])
+  const packDirs = packEntries.filter((entry) => entry.isDirectory()).length
+  const resourceFiles = (await fs.readdir(resourceDir).catch(() => [])).filter((name) =>
+    name.endsWith('.json'),
+  )
+  if (packDirs <= store.packs().length && resourceFiles.length <= store.listResources().length) {
+    return 0
+  }
+
+  let repaired = 0
+  for (const entry of packEntries) {
+    if (!entry.isDirectory()) continue
+    const dir = path.join(packsDir, entry.name)
+    let pack: Record<string, unknown>
+    try {
+      pack = JSON.parse(await fs.readFile(path.join(dir, 'pack.json'), 'utf8')) as Record<string, unknown>
+    } catch {
+      continue
+    }
+    const id = typeof pack.id === 'string' ? pack.id : ''
+    if (!id || store.findPack(id)) continue
+    const items = Array.isArray(pack.items) ? (pack.items as Array<{ id?: unknown }>) : []
+    const difficulty = (pack.difficulty ?? {}) as { cefr?: unknown }
+    await store.addPack({
+      id,
+      resourceId: typeof pack.resourceId === 'string' ? pack.resourceId : id,
+      dir,
+      mode: typeof pack.mode === 'string' ? pack.mode : 'heuristic',
+      itemCount: items.length,
+      ...(typeof pack.generatedAt === 'string' ? { createdAt: pack.generatedAt } : {}),
+      ...(typeof pack.title === 'string' ? { title: pack.title } : {}),
+      ...(typeof difficulty.cefr === 'string' ? { cefr: difficulty.cefr } : {}),
+    } as PackRecord)
+    const learning = items.filter((item) => item && typeof item.id === 'string')
+    if (learning.length) await store.restoreItems(learning as never)
+    repaired += 1
+  }
+
+  for (const name of resourceFiles) {
+    try {
+      const resource = JSON.parse(await fs.readFile(path.join(resourceDir, name), 'utf8')) as {
+        id?: unknown
+      }
+      if (typeof resource.id !== 'string' || store.getResource(resource.id)) continue
+      await store.addResource(resource as never)
+      repaired += 1
+    } catch {
+      // A half-written resource file must not stop the rest.
+    }
+  }
+  return repaired
+}
+
 export async function pruneWorkspaces(options: {
   days: number
   dryRun: boolean
