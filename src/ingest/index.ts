@@ -9,6 +9,7 @@ import { readEpub, readEpubBuffer } from './epub.js'
 import { readMobi, readMobiBuffer } from './mobi.js'
 import { readDocxBuffer } from './docx.js'
 import { parseTranscript, segmentsFromText } from './segment.js'
+import { checkReadableEnglish, stripBoilerplate } from './hygiene.js'
 import { countWords } from './summary.js'
 import { detectBlockedPage, extractArticle, fetchArticle, fetchUrl, titleFromUrl } from './web.js'
 import { parseFeed } from './feed.js'
@@ -108,8 +109,15 @@ async function persistResource(input: {
   metadata?: Record<string, string | number>
   aiClean?: boolean
 }): Promise<Resource> {
-  let text = input.text.replace(/\r\n?/g, '\n').trim()
+  let text = stripBoilerplate(input.text.replace(/\r\n?/g, '\n').trim())
   if (text.length < 100) throw new Error('The input produced too little text to build a learning pack.')
+
+  // Watermarks and Chinese-only pages are the usual cause of a pack whose first
+  // paragraph is "本文由 zlibrary 下载". Catch them before anything is written.
+  const readable = checkReadableEnglish(text)
+  if (!readable.ok) {
+    throw new Error(`${readable.reason} 如果这是 PDF，试着只选正文部分，或直接粘贴英文段落。`)
+  }
 
   const title = input.title.trim() || 'Untitled resource'
   const metadata: Record<string, string | number> = { ...input.metadata }

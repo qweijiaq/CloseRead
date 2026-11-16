@@ -85,6 +85,8 @@ import { Store } from '../store/store.js'
 import type { DailyProgress } from '../store/store.js'
 import { restoreLibraryBackup, writeLibraryBackup } from '../store/backup.js'
 import { listTrash, purgeTrash, restoreTrash, trashPack, trashResource } from '../store/trash.js'
+import { checkPublishable } from '../community/moderation.js'
+import { checkReadableEnglish } from '../ingest/hygiene.js'
 import { listStyleProfiles, loadStyleProfile, resolveDefaultStyle } from '../style/profile.js'
 import type { LearningPack, PackRecord, Resource, ResourceArticle, StoredItem } from '../types.js'
 import { accessCookie, accessTokenMatches, isLocalHostName, isLoopbackAddress, issueAccessToken, phoneUrls, requestAccessToken, withoutAccessToken } from './lan.js'
@@ -3649,6 +3651,17 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         sendJson(response, 429, { error: '公共库已满（500 个），暂时不能再公开新的学习包。' })
         return
       }
+      // Screen the text itself: a pack built from a messy import must not reach
+      // the public library, even if the owner already deleted it elsewhere.
+      const contents = await loadPack(pack.dir).catch(() => undefined)
+      const body =
+        contents?.sourceText ??
+        (contents?.reading ?? []).map((paragraph) => paragraph.original).join('\n\n')
+      const check = checkPublishable({ title: pack.title ?? contents?.title, text: body ?? '' })
+      if (!check.ok) {
+        sendJson(response, 400, { error: check.reason ?? '这篇内容不适合公开。' })
+        return
+      }
       const name = `${path.basename(pack.dir)}`
       const target = path.join(rootPacksDir, name)
       await fs.cp(pack.dir, target, { recursive: true, errorOnExist: false, force: false })
@@ -4188,6 +4201,12 @@ code{display:block;margin-top:18px;padding:12px;border:1px solid rgba(28,26,22,.
         sendJson(response, 400, { error: 'Article not found' })
         return
       }
+    }
+    // Legacy resources may have been imported before the hygiene checks existed.
+    const readable = checkReadableEnglish(resource.text)
+    if (!readable.ok) {
+      sendJson(response, 400, { error: `${readable.reason} 建议删掉这份材料重新导入。` })
+      return
     }
     // Parallel builds share one provider key; keep a ceiling so a queue cannot
     // open a dozen streams at once.

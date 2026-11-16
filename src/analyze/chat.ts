@@ -296,7 +296,10 @@ export async function chatJson<T>(
     }
     if (response.ok) {
       const data = (await response.json()) as {
-        choices?: Array<{ message?: { content?: unknown }; finish_reason?: string }>
+        choices?: Array<{
+          message?: { content?: unknown; reasoning_content?: unknown; reasoning?: unknown }
+          finish_reason?: string
+        }>
         usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
       }
       recordUsage(config.llm.model, {
@@ -305,7 +308,15 @@ export async function chatJson<T>(
         total: data.usage?.total_tokens,
       })
       if (data.choices?.[0]?.finish_reason === 'length') {
-        throw new Error('LLM reply was cut off by the output limit.')
+        const message = data.choices?.[0]?.message
+        const spentOnReasoning =
+          contentText(message?.reasoning_content as never).trim() ||
+          contentText(message?.reasoning as never).trim()
+        throw new Error(
+          spentOnReasoning
+            ? 'LLM reply was cut off by the output limit（模型把额度花在推理上，JSON 还没写完）.'
+            : 'LLM reply was cut off by the output limit.',
+        )
       }
       const content = contentText(data.choices?.[0]?.message?.content)
       if (!content.trim()) {

@@ -550,9 +550,9 @@ export async function analyzeWithLlm(
 ): Promise<AnalysisResult> {
   checkAbort(signal)
   const candidateTarget = Math.min(90, Math.max(limit + 6, Math.ceil(limit * 1.5)))
-  // About 20 candidates per call: more than that and reasoning models run into
-  // their output limit halfway through the JSON.
-  const CANDIDATES_PER_CALL = 20
+  // Ten candidates per call: reasoning models spend part of the output budget
+  // on reasoning, and 20 items of JSON regularly ran past the limit.
+  const CANDIDATES_PER_CALL = 10
   const chunks = chunkText(resource.text, limit > 20 ? 4000 : 6000)
   const callsNeeded = Math.ceil(candidateTarget / CANDIDATES_PER_CALL)
   let guard = 0
@@ -595,7 +595,7 @@ export async function analyzeWithLlm(
       SELECTION_SYSTEM(style),
       `Text chunk:\n"""\n${text}\n"""\n\nSelect at most ${ask} candidates.${avoidBlock}${existingBlock} Return JSON only.`,
       // One candidate is roughly 120 tokens of JSON.
-      { signal, maxTokens: Math.min(8000, 600 + ask * 160) },
+      { signal, maxTokens: Math.min(3000, 500 + ask * 180) },
     )
     return result.items ?? []
   }

@@ -1826,6 +1826,7 @@ ${pwaHead()}
       </div>
       <div class="llm-settings-actions">
         <button class="btn btn-primary" id="llm-save" type="button">保存模型设置</button>
+        <button class="btn" id="llm-test" type="button">测试连接</button>
         <span class="muted" id="llm-settings-message">Key 只保存在这个浏览器里，调用模型时随请求发送，不会写入服务器磁盘。</span>
       </div>
     </details>
@@ -3008,7 +3009,8 @@ ${pwaHead()}
         settingsRow('Base URL', '<code>' + escapeHtml(llm.baseUrl || '') + '</code>') +
         settingsRow('Key 来源', llm.keySource === 'stored' ? '本机设置' : llm.keySource === 'env' ? '环境变量' : '未配置') +
         '<div class="settings-actions"><button class="btn" id="settings-llm-test" type="button">测试连接</button>' +
-        '<button class="btn" data-go-tab="import" type="button">模型设置</button><span class="small muted" id="settings-llm-result"></span></div>';
+        '<button class="btn" data-open-llm="1" type="button">去导入页修改</button><span class="small muted" id="settings-llm-result"></span></div>' +
+        '<p class="small muted">模型只在导入页配置一处；这里显示当前状态，测试连接和修改都会用到同一份设置。</p>';
     }
     var ttsHost = document.getElementById('settings-tts');
     if (ttsHost) {
@@ -3115,6 +3117,18 @@ ${pwaHead()}
         setBusy(goalsSave, false);
       });
     });
+    var openLlm = document.querySelector('[data-open-llm]');
+    if (openLlm && openLlm.getAttribute('data-bound') !== '1') {
+      openLlm.setAttribute('data-bound', '1');
+      openLlm.addEventListener('click', function () {
+        switchTab('import');
+        var details = document.getElementById('llm-settings');
+        if (details) {
+          details.open = true;
+          if (details.scrollIntoView) details.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      });
+    }
     var testButton = document.getElementById('settings-llm-test');
     if (testButton) testButton.addEventListener('click', function () {
       setBusy(testButton, true, '测试中…');
@@ -6407,6 +6421,20 @@ ${pwaHead()}
     });
   }
   if (els.llmSave) els.llmSave.addEventListener('click', saveLlmSettings);
+  var llmTest = document.getElementById('llm-test');
+  if (llmTest) llmTest.addEventListener('click', function () {
+    var message = document.getElementById('llm-settings-message');
+    setBusy(llmTest, true, '测试中…');
+    if (message) message.textContent = '正在请求模型…';
+    api('/api/llm/test', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
+      .then(function (data) {
+        if (message) message.textContent = data.ok ? '连接成功，可以开始生成。' : '返回异常，请检查模型设置。';
+      })
+      .catch(function (error) {
+        if (message) message.textContent = '失败：' + error.message;
+      })
+      .then(function () { setBusy(llmTest, false); });
+  });
   var nuanceModal = document.getElementById('nuance-modal');
   var nuanceClose = document.getElementById('nuance-close');
   if (nuanceClose) nuanceClose.addEventListener('click', closeNuance);
